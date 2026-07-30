@@ -246,3 +246,15 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.gitignore.io/api/linux,python,windows,pycharm+all,visualstudiocode
+
+# LLM-MAPPO experiment outputs and local secrets
+/artifacts/
+/runs/
+/tensorboard/
+/wandb/
+*.pt
+*.pth
+*.ckpt
+.env
+.env.*
+!.env.example

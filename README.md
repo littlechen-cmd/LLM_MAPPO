@@ -1,3 +1,19 @@
+# LLM-MAPPO Dynamic Warehouse
+
+This repository combines the RWARE Gymnasium environment with the staged LLM-MAPPO dynamic-warehouse research implementation. The current baseline is the promoted RWARE source tree; Phase 1 adds the dynamic task, charging, safety, rule-layer, and A* interfaces described in `大规模动态仓储LLM-MAPPO总体方案.md`.
+
+## Development Setup
+
+Use Python 3.10. From the repository root, install the editable package and the local development/training extras:
+
+```powershell
+python -m pip install -e ".[dev,train]"
+python -m pytest
+python -m flake8 rware human_play.py llm_mappo
+```
+
+Use the configured `py310` interpreter when `conda` is not available on `PATH`. Training outputs belong in `artifacts/`; keep API credentials in an untracked `.env` file.
+
 <p align="center">
  <img width="350px" src="docs/img/rware.png" align="center" alt="Multi-Robot Warehouse (RWARE)" />
  <p align="center">A multi-agent reinforcement learning environment</p>

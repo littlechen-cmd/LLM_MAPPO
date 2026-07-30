@@ -5,21 +5,20 @@ from setuptools import setup, find_packages
 HERE = pathlib.Path(__file__).parent
 
 # The text of the README file
-README = (HERE / "README.md").read_text()
+README = (HERE / "README.md").read_text(encoding="utf-8")
 
 setup(
-    name="rware",
-    version="2.0.0",
-    description="Multi-Robot Warehouse environment for reinforcement learning",
+    name="llm-mappo",
+    version="0.1.0",
+    description="Dynamic warehouse environment and LLM-augmented MAPPO research code",
     long_description=README,
     long_description_content_type="text/markdown",
-    author="Filippos Christianos",
-    url="https://github.com/semitable/robotic-warehouse",
+    author="LLM-MAPPO contributors",
     packages=find_packages(exclude=["contrib", "docs", "tests"]),
     classifiers=[
         # Indicate who your project is intended for
         "Intended Audience :: Developers",
-        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.10",
     ],
     install_requires=[
         "numpy",
@@ -27,6 +26,11 @@ setup(
         "pyglet<2",
         "networkx",
     ],
-    extras_require={"test": ["pytest"]},
+    python_requires=">=3.10,<3.11",
+    extras_require={
+        "test": ["pytest"],
+        "dev": ["build", "flake8", "pytest", "PyYAML", "scipy", "tensorboard"],
+        "train": ["torch"],
+    },
     include_package_data=True,
 )
