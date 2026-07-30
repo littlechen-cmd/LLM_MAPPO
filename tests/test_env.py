@@ -23,7 +23,7 @@ def env_single_agent():
 @pytest.fixture
 def env_0():
     env = Warehouse(3, 8, 3, 1, 0, 1, 5, 10, None, RewardType.GLOBAL)
-    env.reset()
+    env.reset(seed=1)
 
     env.agents[0].x = 4  # should place it in the middle (empty space)
     env.agents[0].y = 27

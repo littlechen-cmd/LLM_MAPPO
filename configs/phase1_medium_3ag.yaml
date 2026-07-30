@@ -8,7 +8,7 @@ environment:
   charging_rate: 0.02
 
 rules:
-  battery_assignment_floor: 0.2
+  battery_assignment_floor: 0.1
   labels: dynamic_fifo
   collision_penalty: -2.0
   task_reward: 5.0

@@ -47,8 +47,8 @@ def test_task_queue_filters_low_battery_and_validates_adjustments_atomically():
     queue.create_batch([10, 11], batch_id=1, letter="A", arrival_step=0)
     queue.create_batch([12], batch_id=2, letter="B", arrival_step=5)
 
-    assert queue.assign_next(agent_id=1, battery=0.19) is None
-    assert queue.assign_next(agent_id=1, battery=0.2).label == "A1"
+    assert queue.assign_next(agent_id=1, battery=0.09) is None
+    assert queue.assign_next(agent_id=1, battery=0.1).label == "A1"
 
     changed = queue.apply_adjustments(
         [

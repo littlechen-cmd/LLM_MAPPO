@@ -16,7 +16,7 @@ Use the configured `py310` interpreter when `conda` is not available on `PATH`. 
 
 ## Phase 1 Dynamic Warehouse
 
-Import `rware`, then create `llm-mappo-medium-3ag-v1` through Gymnasium for the medium three-AGV baseline. It adds FIFO priority batches, a hard 20% task-assignment battery filter, three charging stations, collision penalties, and three-step picking locks while preserving the original `rware-*` environments.
+Import `rware`, then create `llm-mappo-medium-3ag-v1` through Gymnasium for the medium three-AGV baseline. It adds FIFO priority batches, a hard 10% task-assignment battery filter, three charging stations, collision penalties, and three-step picking locks while preserving the original `rware-*` environments.
 
 ```powershell
 python demo.py --env llm-mappo-medium-3ag-v1

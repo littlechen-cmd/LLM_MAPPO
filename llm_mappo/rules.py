@@ -68,8 +68,8 @@ class TaskQueue:
         return None
 
     def assign_next(self, agent_id: int, battery: float) -> Optional[Task]:
-        """Lock the next FIFO task, excluding AGVs below the 20% battery limit."""
-        if battery < 0.2:
+        """Lock the next FIFO task, excluding AGVs below the 10% battery limit."""
+        if battery < 0.1:
             return None
         existing = self.task_for_agent(agent_id)
         if existing is not None:
