@@ -22,6 +22,8 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
 
 - [ ] Phase 2: Oracle-path MAPPO baseline and 10-seed Go/No-Go evaluation.
   - [x] Implement the custom PyTorch CTDE MAPPO baseline, oracle-waypoint adapter, and artifact tracking.
+  - [ ] Run and record a local CPU 800-1000 episode feasibility test before any server-scale training.
+  - [ ] If server training is needed, record whether the 4080S run uses Linux or WSL plus CUDA/PyTorch details.
   - [ ] Train the 1-AGV waypoint/charging curriculum stage.
   - [ ] Train the 3-AGV avoidance/charging-coordination stage.
   - [ ] Run the 10-seed Go/No-Go evaluation and record the acceptance result.
