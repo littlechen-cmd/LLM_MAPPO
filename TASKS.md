@@ -13,10 +13,10 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
 
 ## Phase 1: Environment and Interfaces
 
-- [ ] Implement dynamic batches, priority tasks, battery/charging, collision accounting, and picking locks.
-- [ ] Freeze task, priority adjustment, engagement label, task queue, and A* planner interfaces.
-- [ ] Add FIFO rule-layer validation and the `demo.py` operational view.
-- [ ] Reach the Phase 1 Go/No-Go threshold and record the result.
+- [x] Implement dynamic batches, priority tasks, battery/charging, collision accounting, and picking locks.
+- [x] Freeze task, priority adjustment, engagement label, task queue, and A* planner interfaces.
+- [x] Add FIFO rule-layer validation and the `demo.py` operational view.
+- [ ] Reach the Phase 1 Go/No-Go threshold and record the result (100 headless episodes passed; GUI frame-rate review remains).
 
 ## Later Phases
 

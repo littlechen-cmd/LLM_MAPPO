@@ -126,6 +126,7 @@ class Viewer(object):
 
         self._draw_grid()
         self._draw_goals(env)
+        self._draw_dynamic_stations(env)
         self._draw_shelfs(env)
         self._draw_agents(env)
 
@@ -331,6 +332,38 @@ class Viewer(object):
                 ("c3B", (*_AGENT_DIR_COLOR, *_AGENT_DIR_COLOR)),
             )
         batch.draw()
+
+        for agent in env.agents:
+            if not hasattr(agent, "battery"):
+                continue
+            row = self.rows - agent.y - 1
+            label = pyglet.text.Label(
+                f"A{agent.id} {agent.battery:.2f}",
+                font_name="Calibri",
+                font_size=7,
+                x=(self.grid_size + 1) * agent.x + self.grid_size // 2 + 1,
+                y=(self.grid_size + 1) * row + self.grid_size - 2,
+                anchor_x="center",
+                anchor_y="top",
+                color=(*_BLACK, 255),
+            )
+            label.draw()
+
+    def _draw_dynamic_stations(self, env):
+        for x, y in getattr(env, "charging_stations", ()):
+            row = self.rows - y - 1
+            label = pyglet.text.Label(
+                "C",
+                font_name="Calibri",
+                font_size=14,
+                bold=True,
+                x=x * (self.grid_size + 1) + self.grid_size // 2 + 1,
+                y=row * (self.grid_size + 1) + self.grid_size // 2 + 1,
+                anchor_x="center",
+                anchor_y="center",
+                color=(*_GREEN, 255),
+            )
+            label.draw()
 
     def _draw_badge(self, row, col, index):
         resolution = 6

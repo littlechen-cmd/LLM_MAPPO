@@ -1,0 +1,23 @@
+environment:
+  id: llm-mappo-medium-3ag-v1
+  seed: 7
+  max_steps: 1000
+  batch_interval: 20
+  batch_size_range: [1, 3]
+  picking_lock_steps: 3
+  charging_rate: 0.02
+
+rules:
+  battery_assignment_floor: 0.2
+  labels: dynamic_fifo
+  collision_penalty: -2.0
+  task_reward: 5.0
+  dead_agent_penalty: -20.0
+
+planner:
+  action_space: [FORWARD, LEFT, RIGHT, TOGGLE_LOAD, NOOP]
+  stalled_steps: 30
+
+validation:
+  headless_episodes: 100
+  visual_demo_command: python demo.py --env llm-mappo-medium-3ag-v1

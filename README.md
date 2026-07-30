@@ -14,6 +14,16 @@ python -m flake8 rware human_play.py llm_mappo
 
 Use the configured `py310` interpreter when `conda` is not available on `PATH`. Training outputs belong in `artifacts/`; keep API credentials in an untracked `.env` file.
 
+## Phase 1 Dynamic Warehouse
+
+Import `rware`, then create `llm-mappo-medium-3ag-v1` through Gymnasium for the medium three-AGV baseline. It adds FIFO priority batches, a hard 20% task-assignment battery filter, three charging stations, collision penalties, and three-step picking locks while preserving the original `rware-*` environments.
+
+```powershell
+python demo.py --env llm-mappo-medium-3ag-v1
+```
+
+In the demo, `Tab` switches the selected AGV, arrow keys move or turn it, `Space` toggles loading, `Enter` advances with `NOOP`, `R` toggles FIFO+A* automatic execution, and `N` resets the episode. The Phase 1 reference configuration is `configs/phase1_medium_3ag.yaml`.
+
 <p align="center">
  <img width="350px" src="docs/img/rware.png" align="center" alt="Multi-Robot Warehouse (RWARE)" />
  <p align="center">A multi-agent reinforcement learning environment</p>
