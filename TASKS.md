@@ -21,6 +21,10 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
 ## Later Phases
 
 - [ ] Phase 2: Oracle-path MAPPO baseline and 10-seed Go/No-Go evaluation.
+  - [x] Implement the custom PyTorch CTDE MAPPO baseline, oracle-waypoint adapter, and artifact tracking.
+  - [ ] Train the 1-AGV waypoint/charging curriculum stage.
+  - [ ] Train the 3-AGV avoidance/charging-coordination stage.
+  - [ ] Run the 10-seed Go/No-Go evaluation and record the acceptance result.
 - [ ] Phase 3: Dual-head Actor and A* distillation ablation.
 - [ ] Phase 4: DeepSeek label adjustment and engagement distillation.
 - [ ] Phase 4b: Large-scale 6-AGV evaluation.

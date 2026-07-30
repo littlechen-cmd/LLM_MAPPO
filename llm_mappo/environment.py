@@ -21,22 +21,22 @@ class DynamicWarehouse(Warehouse):
         charging_rate: float = 0.02,
         picking_lock_steps: int = 3,
         auto_assign: bool = True,
+        initial_priority_label: str = "A",
         **kwargs,
     ):
-        if batch_interval <= 0:
-            raise ValueError("batch_interval must be positive.")
-        if batch_size_range[0] <= 0 or batch_size_range[0] > batch_size_range[1]:
-            raise ValueError("batch_size_range must be a positive ordered pair.")
-        if not 0.0 < charging_rate <= 1.0:
-            raise ValueError("charging_rate must be within (0, 1].")
-        if picking_lock_steps < 0:
-            raise ValueError("picking_lock_steps must not be negative.")
-
+        self._validate_options(
+            batch_interval,
+            batch_size_range,
+            charging_rate,
+            picking_lock_steps,
+            initial_priority_label,
+        )
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
         self.charging_rate = charging_rate
         self.picking_lock_steps = picking_lock_steps
         self.auto_assign = auto_assign
+        self.initial_priority_label = initial_priority_label
         self.task_queue = TaskQueue()
         self._batch_index = 0
         self._shelf_home = {}
@@ -56,6 +56,25 @@ class DynamicWarehouse(Warehouse):
                 raise ValueError(f"Charging station must be accessible: {station}")
         self.charging_stations = tuple(stations)
         self.picking_stations = tuple(self.goals)
+
+    @staticmethod
+    def _validate_options(
+        batch_interval,
+        batch_size_range,
+        charging_rate,
+        picking_lock_steps,
+        initial_priority_label,
+    ):
+        if batch_interval <= 0:
+            raise ValueError("batch_interval must be positive.")
+        if batch_size_range[0] <= 0 or batch_size_range[0] > batch_size_range[1]:
+            raise ValueError("batch_size_range must be a positive ordered pair.")
+        if not 0.0 < charging_rate <= 1.0:
+            raise ValueError("charging_rate must be within (0, 1].")
+        if picking_lock_steps < 0:
+            raise ValueError("picking_lock_steps must not be negative.")
+        if len(initial_priority_label) != 1 or not initial_priority_label.isupper():
+            raise ValueError("initial_priority_label must be one uppercase character.")
 
     def reset(self, seed=None, options=None):
         self.task_queue = TaskQueue()
@@ -168,7 +187,11 @@ class DynamicWarehouse(Warehouse):
     def _create_batch(self, shelf_ids: Sequence[int]) -> Sequence[Task]:
         if not shelf_ids:
             return ()
-        letter = chr(ord("A") + min(self._batch_index, 25))
+        letter = (
+            self.initial_priority_label
+            if self._batch_index == 0
+            else chr(ord("A") + min(self._batch_index, 25))
+        )
         batch_id = self._batch_index + 1
         self._batch_index += 1
         tasks = self.task_queue.create_batch(

@@ -24,6 +24,26 @@ python demo.py --env llm-mappo-medium-3ag-v1
 
 In the demo, `Tab` switches the selected AGV, arrow keys move or turn it, `Space` toggles loading, `Enter` advances with `NOOP`, `R` toggles FIFO+A* automatic execution, and `N` resets the episode. The Phase 1 reference configuration is `configs/phase1_medium_3ag.yaml`.
 
+## Phase 2 CTDE MAPPO Baseline
+
+Phase 2 adds a custom PyTorch CTDE MAPPO implementation. A shared Actor receives
+each AGV's local RWARE observation plus the current oracle waypoint, battery,
+nearby AGV, and compact global features. During training, the Critic uses
+attention pooling over all AGV observations. The Phase 2 adapter fixes all
+initial tasks to priority `B`, disables later task batches, and retains three
+charging stations for the three-AGV stage.
+
+```powershell
+python train/train_phase2.py --agents 1 --episodes 5000
+python train/train_phase2.py --agents 3 --episodes 5000
+python eval/evaluate_phase2.py artifacts/phase2/seed_007/checkpoint_final.pt
+```
+
+Runs write configuration, checkpoints, per-episode CSV, per-update CSV,
+TensorBoard events, and `summary.json` beneath `artifacts/phase2/`. The evaluator
+uses ten seeds by default and reports the completion, collision, deadlock, and
+success-rate variance gates from `configs/phase2_mappo.yaml`.
+
 <p align="center">
  <img width="350px" src="docs/img/rware.png" align="center" alt="Multi-Robot Warehouse (RWARE)" />
  <p align="center">A multi-agent reinforcement learning environment</p>

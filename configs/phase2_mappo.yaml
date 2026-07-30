@@ -1,0 +1,35 @@
+environment:
+  id: llm-mappo-medium-3ag-v1
+  n_agents: 3
+  max_steps: 400
+  priority_label: B
+  oracle_waypoints: true
+  charging_stations: 3
+
+training:
+  seed: 7
+  device: cpu
+  episodes: 5000
+  rollout_steps: 512
+  checkpoint_interval: 250
+  output_dir: artifacts/phase2
+
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  value_coefficient: 0.5
+  entropy_coefficient: 0.01
+  learning_rate: 0.0003
+  max_grad_norm: 0.5
+  update_epochs: 4
+  minibatch_steps: 64
+
+evaluation:
+  seeds: 10
+  episodes_per_seed: 20
+  task_completion_rate_min: 0.95
+  collisions_per_episode_max: 2
+  deadlock_rate_max: 0.05
+  success_rate_std_max: 0.10
+  convergence_episodes_max: 5000
