@@ -949,7 +949,10 @@ class Warehouse(gym.Env):
         if not self.renderer:
             from rware.rendering import Viewer
 
-            self.renderer = Viewer(self.grid_size)
+            self.renderer = Viewer(
+                self.grid_size,
+                visible=self.render_mode != "rgb_array",
+            )
 
         return self.renderer.render(
             self, return_rgb_array=self.render_mode == "rgb_array"

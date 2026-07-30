@@ -85,7 +85,7 @@ def get_display(spec):
 
 
 class Viewer(object):
-    def __init__(self, world_size):
+    def __init__(self, world_size, visible=True):
         display = get_display(None)
         self.rows, self.cols = world_size
 
@@ -95,7 +95,10 @@ class Viewer(object):
         self.width = 1 + self.cols * (self.grid_size + 1)
         self.height = 2 + self.rows * (self.grid_size + 1)
         self.window = pyglet.window.Window(
-            width=self.width, height=self.height, display=display
+            width=self.width,
+            height=self.height,
+            display=display,
+            visible=visible,
         )
         self.window.on_close = self.window_closed_by_user
         self.isopen = True

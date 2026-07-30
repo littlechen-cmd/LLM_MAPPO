@@ -16,7 +16,7 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
 - [x] Implement dynamic batches, priority tasks, battery/charging, collision accounting, and picking locks.
 - [x] Freeze task, priority adjustment, engagement label, task queue, and A* planner interfaces.
 - [x] Add FIFO rule-layer validation and the `demo.py` operational view.
-- [ ] Reach the Phase 1 Go/No-Go threshold and record the result (100 headless episodes passed; GUI frame-rate review remains).
+- [x] Reach the Phase 1 Go/No-Go threshold: 100 headless episodes / 10,000 steps passed; 120/120 nonblank RGB frames averaged 29.4 ms with a 47 ms maximum.
 
 ## Later Phases
 

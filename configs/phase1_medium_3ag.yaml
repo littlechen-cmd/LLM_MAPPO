@@ -20,4 +20,9 @@ planner:
 
 validation:
   headless_episodes: 100
+  episode_steps: 100
+  render_warmup_frames: 10
+  render_frames: 120
+  render_fps: 30
+  max_frame_seconds: 0.1
   visual_demo_command: python demo.py --env llm-mappo-medium-3ag-v1
