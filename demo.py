@@ -1,6 +1,7 @@
 """Interactive Phase 1 visualisation for the dynamic LLM-MAPPO warehouse."""
 
 from argparse import ArgumentParser
+from time import monotonic, sleep
 
 import gymnasium as gym
 
@@ -27,16 +28,26 @@ class WarehouseDemo:
         self.seed = seed
         self.selected_agent = 0
         self.auto_mode = False
+        self.running = True
         self._reset()
 
     def run(self):
-        import pyglet
-
         self.env.render()
         self.unwrapped.renderer.window.on_key_press = self._on_key_press
-        interval = 1 / self.unwrapped.metadata["render_fps"]
-        pyglet.clock.schedule_interval(self._tick, interval)
-        pyglet.app.run()
+        render_interval = 1 / 30
+        action_interval = 1 / self.unwrapped.metadata["render_fps"]
+        next_render = monotonic()
+        next_action = next_render
+        while self.running and self.unwrapped.renderer.isopen:
+            now = monotonic()
+            if self.auto_mode and now >= next_action:
+                self._step(self._automatic_actions())
+                next_action = now + action_interval
+            if now >= next_render:
+                self.env.render()
+                next_render = now + render_interval
+            sleep(0.002)
+        self.env.close()
 
     def _reset(self):
         _, self.info = self.env.reset(seed=self.seed)
@@ -59,10 +70,7 @@ class WarehouseDemo:
             self._reset()
             return
         if key_code == key.ESCAPE:
-            self.env.close()
-            import pyglet
-
-            pyglet.app.exit()
+            self.running = False
             return
 
         manual_action = {
@@ -76,11 +84,6 @@ class WarehouseDemo:
             self.auto_mode = False
             actions[self.selected_agent] = manual_action
             self._step(actions)
-
-    def _tick(self, _elapsed):
-        if self.auto_mode:
-            self._step(self._automatic_actions())
-        self.env.render()
 
     def _step(self, actions):
         _, rewards, terminated, truncated, self.info = self.env.step(

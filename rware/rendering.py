@@ -119,9 +119,10 @@ class Viewer(object):
         )
 
     def render(self, env, return_rgb_array=False):
-        glClearColor(*_BACKGROUND_COLOR, 0)
-        self.window.clear()
         self.window.switch_to()
+        clear_color = tuple(component / 255.0 for component in _BACKGROUND_COLOR)
+        glClearColor(*clear_color, 1.0)
+        self.window.clear()
         self.window.dispatch_events()
 
         self._draw_grid()
