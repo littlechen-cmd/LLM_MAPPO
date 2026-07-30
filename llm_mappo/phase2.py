@@ -76,6 +76,7 @@ class Phase2Warehouse:
     env_id: str = "llm-mappo-medium-3ag-v1"
     charge_threshold: float = 0.2
     deadlock_steps: int = 50
+    waypoint_reward: float = 1.0
     _env: gym.Env = field(init=False, repr=False)
     _planner: AStarPlanner = field(init=False, repr=False)
     _raw_observations: Sequence[np.ndarray] = field(init=False, repr=False)
@@ -86,6 +87,8 @@ class Phase2Warehouse:
     def __post_init__(self) -> None:
         if self.n_agents < 1:
             raise ValueError("Phase 2 requires at least one AGV.")
+        if self.waypoint_reward < 0.0:
+            raise ValueError("waypoint_reward must not be negative.")
         self._env = gym.make(
             self.env_id,
             disable_env_checker=True,
@@ -266,7 +269,7 @@ class Phase2Warehouse:
         after = self._waypoint_distances()
         return np.asarray(
             [
-                1.0 if next_distance < prior else 0.0
+                self.waypoint_reward if next_distance < prior else 0.0
                 for prior, next_distance in zip(before, after)
             ],
             dtype=np.float32,

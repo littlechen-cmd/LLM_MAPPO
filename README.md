@@ -39,6 +39,14 @@ python train/train_phase2.py --agents 3 --episodes 5000
 python eval/evaluate_phase2.py artifacts/phase2/seed_007/checkpoint_final.pt
 ```
 
+For the local 1-AGV waypoint-reward feasibility comparison, run the two isolated
+500-episode configurations:
+
+```powershell
+python train/train_phase2.py --config configs/phase2_waypoint_001.yaml
+python train/train_phase2.py --config configs/phase2_waypoint_005.yaml
+```
+
 Runs write configuration, checkpoints, per-episode CSV, per-update CSV,
 TensorBoard events, and `summary.json` beneath `artifacts/phase2/`. The evaluator
 uses ten seeds by default and reports the completion, collision, deadlock, and

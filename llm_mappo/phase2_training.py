@@ -25,6 +25,7 @@ class Phase2TrainingConfig:
     device: str = "cpu"
     n_agents: int = 3
     max_steps: int = 400
+    waypoint_reward: float = 1.0
     episodes: int = 5000
     rollout_steps: int = 512
     checkpoint_interval: int = 250
@@ -43,6 +44,9 @@ class Phase2TrainingConfig:
             device=training.get("device", cls.device),
             n_agents=environment.get("n_agents", cls.n_agents),
             max_steps=environment.get("max_steps", cls.max_steps),
+            waypoint_reward=environment.get(
+                "waypoint_reward", cls.waypoint_reward
+            ),
             episodes=training.get("episodes", cls.episodes),
             rollout_steps=training.get("rollout_steps", cls.rollout_steps),
             checkpoint_interval=training.get(
@@ -80,7 +84,11 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
         json.dumps(asdict(config), indent=2), encoding="utf-8"
     )
 
-    env = Phase2Warehouse(n_agents=config.n_agents, max_steps=config.max_steps)
+    env = Phase2Warehouse(
+        n_agents=config.n_agents,
+        max_steps=config.max_steps,
+        waypoint_reward=config.waypoint_reward,
+    )
     observations = env.reset(seed=config.seed)
     policy = MAPPOPolicy(env.actor_observation_dim, ACTION_COUNT, config.device)
     updater = MAPPOUpdater(policy, config.ppo)

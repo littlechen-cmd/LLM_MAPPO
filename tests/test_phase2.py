@@ -21,6 +21,17 @@ def test_phase2_adapter_provides_oracle_features_and_single_b_priority():
         env.close()
 
 
+def test_phase2_adapter_scales_waypoint_rewards(monkeypatch):
+    env = Phase2Warehouse(n_agents=1, max_steps=8, waypoint_reward=0.05)
+    try:
+        env.reset(seed=9)
+        monkeypatch.setattr(env, "_waypoint_distances", lambda: [2])
+        assert np.allclose(env._movement_rewards([3]), [0.05])
+        assert np.allclose(env._movement_rewards([2]), [0.0])
+    finally:
+        env.close()
+
+
 def test_mappo_update_handles_a_shared_three_agent_rollout():
     observation_dim = 12
     policy = MAPPOPolicy(observation_dim, ACTION_COUNT)
