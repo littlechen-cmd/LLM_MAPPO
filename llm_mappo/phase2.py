@@ -82,6 +82,7 @@ class Phase2Warehouse:
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
     oracle_interaction_mask: bool = True
+    render_mode: Optional[str] = None
     _env: gym.Env = field(init=False, repr=False)
     _planner: AStarPlanner = field(init=False, repr=False)
     _raw_observations: Sequence[np.ndarray] = field(init=False, repr=False)
@@ -95,16 +96,18 @@ class Phase2Warehouse:
             raise ValueError("Phase 2 requires at least one AGV.")
         if self.waypoint_reward < 0.0:
             raise ValueError("waypoint_reward must not be negative.")
-        self._env = gym.make(
-            self.env_id,
-            disable_env_checker=True,
-            n_agents=self.n_agents,
-            request_queue_size=self.n_agents,
-            max_steps=self.max_steps,
-            batch_interval=self.max_steps + 1,
-            batch_size_range=(1, 1),
-            initial_priority_label="B",
-        )
+        make_options = {
+            "disable_env_checker": True,
+            "n_agents": self.n_agents,
+            "request_queue_size": self.n_agents,
+            "max_steps": self.max_steps,
+            "batch_interval": self.max_steps + 1,
+            "batch_size_range": (1, 1),
+            "initial_priority_label": "B",
+        }
+        if self.render_mode is not None:
+            make_options["render_mode"] = self.render_mode
+        self._env = gym.make(self.env_id, **make_options)
         self._planner = AStarPlanner()
 
     @property
@@ -169,6 +172,10 @@ class Phase2Warehouse:
 
     def close(self) -> None:
         self._env.close()
+
+    def render(self):
+        """Render the current warehouse state in the selected Gymnasium mode."""
+        return self._env.render()
 
     def action_masks(self) -> np.ndarray:
         """Return decentralized masks for valid Phase 2 motion interactions."""

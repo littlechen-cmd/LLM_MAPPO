@@ -50,3 +50,16 @@ The final ten-seed evaluation used 20 episodes per seed (200 episodes total):
 All small single-AGV gates passed. The next experiment must add difficulty
 incrementally (medium map before multi-AGV coordination); do not move to the
 4080S until that local feasibility gate also passes.
+
+## Visualization
+
+Record a deterministic, non-flashing GIF directly from the saved checkpoint:
+
+```powershell
+python visualize_phase2.py artifacts/phase2_small_astar_bc/seed_007/checkpoint_final.pt --fps 5
+```
+
+The default output is `visualization.gif` beside the checkpoint. This mode uses
+a deterministic software frame renderer, avoiding dependence on the unstable
+Windows OpenGL readback path. Use `--render human --fps 5` only when an
+interactive Pyglet window is required.

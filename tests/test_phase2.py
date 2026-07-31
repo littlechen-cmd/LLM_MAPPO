@@ -4,6 +4,7 @@ from llm_mappo.mappo import MAPPOPolicy, MAPPOUpdater, PPOHyperparameters, Rollo
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
 from llm_mappo.phase2_training import Phase2TrainingConfig, train_phase2
 from llm_mappo.phase2_expert import AStarExpert, collect_expert_episodes
+from llm_mappo.visualization import render_warehouse_frame
 from rware.warehouse import Action
 
 
@@ -63,6 +64,19 @@ def test_astar_expert_completes_a_small_single_agv_task_without_collisions():
         assert summary["task_completion_rate"] == 1.0
         assert summary["pickup_delivery_match"]
         assert summary["mean_collisions"] == 0.0
+    finally:
+        env.close()
+
+
+def test_phase2_software_rendering_returns_a_nonblank_rgb_frame():
+    env = Phase2Warehouse(env_id="llm-mappo-small-1ag-v1", n_agents=1, max_steps=8)
+    try:
+        env.reset(seed=3)
+        frame = render_warehouse_frame(env.env)
+        assert isinstance(frame, np.ndarray)
+        assert frame.ndim == 3
+        assert frame.shape[-1] == 3
+        assert np.unique(frame.reshape(-1, 3), axis=0).shape[0] > 5
     finally:
         env.close()
 
