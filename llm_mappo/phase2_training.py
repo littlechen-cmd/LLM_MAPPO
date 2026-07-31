@@ -14,6 +14,7 @@ import torch
 import yaml
 
 from llm_mappo.mappo import MAPPOPolicy, MAPPOUpdater, PPOHyperparameters, RolloutBuffer
+from llm_mappo.phase2_expert import behavior_clone, collect_expert_episodes
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
 
 
@@ -23,13 +24,24 @@ class Phase2TrainingConfig:
 
     seed: int = 7
     device: str = "cpu"
+    torch_num_threads: int = 1
     n_agents: int = 3
     max_steps: int = 400
+    env_id: str = "llm-mappo-medium-3ag-v1"
     waypoint_reward: float = 1.0
+    oracle_interaction_mask: bool = True
+    deadlock_steps: int = 120
     episodes: int = 5000
     rollout_steps: int = 512
     checkpoint_interval: int = 250
     output_dir: str = "artifacts/phase2"
+    expert_validation_episodes: int = 0
+    bc_transitions: int = 0
+    bc_epochs: int = 0
+    bc_batch_size: int = 256
+    bc_learning_rate: float = 3e-4
+    bc_validation_episodes: int = 0
+    bc_completion_rate_min: float = 0.8
     ppo: PPOHyperparameters = field(default_factory=PPOHyperparameters)
 
     @classmethod
@@ -42,23 +54,47 @@ class Phase2TrainingConfig:
         return cls(
             seed=training.get("seed", cls.seed),
             device=training.get("device", cls.device),
+            torch_num_threads=training.get(
+                "torch_num_threads", cls.torch_num_threads
+            ),
             n_agents=environment.get("n_agents", cls.n_agents),
             max_steps=environment.get("max_steps", cls.max_steps),
+            env_id=environment.get("id", cls.env_id),
             waypoint_reward=environment.get(
                 "waypoint_reward", cls.waypoint_reward
             ),
+            oracle_interaction_mask=environment.get(
+                "oracle_interaction_mask", cls.oracle_interaction_mask
+            ),
+            deadlock_steps=environment.get("deadlock_steps", cls.deadlock_steps),
             episodes=training.get("episodes", cls.episodes),
             rollout_steps=training.get("rollout_steps", cls.rollout_steps),
             checkpoint_interval=training.get(
                 "checkpoint_interval", cls.checkpoint_interval
             ),
             output_dir=training.get("output_dir", cls.output_dir),
+            expert_validation_episodes=training.get(
+                "expert_validation_episodes", cls.expert_validation_episodes
+            ),
+            bc_transitions=training.get("bc_transitions", cls.bc_transitions),
+            bc_epochs=training.get("bc_epochs", cls.bc_epochs),
+            bc_batch_size=training.get("bc_batch_size", cls.bc_batch_size),
+            bc_learning_rate=training.get("bc_learning_rate", cls.bc_learning_rate),
+            bc_validation_episodes=training.get(
+                "bc_validation_episodes", cls.bc_validation_episodes
+            ),
+            bc_completion_rate_min=training.get(
+                "bc_completion_rate_min", cls.bc_completion_rate_min
+            ),
             ppo=ppo,
         )
 
 
-def set_seed(seed: int) -> None:
+def set_seed(seed: int, torch_num_threads: int = 1) -> None:
     """Seed every local RNG used by the baseline."""
+    if torch_num_threads < 1:
+        raise ValueError("torch_num_threads must be positive.")
+    torch.set_num_threads(torch_num_threads)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -77,7 +113,7 @@ def _writer(path: Path):
 
 def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
     """Train MAPPO and persist metrics, configuration, and checkpoints."""
-    set_seed(config.seed)
+    set_seed(config.seed, config.torch_num_threads)
     run_dir = Path(config.output_dir) / f"seed_{config.seed:03d}"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "config.json").write_text(
@@ -87,10 +123,14 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
     env = Phase2Warehouse(
         n_agents=config.n_agents,
         max_steps=config.max_steps,
+        env_id=config.env_id,
         waypoint_reward=config.waypoint_reward,
+        oracle_interaction_mask=config.oracle_interaction_mask,
+        deadlock_steps=config.deadlock_steps,
     )
     observations = env.reset(seed=config.seed)
     policy = MAPPOPolicy(env.actor_observation_dim, ACTION_COUNT, config.device)
+    curriculum = _run_expert_curriculum(env, policy, config)
     updater = MAPPOUpdater(policy, config.ppo)
     buffer = RolloutBuffer(config.n_agents)
     writer = _writer(run_dir / "tensorboard")
@@ -102,7 +142,8 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
 
     try:
         while episodes < config.episodes:
-            actions, log_probs, value = policy.act(observations)
+            action_masks = env.action_masks()
+            actions, log_probs, value = policy.act(observations, action_masks)
             transition = env.step(actions)
             done = (
                 transition.terminated
@@ -116,6 +157,7 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
                 transition.team_reward,
                 done,
                 value,
+                action_masks,
             )
             observations = transition.observations
             steps += 1
@@ -166,12 +208,74 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
         "steps": steps,
         "checkpoint": str(final_checkpoint),
         "convergence": convergence,
+        "curriculum": curriculum,
         "last_episode": episode_records[-1] if episode_records else None,
     }
     (run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
     return summary
+
+
+def _run_expert_curriculum(
+    env: Phase2Warehouse, policy: MAPPOPolicy, config: Phase2TrainingConfig
+) -> Dict[str, object]:
+    """Verify A* first, then use its trajectories for an actor-only warm start."""
+    result: Dict[str, object] = {}
+    episodes = max(config.expert_validation_episodes, 0)
+    if not episodes and not config.bc_transitions:
+        return result
+    validation_episodes = episodes or 1
+    dataset, validation = collect_expert_episodes(
+        env, episodes=validation_episodes, seed=config.seed
+    )
+    result["expert_validation"] = validation
+    if (
+        validation["task_completion_rate"] < 1.0
+        or validation["mean_collisions"] != 0.0
+    ):
+        raise RuntimeError(
+            "A* validation failed; do not train MAPPO on this curriculum."
+        )
+    if config.bc_transitions:
+        if config.bc_epochs < 1:
+            raise ValueError("bc_epochs must be positive when bc_transitions is set.")
+        dataset, collection = collect_expert_episodes(
+            env,
+            episodes=config.bc_transitions,
+            seed=config.seed + validation_episodes,
+            max_transitions=config.bc_transitions,
+        )
+        result["demonstration_collection"] = collection
+        result["behavior_cloning"] = behavior_clone(
+            policy,
+            dataset,
+            epochs=config.bc_epochs,
+            batch_size=config.bc_batch_size,
+            learning_rate=config.bc_learning_rate,
+        )
+        if config.bc_validation_episodes:
+            validation_result = evaluate_policy(
+                policy,
+                n_agents=config.n_agents,
+                max_steps=config.max_steps,
+                seeds=(config.seed + 10_000,),
+                episodes_per_seed=config.bc_validation_episodes,
+                env_id=config.env_id,
+                waypoint_reward=config.waypoint_reward,
+                oracle_interaction_mask=config.oracle_interaction_mask,
+                deadlock_steps=config.deadlock_steps,
+            )
+            result["bc_validation"] = validation_result
+            if (
+                validation_result["task_completion_rate"]
+                < config.bc_completion_rate_min
+            ):
+                raise RuntimeError(
+                    "Behavior cloning failed its completion-rate gate; "
+                    "do not start MAPPO fine-tuning."
+                )
+    return result
 
 
 def _save_checkpoint(
@@ -256,9 +360,20 @@ def evaluate_policy(
     max_steps: int,
     seeds: Iterable[int],
     episodes_per_seed: int,
+    env_id: str = "llm-mappo-medium-3ag-v1",
+    waypoint_reward: float = 1.0,
+    oracle_interaction_mask: bool = True,
+    deadlock_steps: int = 120,
 ) -> Dict[str, object]:
     """Evaluate one deterministic policy across independently seeded episodes."""
-    env = Phase2Warehouse(n_agents=n_agents, max_steps=max_steps)
+    env = Phase2Warehouse(
+        n_agents=n_agents,
+        max_steps=max_steps,
+        env_id=env_id,
+        waypoint_reward=waypoint_reward,
+        oracle_interaction_mask=oracle_interaction_mask,
+        deadlock_steps=deadlock_steps,
+    )
     per_seed: List[dict] = []
     try:
         for seed in seeds:
@@ -266,7 +381,10 @@ def evaluate_policy(
             for offset in range(episodes_per_seed):
                 observations = env.reset(seed=seed * 10_000 + offset)
                 while True:
-                    actions, _, _ = policy.act(observations, deterministic=True)
+                    action_masks = env.action_masks()
+                    actions, _, _ = policy.act(
+                        observations, action_masks, deterministic=True
+                    )
                     transition = env.step(actions)
                     observations = transition.observations
                     if (

@@ -24,6 +24,8 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
   - [x] Implement the custom PyTorch CTDE MAPPO baseline, oracle-waypoint adapter, and artifact tracking.
   - [ ] Run and record a local CPU 800-1000 episode feasibility test before any server-scale training.
   - [x] Compare 500-episode local 1-AGV runs with waypoint rewards 0.01 and 0.05; neither completed a task.
+  - [ ] Validate collision classification and oracle interaction masking in a local 500-episode 1-AGV run.
+  - [x] Validate the small-map A* expert, behavior-cloning warm start, and 800-episode local MAPPO feasibility run.
   - [ ] If server training is needed, record whether the 4080S run uses Linux or WSL plus CUDA/PyTorch details.
   - [ ] Train the 1-AGV waypoint/charging curriculum stage.
   - [ ] Train the 3-AGV avoidance/charging-coordination stage.

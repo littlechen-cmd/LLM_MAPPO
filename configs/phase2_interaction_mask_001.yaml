@@ -1,8 +1,8 @@
 environment:
   id: llm-mappo-medium-3ag-v1
-  n_agents: 3
+  n_agents: 1
   max_steps: 400
-  waypoint_reward: 1.0
+  waypoint_reward: 0.01
   oracle_interaction_mask: true
   priority_label: B
   oracle_waypoints: true
@@ -11,10 +11,10 @@ environment:
 training:
   seed: 7
   device: cpu
-  episodes: 5000
+  episodes: 500
   rollout_steps: 512
   checkpoint_interval: 250
-  output_dir: artifacts/phase2
+  output_dir: artifacts/phase2_interaction_mask_001
 
 ppo:
   gamma: 0.99

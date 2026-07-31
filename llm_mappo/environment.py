@@ -22,6 +22,7 @@ class DynamicWarehouse(Warehouse):
         picking_lock_steps: int = 3,
         auto_assign: bool = True,
         initial_priority_label: str = "A",
+        blocked_forward_penalty: float = 0.05,
         **kwargs,
     ):
         self._validate_options(
@@ -30,6 +31,7 @@ class DynamicWarehouse(Warehouse):
             charging_rate,
             picking_lock_steps,
             initial_priority_label,
+            blocked_forward_penalty,
         )
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
@@ -37,10 +39,12 @@ class DynamicWarehouse(Warehouse):
         self.picking_lock_steps = picking_lock_steps
         self.auto_assign = auto_assign
         self.initial_priority_label = initial_priority_label
+        self.blocked_forward_penalty = blocked_forward_penalty
         self.task_queue = TaskQueue()
         self._batch_index = 0
         self._shelf_home = {}
         self.total_collisions = 0
+        self.total_blocked_forwards = 0
         self.last_events: List[dict] = []
         super().__init__(*args, **kwargs)
         stations = charging_stations or self._default_charging_stations()
@@ -64,6 +68,7 @@ class DynamicWarehouse(Warehouse):
         charging_rate,
         picking_lock_steps,
         initial_priority_label,
+        blocked_forward_penalty,
     ):
         if batch_interval <= 0:
             raise ValueError("batch_interval must be positive.")
@@ -75,11 +80,14 @@ class DynamicWarehouse(Warehouse):
             raise ValueError("picking_lock_steps must not be negative.")
         if len(initial_priority_label) != 1 or not initial_priority_label.isupper():
             raise ValueError("initial_priority_label must be one uppercase character.")
+        if blocked_forward_penalty < 0.0:
+            raise ValueError("blocked_forward_penalty must not be negative.")
 
     def reset(self, seed=None, options=None):
         self.task_queue = TaskQueue()
         self._batch_index = 0
         self.total_collisions = 0
+        self.total_blocked_forwards = 0
         self.last_events = []
         super().reset(seed=seed, options=options)
         for agent in self.agents:
@@ -88,6 +96,7 @@ class DynamicWarehouse(Warehouse):
             agent.picking_lock_steps = 0
             agent.task_id = None
             agent.collision_count = 0
+            agent.blocked_forward_count = 0
 
         self._shelf_home = {
             shelf.id: (shelf.x, shelf.y) for shelf in self.shelfs
@@ -125,16 +134,20 @@ class DynamicWarehouse(Warehouse):
             Action.NOOP if agent.dead or locked_before[agent.id] else action
             for agent, action in zip(self.agents, requested_actions)
         ]
-        collision_initiators = self._collision_initiators(effective_actions)
+        forward_attempts = self._forward_attempts(effective_actions, pre_state)
         active_before = tuple(self.task_queue.active_tasks)
         _, rewards, terminated, truncated, _ = super().step(
             [action.value for action in effective_actions]
         )
         rewards = np.asarray(rewards, dtype=np.float64)
         self.last_events = []
+        collision_initiators, blocked_forwards = self._classify_failed_forwards(
+            forward_attempts, pre_state
+        )
 
         self._complete_delivered_tasks(active_before, rewards)
         self._apply_collision_penalties(collision_initiators, rewards)
+        self._apply_blocked_forward_penalties(blocked_forwards, rewards)
         self._update_batteries(pre_state, locked_before, rewards)
         self._advance_picking_locks(locked_before)
         self._spawn_scheduled_batch()
@@ -168,6 +181,7 @@ class DynamicWarehouse(Warehouse):
                 "charging_stations": list(self.charging_stations),
                 "picking_stations": list(self.picking_stations),
                 "collisions": self.total_collisions,
+                "blocked_forwards": self.total_blocked_forwards,
                 "events": list(self.last_events),
                 "agents": [
                     {
@@ -177,6 +191,7 @@ class DynamicWarehouse(Warehouse):
                         "task_id": agent.task_id,
                         "picking_lock_steps": agent.picking_lock_steps,
                         "collision_count": agent.collision_count,
+                        "blocked_forward_count": agent.blocked_forward_count,
                     }
                     for agent in self.agents
                 ],
@@ -280,23 +295,72 @@ class DynamicWarehouse(Warehouse):
         elif self.reward_type == RewardType.TWO_STAGE:
             rewards[agent_id - 1] -= 0.5
 
-    def _collision_initiators(self, actions: Sequence[Action]) -> List[int]:
-        positions = {(agent.x, agent.y) for agent in self.agents}
-        initiators = []
+    def _forward_attempts(self, actions, pre_state):
+        positions = {
+            state["position"]: agent_id for agent_id, state in pre_state.items()
+        }
+        attempts = []
         for agent, action in zip(self.agents, actions):
-            if action == Action.FORWARD and self._forward_target(agent) in positions:
-                initiators.append(agent.id)
-        return initiators
+            if action != Action.FORWARD:
+                continue
+            raw_target = self._unbounded_forward_target(agent)
+            target = self._forward_target(agent)
+            attempts.append(
+                {
+                    "agent_id": agent.id,
+                    "target": target,
+                    "at_boundary": raw_target != target,
+                    "target_agent_id": positions.get(target),
+                    "static_obstacle": (
+                        pre_state[agent.id]["loaded"]
+                        and target != pre_state[agent.id]["position"]
+                        and any(
+                            (shelf.x, shelf.y) == target
+                            for shelf in self.shelfs
+                        )
+                    ),
+                }
+            )
+        return attempts
+
+    def _classify_failed_forwards(self, attempts, pre_state):
+        collisions = []
+        blocked = []
+        for attempt in attempts:
+            agent_id = attempt["agent_id"]
+            agent = self.agents[agent_id - 1]
+            if (agent.x, agent.y) != pre_state[agent_id]["position"]:
+                continue
+            other_agent_id = attempt["target_agent_id"]
+            if other_agent_id is not None and other_agent_id != agent_id:
+                collisions.append(agent_id)
+                continue
+            if attempt["at_boundary"]:
+                reason = "boundary"
+            elif attempt["static_obstacle"]:
+                reason = "static_obstacle"
+            else:
+                reason = "movement_blocked"
+            blocked.append({"agent_id": agent_id, "reason": reason})
+        return collisions, blocked
 
     def _forward_target(self, agent) -> Tuple[int, int]:
+        x, y = self._unbounded_forward_target(agent)
+        return (
+            min(max(0, x), self.grid_size[1] - 1),
+            min(max(0, y), self.grid_size[0] - 1),
+        )
+
+    @staticmethod
+    def _unbounded_forward_target(agent) -> Tuple[int, int]:
         x, y = agent.x, agent.y
         if agent.dir == Direction.UP:
-            return x, max(0, y - 1)
+            return x, y - 1
         if agent.dir == Direction.DOWN:
-            return x, min(self.grid_size[0] - 1, y + 1)
+            return x, y + 1
         if agent.dir == Direction.LEFT:
-            return max(0, x - 1), y
-        return min(self.grid_size[1] - 1, x + 1), y
+            return x - 1, y
+        return x + 1, y
 
     def _apply_collision_penalties(self, initiators: Sequence[int], rewards):
         for agent_id in initiators:
@@ -305,6 +369,21 @@ class DynamicWarehouse(Warehouse):
             agent.collision_count += 1
             self.total_collisions += 1
             self.last_events.append({"type": "collision", "agent_id": agent_id})
+
+    def _apply_blocked_forward_penalties(self, blocked_forwards, rewards):
+        for blocked in blocked_forwards:
+            agent_id = blocked["agent_id"]
+            agent = self.agents[agent_id - 1]
+            rewards[agent_id - 1] -= self.blocked_forward_penalty
+            agent.blocked_forward_count += 1
+            self.total_blocked_forwards += 1
+            self.last_events.append(
+                {
+                    "type": "blocked_forward",
+                    "agent_id": agent_id,
+                    "reason": blocked["reason"],
+                }
+            )
 
     def _update_batteries(self, pre_state, locked_before, rewards):
         newly_dead = []

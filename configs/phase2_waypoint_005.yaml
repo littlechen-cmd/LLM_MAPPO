@@ -3,6 +3,7 @@ environment:
   n_agents: 1
   max_steps: 400
   waypoint_reward: 0.05
+  oracle_interaction_mask: true
   priority_label: B
   oracle_waypoints: true
   charging_stations: 3

@@ -1,20 +1,29 @@
 environment:
-  id: llm-mappo-medium-3ag-v1
-  n_agents: 3
-  max_steps: 400
-  waypoint_reward: 1.0
+  id: llm-mappo-small-1ag-v1
+  n_agents: 1
+  max_steps: 200
+  waypoint_reward: 0.01
   oracle_interaction_mask: true
+  deadlock_steps: 120
   priority_label: B
   oracle_waypoints: true
-  charging_stations: 3
+  charging_stations: 1
 
 training:
   seed: 7
   device: cpu
-  episodes: 5000
+  torch_num_threads: 1
+  episodes: 800
   rollout_steps: 512
-  checkpoint_interval: 250
-  output_dir: artifacts/phase2
+  checkpoint_interval: 200
+  output_dir: artifacts/phase2_small_astar_bc
+  expert_validation_episodes: 100
+  bc_transitions: 12000
+  bc_epochs: 30
+  bc_batch_size: 256
+  bc_learning_rate: 0.0003
+  bc_validation_episodes: 20
+  bc_completion_rate_min: 0.80
 
 ppo:
   gamma: 0.99

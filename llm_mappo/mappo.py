@@ -68,12 +68,17 @@ class MAPPOPolicy(nn.Module):
         self.to(self.device)
 
     @torch.no_grad()
-    def act(self, observations: np.ndarray, deterministic: bool = False):
+    def act(
+        self,
+        observations: np.ndarray,
+        action_masks: np.ndarray | None = None,
+        deterministic: bool = False,
+    ):
         actor_obs = torch.as_tensor(
             observations, dtype=torch.float32, device=self.device
         )
         state = actor_obs.unsqueeze(0)
-        logits = self.actor(actor_obs)
+        logits = self._masked_logits(self.actor(actor_obs), action_masks)
         distribution = Categorical(logits=logits)
         actions = (
             torch.argmax(logits, dim=-1) if deterministic else distribution.sample()
@@ -84,9 +89,23 @@ class MAPPOPolicy(nn.Module):
             self.critic(state).item(),
         )
 
-    def evaluate_actions(self, observations: Tensor, actions: Tensor):
-        distribution = Categorical(logits=self.actor(observations))
+    def evaluate_actions(
+        self, observations: Tensor, actions: Tensor, action_masks: Tensor
+    ):
+        distribution = Categorical(
+            logits=self._masked_logits(self.actor(observations), action_masks)
+        )
         return distribution.log_prob(actions), distribution.entropy()
+
+    def _masked_logits(self, logits: Tensor, action_masks) -> Tensor:
+        if action_masks is None:
+            return logits
+        masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device)
+        if masks.shape != logits.shape:
+            raise ValueError("Action-mask shape must match the policy-logit shape.")
+        if not torch.all(masks.any(dim=-1)):
+            raise ValueError("Every AGV must have at least one valid action.")
+        return logits.masked_fill(~masks, torch.finfo(logits.dtype).min)
 
     def values(self, states: Tensor) -> Tensor:
         return self.critic(states)
@@ -108,11 +127,13 @@ class PPOHyperparameters:
 class RolloutBuffer:
     """Collect whole-team transitions and calculate centralized GAE returns."""
 
-    def __init__(self, n_agents: int):
+    def __init__(self, n_agents: int, action_dim: int = 5):
         self.n_agents = n_agents
+        self.action_dim = action_dim
         self.observations: List[np.ndarray] = []
         self.actions: List[np.ndarray] = []
         self.log_probs: List[np.ndarray] = []
+        self.action_masks: List[np.ndarray] = []
         self.rewards: List[float] = []
         self.dones: List[bool] = []
         self.values: List[float] = []
@@ -125,10 +146,14 @@ class RolloutBuffer:
         reward: float,
         done: bool,
         value: float,
+        action_masks: np.ndarray | None = None,
     ) -> None:
         self.observations.append(np.asarray(observations, dtype=np.float32).copy())
         self.actions.append(np.asarray(actions, dtype=np.int64).copy())
         self.log_probs.append(np.asarray(log_probs, dtype=np.float32).copy())
+        if action_masks is None:
+            action_masks = np.ones((self.n_agents, self.action_dim), dtype=bool)
+        self.action_masks.append(np.asarray(action_masks, dtype=bool).copy())
         self.rewards.append(float(reward))
         self.dones.append(bool(done))
         self.values.append(float(value))
@@ -160,6 +185,9 @@ class RolloutBuffer:
             "log_probs": torch.as_tensor(
                 np.stack(self.log_probs), dtype=torch.float32, device=device
             ),
+            "action_masks": torch.as_tensor(
+                np.stack(self.action_masks), dtype=torch.bool, device=device
+            ),
             "advantages": torch.as_tensor(
                 advantages, dtype=torch.float32, device=device
             ),
@@ -170,6 +198,7 @@ class RolloutBuffer:
         self.observations.clear()
         self.actions.clear()
         self.log_probs.clear()
+        self.action_masks.clear()
         self.rewards.clear()
         self.dones.clear()
         self.values.clear()
@@ -202,11 +231,14 @@ class MAPPOUpdater:
                 actor_observations = states.reshape(-1, states.shape[-1])
                 actions = data["actions"][indices].reshape(-1)
                 old_log_probs = data["log_probs"][indices].reshape(-1)
+                action_masks = data["action_masks"][indices].reshape(
+                    -1, data["action_masks"].shape[-1]
+                )
                 batch_advantages = data["advantages"][indices].repeat_interleave(
                     batch_agents
                 )
                 log_probs, entropy = self.policy.evaluate_actions(
-                    actor_observations, actions
+                    actor_observations, actions, action_masks
                 )
                 ratio = torch.exp(log_probs - old_log_probs)
                 clipped_ratio = torch.clamp(

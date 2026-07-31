@@ -25,6 +25,10 @@ def main():
         max_steps=config["max_steps"],
         seeds=args.seeds,
         episodes_per_seed=args.episodes_per_seed,
+        env_id=config.get("env_id", "llm-mappo-medium-3ag-v1"),
+        waypoint_reward=config.get("waypoint_reward", 1.0),
+        oracle_interaction_mask=config.get("oracle_interaction_mask", True),
+        deadlock_steps=config.get("deadlock_steps", 120),
     )
     result["checkpoint"] = str(Path(args.checkpoint))
     result["trained_episodes"] = checkpoint["episodes"]

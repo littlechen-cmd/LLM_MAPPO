@@ -25,6 +25,26 @@ register(
     },
 )
 
+register(
+    id="llm-mappo-small-1ag-v1",
+    entry_point="llm_mappo.environment:DynamicWarehouse",
+    kwargs={
+        "column_height": 8,
+        "shelf_rows": 2,
+        "shelf_columns": 3,
+        "n_agents": 1,
+        "msg_bits": 0,
+        "sensor_range": 4,
+        "request_queue_size": 1,
+        "max_inactivity_steps": None,
+        "max_steps": 200,
+        "reward_type": RewardType.INDIVIDUAL,
+        "batch_interval": 201,
+        "batch_size_range": (1, 1),
+        "picking_lock_steps": 3,
+    },
+)
+
 _sizes = {
     "tiny": (1, 3),
     "small": (2, 3),

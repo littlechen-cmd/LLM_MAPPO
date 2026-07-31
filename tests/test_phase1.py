@@ -93,6 +93,23 @@ def test_collision_penalty_is_applied_to_each_forward_initiator():
     assert rewards[1] == pytest.approx(-2.0)
 
 
+def test_boundary_forward_is_blocked_without_a_false_agv_collision():
+    env = make_env(n_agents=1, batch_interval=100)
+    env.reset(seed=3)
+    env.agents[0].x, env.agents[0].y, env.agents[0].dir = 0, 0, Direction.LEFT
+    env._recalc_grid()
+
+    _, rewards, _, _, info = env.step([Action.FORWARD])
+
+    assert (env.agents[0].x, env.agents[0].y) == (0, 0)
+    assert info["collisions"] == 0
+    assert info["blocked_forwards"] == 1
+    assert rewards[0] == pytest.approx(-0.05)
+    assert info["events"] == [
+        {"type": "blocked_forward", "agent_id": 1, "reason": "boundary"}
+    ]
+
+
 def test_delivery_completes_task_and_enforces_picking_lock():
     env = make_env(batch_interval=100)
     env.reset(seed=8)

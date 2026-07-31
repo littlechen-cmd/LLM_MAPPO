@@ -23,6 +23,8 @@ class EpisodeMetrics:
     collisions: int = 0
     deadlocked: bool = False
     agent_deaths: int = 0
+    picked_tasks: int = 0
+    blocked_forwards: int = 0
     steps: int = 0
     reward: float = 0.0
 
@@ -44,6 +46,8 @@ class EpisodeMetrics:
             "collisions": self.collisions,
             "deadlocked": self.deadlocked,
             "agent_deaths": self.agent_deaths,
+            "picked_tasks": self.picked_tasks,
+            "blocked_forwards": self.blocked_forwards,
             "steps": self.steps,
             "reward": self.reward,
             "success": self.success,
@@ -75,14 +79,16 @@ class Phase2Warehouse:
     max_steps: int = 400
     env_id: str = "llm-mappo-medium-3ag-v1"
     charge_threshold: float = 0.2
-    deadlock_steps: int = 50
+    deadlock_steps: int = 120
     waypoint_reward: float = 1.0
+    oracle_interaction_mask: bool = True
     _env: gym.Env = field(init=False, repr=False)
     _planner: AStarPlanner = field(init=False, repr=False)
     _raw_observations: Sequence[np.ndarray] = field(init=False, repr=False)
     _metrics: EpisodeMetrics = field(init=False, repr=False)
     _last_progress_step: int = field(init=False, default=0, repr=False)
     _last_completed: int = field(init=False, default=0, repr=False)
+    _last_picked: int = field(init=False, default=0, repr=False)
 
     def __post_init__(self) -> None:
         if self.n_agents < 1:
@@ -119,6 +125,7 @@ class Phase2Warehouse:
         self._metrics = EpisodeMetrics(created_tasks=len(info["tasks"]))
         self._last_progress_step = 0
         self._last_completed = 0
+        self._last_picked = 0
         return self._observations()
 
     def step(self, actions: Sequence[int]) -> Phase2Step:
@@ -126,6 +133,9 @@ class Phase2Warehouse:
             raise ValueError("Expected one discrete action for every AGV.")
 
         before = self._waypoint_distances()
+        carrying_before = {
+            agent.id: agent.carrying_shelf is not None for agent in self.env.agents
+        }
         raw_obs, rewards, terminated, truncated, info = self._env.step(actions)
         self._raw_observations = raw_obs
         shaped_rewards = np.asarray(rewards, dtype=np.float32)
@@ -133,11 +143,16 @@ class Phase2Warehouse:
         shaped_rewards += movement_rewards
         shaped_rewards -= 0.01
         shaped_rewards += self._low_battery_penalties(actions)
+        picked_tasks = sum(
+            not carrying_before[agent.id] and agent.carrying_shelf is not None
+            for agent in self.env.agents
+        )
 
         self._update_metrics(
             info,
             float(np.mean(shaped_rewards)),
             bool(np.any(movement_rewards)),
+            picked_tasks,
         )
         observations = self._observations()
         return Phase2Step(
@@ -155,6 +170,22 @@ class Phase2Warehouse:
     def close(self) -> None:
         self._env.close()
 
+    def action_masks(self) -> np.ndarray:
+        """Return decentralized masks for valid Phase 2 motion interactions."""
+        masks = np.ones((self.n_agents, ACTION_COUNT), dtype=bool)
+        for index, agent in enumerate(self.env.agents):
+            if agent.dead or agent.picking_lock_steps:
+                masks[index] = False
+                masks[index, Action.NOOP.value] = True
+            elif self.oracle_interaction_mask:
+                masks[index, Action.TOGGLE_LOAD.value] = self._requires_pickup(
+                    agent.id
+                )
+                if self._requires_pickup(agent.id):
+                    masks[index] = False
+                    masks[index, Action.TOGGLE_LOAD.value] = True
+        return masks
+
     def _observations(self) -> np.ndarray:
         warehouse = self.env
         height, width = warehouse.grid_size
@@ -164,26 +195,55 @@ class Phase2Warehouse:
             waypoint = self._planner.plan(warehouse, agent.id, target).waypoints
             if len(waypoint) > 1:
                 next_point = waypoint[1]
+                desired_direction = self._planner._direction_between(
+                    waypoint[0], next_point
+                )
             else:
                 next_point = target
+                desired_direction = None
             dx = (next_point[0] - agent.x) / max(width - 1, 1)
             dy = (next_point[1] - agent.y) / max(height - 1, 1)
+            direction_features = np.zeros(4, dtype=np.float32)
+            direction_features[agent.dir.value] = 1.0
+            desired_direction_features = np.zeros(4, dtype=np.float32)
+            waypoint_relation_features = np.zeros(3, dtype=np.float32)
+            if desired_direction is not None:
+                desired_direction_features[desired_direction.value] = 1.0
+                if desired_direction == agent.dir:
+                    waypoint_relation_features[0] = 1.0
+                elif self._planner._turn(agent.dir, right=False) == desired_direction:
+                    waypoint_relation_features[1] = 1.0
+                else:
+                    waypoint_relation_features[2] = 1.0
             own = np.asarray(
                 [
                     agent.x / max(width - 1, 1),
                     agent.y / max(height - 1, 1),
                     agent.battery,
                     float(agent.carrying_shelf is not None),
-                    float(agent.dir.value) / 3.0,
                     float(target_kind == "charging"),
                     float(target_kind == "delivery"),
+                    float(self._requires_pickup(agent.id)),
                 ],
                 dtype=np.float32,
             )
             nearby = self._nearby_features(agent.id, width, height)
             global_features = self._global_features(agent.id)
             raw = np.asarray(self._raw_observations[index], dtype=np.float32)
-            rows.append(np.concatenate((raw, own, [dx, dy], nearby, global_features)))
+            rows.append(
+                np.concatenate(
+                    (
+                        raw,
+                        own,
+                        direction_features,
+                        [dx, dy],
+                        desired_direction_features,
+                        waypoint_relation_features,
+                        nearby,
+                        global_features,
+                    )
+                )
+            )
         return np.stack(rows).astype(np.float32, copy=False)
 
     def _target_for_agent(self, agent_id: int) -> Tuple[Tuple[int, int], str]:
@@ -206,6 +266,17 @@ class Phase2Warehouse:
             shelf = warehouse.shelfs[task.shelf_id - 1]
             return (shelf.x, shelf.y), "task"
         return self._nearest((agent.x, agent.y), warehouse.charging_stations), "idle"
+
+    def _requires_pickup(self, agent_id: int) -> bool:
+        warehouse = self.env
+        agent = warehouse.agents[agent_id - 1]
+        if agent.carrying_shelf is not None or agent.dead:
+            return False
+        task = warehouse.task_queue.task_for_agent(agent_id)
+        if task is None:
+            return False
+        shelf = warehouse.shelfs[task.shelf_id - 1]
+        return (agent.x, agent.y) == (shelf.x, shelf.y)
 
     @staticmethod
     def _nearest(point, choices):
@@ -286,12 +357,17 @@ class Phase2Warehouse:
         return penalties
 
     def _update_metrics(
-        self, info: dict, reward: float, waypoint_progress: bool
+        self, info: dict, reward: float, waypoint_progress: bool, picked_tasks: int
     ) -> None:
         completed = sum(task["status"] == "completed" for task in info["tasks"])
         events = info["events"]
-        progressed = waypoint_progress or completed > self._last_completed or any(
-            event["type"] in {"task_completed", "charged"} for event in events
+        progressed = (
+            waypoint_progress
+            or picked_tasks > 0
+            or completed > self._last_completed
+            or any(
+                event["type"] in {"task_completed", "charged"} for event in events
+            )
         )
         if progressed:
             self._last_progress_step = info["step"]
@@ -299,6 +375,8 @@ class Phase2Warehouse:
         self._metrics.completed_tasks = completed
         self._metrics.collisions = int(info["collisions"])
         self._metrics.agent_deaths = sum(agent["dead"] for agent in info["agents"])
+        self._metrics.picked_tasks += picked_tasks
+        self._metrics.blocked_forwards = int(info["blocked_forwards"])
         self._metrics.steps = int(info["step"])
         self._metrics.reward += reward
         if info["step"] - self._last_progress_step >= self.deadlock_steps:
