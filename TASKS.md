@@ -31,7 +31,7 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
   - [ ] If server training is needed, record whether the 4080S run uses Linux or WSL plus CUDA/PyTorch details.
   - [x] Train the 1-AGV waypoint/charging curriculum stage.
   - [ ] Train the 3-AGV avoidance/charging-coordination stage.
-    - [ ] Pass the 100-episode A* multi-AGV safety/completion gate before collecting demonstrations; the current collision-free resolver completes 97.3% of requested tasks and is not sufficient.
+    - [ ] Pass the 100-episode A* multi-AGV safety/completion gate before collecting demonstrations; rolling-horizon reservations reach 99.0% completion with zero collisions, but three seeds still stall with a loaded AGV.
   - [ ] Run the 10-seed Go/No-Go evaluation and record the acceptance result.
 - [ ] Phase 3: Dual-head Actor and A* distillation ablation.
 - [ ] Phase 4: DeepSeek label adjustment and engagement distillation.

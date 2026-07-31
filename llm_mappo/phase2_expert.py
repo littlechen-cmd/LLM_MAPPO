@@ -11,6 +11,7 @@ from torch import nn
 
 from llm_mappo.mappo import MAPPOPolicy
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
+from llm_mappo.planner import ReservationTable
 from rware.warehouse import Action
 
 
@@ -40,6 +41,8 @@ class AStarExpert:
     """Deterministic task controller using the Phase 2 A* waypoint teacher."""
 
     def action_preferences(self, env: Phase2Warehouse) -> np.ndarray:
+        if env.n_agents > 1:
+            return self._reserved_action_preferences(env)
         preferences = np.zeros((env.n_agents, ACTION_COUNT), dtype=np.float32)
         for index, agent in enumerate(env.env.agents):
             if agent.dead or agent.picking_lock_steps:
@@ -54,6 +57,49 @@ class AStarExpert:
                 plan.action_preferences, dtype=np.float32
             )
         return preferences
+
+    def _reserved_action_preferences(self, env: Phase2Warehouse) -> np.ndarray:
+        horizon = 16
+        reservations = ReservationTable(horizon)
+        preferences = np.zeros((env.n_agents, ACTION_COUNT), dtype=np.float32)
+        priorities = sorted(
+            range(env.n_agents), key=lambda index: self._priority_key(env, index)
+        )
+        for index in priorities:
+            agent = env.env.agents[index]
+            if agent.dead or agent.picking_lock_steps:
+                preferences[index, Action.NOOP.value] = 1.0
+                reservations.reserve([(agent.x, agent.y)])
+                continue
+            if env._requires_pickup(agent.id):
+                preferences[index, Action.TOGGLE_LOAD.value] = 1.0
+                reservations.reserve([(agent.x, agent.y)])
+                continue
+            target, _ = env._target_for_agent(agent.id)
+            plan = env._planner.plan_with_reservations(
+                env.env, agent.id, target, reservations
+            )
+            if not plan.waypoints:
+                preferences[index, Action.NOOP.value] = 1.0
+                reservations.reserve([(agent.x, agent.y)])
+                continue
+            timed_path = env._planner.expand_for_orientation(agent.dir, plan.waypoints)
+            preferences[index] = np.asarray(
+                env._planner._preferences_for_timed_path(agent.dir, plan.waypoints),
+                dtype=np.float32,
+            )
+            reservations.reserve(timed_path)
+        return preferences
+
+    @staticmethod
+    def _priority_key(env: Phase2Warehouse, index: int) -> tuple[int, int]:
+        agent = env.env.agents[index]
+        task = env.env.task_queue.task_for_agent(agent.id)
+        if agent.carrying_shelf is not None:
+            return 0, agent.id
+        if task is not None:
+            return 1, agent.id
+        return 2, agent.id
 
     def act(self, env: Phase2Warehouse, action_masks: np.ndarray) -> tuple:
         preferences = self.action_preferences(env)

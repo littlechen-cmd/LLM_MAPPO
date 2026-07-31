@@ -3,7 +3,7 @@ import pytest
 
 import rware
 from llm_mappo.environment import DynamicWarehouse
-from llm_mappo.planner import AStarPlanner
+from llm_mappo.planner import AStarPlanner, ReservationTable
 from llm_mappo.rules import TaskQueue
 from llm_mappo.types import PlannerEvent, PriorityAdjustment, TaskStatus
 from rware.warehouse import Action, Direction, RewardType
@@ -160,3 +160,13 @@ def test_astar_returns_orientation_aware_preferences():
     assert plan.action_preferences[Action.FORWARD.value] == pytest.approx(0.82)
     assert planner.status_for_progress(30, False) == PlannerEvent.STALLED
     assert planner.status_for_progress(0, True) == PlannerEvent.BLOCKED
+
+
+def test_reservation_table_blocks_shared_cells_and_head_on_edge_swaps():
+    reservations = ReservationTable(horizon=4)
+    reservations.reserve([(0, 0), (1, 0), (2, 0)])
+
+    assert not reservations.is_available((1, 0), 1)
+    assert reservations.is_available((0, 1), 1)
+    assert not reservations.permits_edge((1, 0), (0, 0), 1)
+    assert reservations.permits_edge((1, 0), (1, 1), 1)

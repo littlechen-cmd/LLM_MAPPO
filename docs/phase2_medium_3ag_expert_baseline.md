@@ -19,13 +19,21 @@ The initial independent A* actions completed 94.0% of requested tasks but
 produced 1.74 true collisions per episode. A conservative one-step resolver
 was added for head-on moves, competing target cells, and moving into an AGV
 that will not vacate its cell. It eliminated true collisions and blocked
-forwards, but completed 97.3% of requested tasks; some task chains still
-stall before all three deliveries finish.
+forwards, but completed 97.3% of requested tasks.
+
+The current controller replaces that one-step repair with rolling-horizon
+time-expanded A*. Higher-priority AGVs reserve cells and directed edges for a
+16-step window; lower-priority AGVs plan around those reservations, can wait,
+and are replanned every environment step. It completed 99.0% of requested
+tasks across 100 local episodes with zero true collisions and zero blocked
+forwards. Three seeds (50, 85, and 96) still ended at the 400-step limit with
+one loaded, assigned AGV unable to finish delivery.
 
 ## Gate
 
 Do not collect demonstrations or start the 800-episode MAPPO run until the
 expert reaches 100% task completion, pickup/delivery equality, zero true
 collisions, and zero blocked forwards across the 100-episode local check.
-The next implementation task is reservation-aware multi-agent A* with
-time-expanded cell reservations and an explicit yielding/replanning policy.
+The next implementation task is a loaded-AGV recovery policy that detects a
+repeated reserved-path prefix, temporarily parks lower-priority idle AGVs,
+then replans the loaded AGV with released reservations.
