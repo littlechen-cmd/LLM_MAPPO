@@ -58,7 +58,67 @@ class AStarExpert:
     def act(self, env: Phase2Warehouse, action_masks: np.ndarray) -> tuple:
         preferences = self.action_preferences(env)
         masked = _mask_and_normalize(preferences, action_masks)
-        return np.argmax(masked, axis=-1).astype(np.int64), masked
+        actions = np.argmax(masked, axis=-1).astype(np.int64)
+        coordinated = self._coordinate_actions(env, actions)
+        for index, action in enumerate(coordinated):
+            if action != actions[index]:
+                masked[index] = 0.0
+                masked[index, action] = 1.0
+        return coordinated, masked
+
+    @staticmethod
+    def _coordinate_actions(env: Phase2Warehouse, actions: np.ndarray) -> np.ndarray:
+        """Break immediate movement conflicts before RWARE resolves actions."""
+        safe_actions = actions.copy()
+        positions = {
+            (agent.x, agent.y): index for index, agent in enumerate(env.env.agents)
+        }
+        while True:
+            forward_indices = _forward_indices(safe_actions)
+            targets = {
+                index: env.env._forward_target(env.env.agents[index])
+                for index in forward_indices
+            }
+            yielding = _occupied_target_yields(
+                env, safe_actions, positions, targets
+            )
+            yielding.update(_contested_target_yields(forward_indices, targets))
+            if not yielding:
+                return safe_actions
+            for index in yielding:
+                safe_actions[index] = Action.RIGHT.value
+
+
+def _forward_indices(actions: np.ndarray) -> list[int]:
+    return [
+        index
+        for index, action in enumerate(actions)
+        if Action(action) == Action.FORWARD
+    ]
+
+
+def _occupied_target_yields(env, actions, positions, targets) -> set[int]:
+    yielding = set()
+    for index, target in targets.items():
+        occupant = positions.get(target)
+        if occupant is None:
+            continue
+        occupant_moving = Action(actions[occupant]) == Action.FORWARD
+        agent_position = (env.env.agents[index].x, env.env.agents[index].y)
+        if occupant == index or not occupant_moving:
+            yielding.add(index)
+        elif targets.get(occupant) == agent_position:
+            yielding.update((index, occupant))
+    return yielding
+
+
+def _contested_target_yields(forward_indices, targets) -> set[int]:
+    yielding = set()
+    for position in set(targets.values()):
+        contenders = [index for index in forward_indices if targets[index] == position]
+        if len(contenders) > 1:
+            yielding.update(contenders[1:])
+    return yielding
 
 
 def collect_expert_episodes(

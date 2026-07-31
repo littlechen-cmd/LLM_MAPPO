@@ -1,0 +1,46 @@
+environment:
+  id: llm-mappo-medium-3ag-v1
+  n_agents: 1
+  max_steps: 400
+  waypoint_reward: 0.01
+  oracle_interaction_mask: true
+  deadlock_steps: 180
+  priority_label: B
+  oracle_waypoints: true
+  charging_stations: 1
+
+training:
+  seed: 7
+  device: cpu
+  torch_num_threads: 1
+  episodes: 800
+  rollout_steps: 512
+  checkpoint_interval: 200
+  output_dir: artifacts/phase2_medium_astar_bc
+  expert_validation_episodes: 100
+  bc_transitions: 12000
+  bc_epochs: 30
+  bc_batch_size: 256
+  bc_learning_rate: 0.0003
+  bc_validation_episodes: 20
+  bc_completion_rate_min: 0.80
+
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  value_coefficient: 0.5
+  entropy_coefficient: 0.01
+  learning_rate: 0.0003
+  max_grad_norm: 0.5
+  update_epochs: 4
+  minibatch_steps: 64
+
+evaluation:
+  seeds: 10
+  episodes_per_seed: 20
+  task_completion_rate_min: 0.95
+  collisions_per_episode_max: 2
+  deadlock_rate_max: 0.05
+  success_rate_std_max: 0.10
+  convergence_episodes_max: 5000

@@ -68,6 +68,20 @@ def test_astar_expert_completes_a_small_single_agv_task_without_collisions():
         env.close()
 
 
+def test_astar_expert_completes_a_medium_single_agv_task_without_collisions():
+    env = Phase2Warehouse(
+        env_id="llm-mappo-medium-3ag-v1", n_agents=1, max_steps=400
+    )
+    try:
+        dataset, summary = collect_expert_episodes(env, episodes=5, seed=3)
+        assert len(dataset) > 0
+        assert summary["task_completion_rate"] == 1.0
+        assert summary["pickup_delivery_match"]
+        assert summary["mean_collisions"] == 0.0
+    finally:
+        env.close()
+
+
 def test_phase2_software_rendering_returns_a_nonblank_rgb_frame():
     env = Phase2Warehouse(env_id="llm-mappo-small-1ag-v1", n_agents=1, max_steps=8)
     try:
