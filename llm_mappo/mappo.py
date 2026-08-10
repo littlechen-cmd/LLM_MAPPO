@@ -34,6 +34,27 @@ class SharedActor(nn.Module):
         return self.logits(self.encoder(observations))
 
 
+class DualHeadActor(nn.Module):
+    """Shared encoder with rule-labelled engagement and motion heads."""
+
+    def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int = 128):
+        super().__init__()
+        self.encoder = _mlp((observation_dim, hidden_dim, 64))
+        self.engagement_head = nn.Sequential(nn.Linear(64, 1), nn.Sigmoid())
+        self.motion_head = nn.Linear(65, action_dim)
+
+    def features(self, observations: Tensor) -> Tensor:
+        return self.encoder(observations)
+
+    def engagement(self, observations: Tensor) -> Tensor:
+        return self.engagement_head(self.features(observations)).squeeze(-1)
+
+    def forward(self, observations: Tensor) -> Tensor:
+        encoded = self.features(observations)
+        engagement = self.engagement_head(encoded)
+        return self.motion_head(torch.cat((encoded, engagement), dim=-1))
+
+
 class CentralizedCritic(nn.Module):
     """Attention-pool every agent encoding before predicting the team value."""
 
@@ -111,6 +132,63 @@ class MAPPOPolicy(nn.Module):
         return self.critic(states)
 
 
+class DualHeadMAPPOPolicy(nn.Module):
+    """CTDE MAPPO policy used by Phase 3a and its later ablations."""
+
+    def __init__(self, observation_dim: int, action_dim: int, device: str = "cpu"):
+        super().__init__()
+        self.actor = DualHeadActor(observation_dim, action_dim)
+        self.critic = CentralizedCritic(observation_dim)
+        self.device = torch.device(device)
+        self.to(self.device)
+
+    @torch.no_grad()
+    def act(
+        self,
+        observations: np.ndarray,
+        action_masks: np.ndarray | None = None,
+        deterministic: bool = False,
+    ):
+        actor_obs = torch.as_tensor(
+            observations, dtype=torch.float32, device=self.device
+        )
+        logits = self._masked_logits(self.actor(actor_obs), action_masks)
+        distribution = Categorical(logits=logits)
+        actions = (
+            torch.argmax(logits, dim=-1) if deterministic else distribution.sample()
+        )
+        return (
+            actions.cpu().numpy(),
+            distribution.log_prob(actions).cpu().numpy(),
+            self.critic(actor_obs.unsqueeze(0)).item(),
+            self.actor.engagement(actor_obs).cpu().numpy(),
+        )
+
+    def evaluate_actions(
+        self, observations: Tensor, actions: Tensor, action_masks: Tensor
+    ):
+        distribution = Categorical(
+            logits=self._masked_logits(self.actor(observations), action_masks)
+        )
+        return distribution.log_prob(actions), distribution.entropy()
+
+    def engagement(self, observations: Tensor) -> Tensor:
+        return self.actor.engagement(observations)
+
+    def _masked_logits(self, logits: Tensor, action_masks) -> Tensor:
+        if action_masks is None:
+            return logits
+        masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device)
+        if masks.shape != logits.shape:
+            raise ValueError("Action-mask shape must match the policy-logit shape.")
+        if not torch.all(masks.any(dim=-1)):
+            raise ValueError("Every AGV must have at least one valid action.")
+        return logits.masked_fill(~masks, torch.finfo(logits.dtype).min)
+
+    def values(self, states: Tensor) -> Tensor:
+        return self.critic(states)
+
+
 @dataclass
 class PPOHyperparameters:
     gamma: float = 0.99
@@ -122,6 +200,11 @@ class PPOHyperparameters:
     max_grad_norm: float = 0.5
     update_epochs: int = 4
     minibatch_steps: int = 64
+    reservation_kl_coefficient: float = 0.0
+    reservation_kl_decay_interval: int = 100
+    reservation_kl_decay_factor: float = 0.90
+    reservation_kl_minimum: float = 0.03
+    engagement_coefficient: float = 0.0
 
 
 class RolloutBuffer:
@@ -134,6 +217,8 @@ class RolloutBuffer:
         self.actions: List[np.ndarray] = []
         self.log_probs: List[np.ndarray] = []
         self.action_masks: List[np.ndarray] = []
+        self.reservation_preferences: List[np.ndarray] = []
+        self.engagement_targets: List[np.ndarray] = []
         self.rewards: List[float] = []
         self.dones: List[bool] = []
         self.values: List[float] = []
@@ -147,6 +232,8 @@ class RolloutBuffer:
         done: bool,
         value: float,
         action_masks: np.ndarray | None = None,
+        reservation_preferences: np.ndarray | None = None,
+        engagement_targets: np.ndarray | None = None,
     ) -> None:
         self.observations.append(np.asarray(observations, dtype=np.float32).copy())
         self.actions.append(np.asarray(actions, dtype=np.int64).copy())
@@ -154,6 +241,29 @@ class RolloutBuffer:
         if action_masks is None:
             action_masks = np.ones((self.n_agents, self.action_dim), dtype=bool)
         self.action_masks.append(np.asarray(action_masks, dtype=bool).copy())
+        if reservation_preferences is None:
+            preferences = np.ones(
+                (self.n_agents, self.action_dim), dtype=np.float32
+            )
+            preferences /= float(self.action_dim)
+        else:
+            preferences = np.asarray(reservation_preferences, dtype=np.float32)
+            if preferences.shape != (self.n_agents, self.action_dim):
+                raise ValueError(
+                    "Reservation preferences must match the team action shape."
+                )
+            preferences = preferences.copy()
+        self.reservation_preferences.append(preferences)
+        if engagement_targets is None:
+            targets = np.full(self.n_agents, -1.0, dtype=np.float32)
+        else:
+            targets = np.asarray(engagement_targets, dtype=np.float32)
+            if targets.shape != (self.n_agents,):
+                raise ValueError("Engagement targets must contain one value per AGV.")
+            if np.any((targets < 0.0) | (targets > 1.0)):
+                raise ValueError("Engagement targets must be within [0, 1].")
+            targets = targets.copy()
+        self.engagement_targets.append(targets)
         self.rewards.append(float(reward))
         self.dones.append(bool(done))
         self.values.append(float(value))
@@ -188,6 +298,16 @@ class RolloutBuffer:
             "action_masks": torch.as_tensor(
                 np.stack(self.action_masks), dtype=torch.bool, device=device
             ),
+            "reservation_preferences": torch.as_tensor(
+                np.stack(self.reservation_preferences),
+                dtype=torch.float32,
+                device=device,
+            ),
+            "engagement_targets": torch.as_tensor(
+                np.stack(self.engagement_targets),
+                dtype=torch.float32,
+                device=device,
+            ),
             "advantages": torch.as_tensor(
                 advantages, dtype=torch.float32, device=device
             ),
@@ -199,6 +319,8 @@ class RolloutBuffer:
         self.actions.clear()
         self.log_probs.clear()
         self.action_masks.clear()
+        self.reservation_preferences.clear()
+        self.engagement_targets.clear()
         self.rewards.clear()
         self.dones.clear()
         self.values.clear()
@@ -221,6 +343,14 @@ class MAPPOUpdater:
         data["advantages"] = advantages
         total_steps = data["states"].shape[0]
         metric_sums = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
+        use_engagement = self.hyperparameters.engagement_coefficient > 0
+        if use_engagement:
+            if not hasattr(self.policy, "engagement"):
+                raise TypeError("Engagement loss requires a dual-head MAPPO policy.")
+            metric_sums["engagement_loss"] = 0.0
+        use_reservation_kl = self.hyperparameters.reservation_kl_coefficient > 0
+        if use_reservation_kl:
+            metric_sums["reservation_kl"] = 0.0
         updates = 0
         for _ in range(self.hyperparameters.update_epochs):
             order = torch.randperm(total_steps, device=self.policy.device)
@@ -234,6 +364,11 @@ class MAPPOUpdater:
                 action_masks = data["action_masks"][indices].reshape(
                     -1, data["action_masks"].shape[-1]
                 )
+                reservation_preferences = data["reservation_preferences"][indices]
+                reservation_preferences = reservation_preferences.reshape(
+                    -1, reservation_preferences.shape[-1]
+                )
+                engagement_targets = data["engagement_targets"][indices].reshape(-1)
                 batch_advantages = data["advantages"][indices].repeat_interleave(
                     batch_agents
                 )
@@ -252,10 +387,39 @@ class MAPPOUpdater:
                 values = self.policy.values(states)
                 value_loss = nn.functional.mse_loss(values, data["returns"][indices])
                 entropy_bonus = entropy.mean()
+                reservation_kl = torch.zeros((), device=self.policy.device)
+                if use_reservation_kl:
+                    masked_logits = self.policy._masked_logits(
+                        self.policy.actor(actor_observations), action_masks
+                    )
+                    actor_log_probs = torch.log_softmax(masked_logits, dim=-1)
+                    valid_teacher = reservation_preferences * action_masks.float()
+                    normalizer = valid_teacher.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+                    teacher_probs = valid_teacher / normalizer
+                    teacher_log_probs = torch.where(
+                        teacher_probs > 0,
+                        torch.log(teacher_probs.clamp_min(1e-8)),
+                        torch.zeros_like(teacher_probs),
+                    )
+                    reservation_kl = (
+                        teacher_probs * (teacher_log_probs - actor_log_probs)
+                    ).sum(dim=-1).mean()
+                engagement_loss = torch.zeros((), device=self.policy.device)
+                if use_engagement:
+                    valid_targets = engagement_targets >= 0.0
+                    if torch.any(valid_targets):
+                        engagement_values = self.policy.engagement(actor_observations)
+                        engagement_loss = nn.functional.mse_loss(
+                            engagement_values[valid_targets],
+                            engagement_targets[valid_targets],
+                        )
                 loss = (
                     policy_loss
                     + self.hyperparameters.value_coefficient * value_loss
                     - self.hyperparameters.entropy_coefficient * entropy_bonus
+                    + self.hyperparameters.reservation_kl_coefficient
+                    * reservation_kl
+                    + self.hyperparameters.engagement_coefficient * engagement_loss
                 )
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -266,6 +430,15 @@ class MAPPOUpdater:
                 metric_sums["policy_loss"] += policy_loss.item()
                 metric_sums["value_loss"] += value_loss.item()
                 metric_sums["entropy"] += entropy_bonus.item()
+                if use_reservation_kl:
+                    metric_sums["reservation_kl"] += reservation_kl.item()
+                if use_engagement:
+                    metric_sums["engagement_loss"] += engagement_loss.item()
                 updates += 1
         buffer.clear()
-        return {key: value / updates for key, value in metric_sums.items()}
+        metrics = {key: value / updates for key, value in metric_sums.items()}
+        if use_reservation_kl:
+            metrics["reservation_coefficient"] = float(
+                self.hyperparameters.reservation_kl_coefficient
+            )
+        return metrics

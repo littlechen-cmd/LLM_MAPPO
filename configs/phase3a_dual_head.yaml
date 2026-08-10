@@ -1,0 +1,30 @@
+environment:
+  id: llm-mappo-medium-3ag-v1
+  n_agents: 3
+  max_steps: 400
+  waypoint_reward: 0.01
+  oracle_interaction_mask: true
+  deadlock_steps: 180
+  priority_schedule: [A, B, C]
+
+training:
+  seed: 7
+  device: cpu
+  torch_num_threads: 1
+  episodes: 800
+  rollout_steps: 512
+  checkpoint_interval: 200
+  output_dir: artifacts/phase3a_dual_head
+
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  value_coefficient: 0.5
+  entropy_coefficient: 0.01
+  learning_rate: 0.0003
+  max_grad_norm: 0.5
+  update_epochs: 4
+  minibatch_steps: 64
+  engagement_coefficient: 0.10
+  reservation_kl_coefficient: 0.0

@@ -82,6 +82,7 @@ class Phase2Warehouse:
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
     oracle_interaction_mask: bool = True
+    priority_schedule: Optional[Sequence[str]] = None
     render_mode: Optional[str] = None
     _env: gym.Env = field(init=False, repr=False)
     _planner: AStarPlanner = field(init=False, repr=False)
@@ -105,6 +106,8 @@ class Phase2Warehouse:
             "batch_size_range": (1, 1),
             "initial_priority_label": "B",
         }
+        if self.priority_schedule is not None:
+            make_options["priority_schedule"] = tuple(self.priority_schedule)
         if self.render_mode is not None:
             make_options["render_mode"] = self.render_mode
         self._env = gym.make(self.env_id, **make_options)
@@ -234,6 +237,16 @@ class Phase2Warehouse:
                 ],
                 dtype=np.float32,
             )
+            if self.priority_schedule is not None:
+                priority_weight, priority_rank = self._priority_features(agent.id)
+                own = np.concatenate(
+                    (
+                        own,
+                        np.asarray(
+                            [priority_weight / 2.0, priority_rank], dtype=np.float32
+                        ),
+                    )
+                )
             nearby = self._nearby_features(agent.id, width, height)
             global_features = self._global_features(agent.id)
             raw = np.asarray(self._raw_observations[index], dtype=np.float32)
@@ -316,7 +329,14 @@ class Phase2Warehouse:
         warehouse = self.env
         agent = warehouse.agents[agent_id - 1]
         active = warehouse.task_queue.active_tasks
-        highest_priority = 0.5 if active else 0.0
+        highest_priority = (
+            max(
+                warehouse.task_queue.priority_weight(task.label) for task in active
+            )
+            / 2.0
+            if active
+            else 0.0
+        )
         occupied_stations = sum(
             (agent.x, agent.y) in warehouse.charging_stations
             for agent in warehouse.agents
@@ -335,6 +355,15 @@ class Phase2Warehouse:
             ],
             dtype=np.float32,
         )
+
+    def _priority_features(self, agent_id: int) -> Tuple[float, float]:
+        """Encode the assigned task's dynamic priority for the Phase 3 actor."""
+        task = self.env.task_queue.task_for_agent(agent_id)
+        if task is None:
+            return 0.0, 0.0
+        weight = self.env.task_queue.priority_weight(task.label)
+        rank = (ord(task.label[0]) - ord("A")) / 25.0
+        return weight, rank
 
     def _waypoint_distances(self) -> List[int]:
         distances = []

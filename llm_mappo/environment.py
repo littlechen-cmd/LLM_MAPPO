@@ -22,6 +22,7 @@ class DynamicWarehouse(Warehouse):
         picking_lock_steps: int = 3,
         auto_assign: bool = True,
         initial_priority_label: str = "A",
+        priority_schedule: Optional[Sequence[str]] = None,
         blocked_forward_penalty: float = 0.05,
         **kwargs,
     ):
@@ -31,6 +32,7 @@ class DynamicWarehouse(Warehouse):
             charging_rate,
             picking_lock_steps,
             initial_priority_label,
+            priority_schedule,
             blocked_forward_penalty,
         )
         self.batch_interval = batch_interval
@@ -39,6 +41,7 @@ class DynamicWarehouse(Warehouse):
         self.picking_lock_steps = picking_lock_steps
         self.auto_assign = auto_assign
         self.initial_priority_label = initial_priority_label
+        self.priority_schedule = tuple(priority_schedule or ())
         self.blocked_forward_penalty = blocked_forward_penalty
         self.task_queue = TaskQueue()
         self._batch_index = 0
@@ -68,6 +71,7 @@ class DynamicWarehouse(Warehouse):
         charging_rate,
         picking_lock_steps,
         initial_priority_label,
+        priority_schedule,
         blocked_forward_penalty,
     ):
         if batch_interval <= 0:
@@ -80,6 +84,13 @@ class DynamicWarehouse(Warehouse):
             raise ValueError("picking_lock_steps must not be negative.")
         if len(initial_priority_label) != 1 or not initial_priority_label.isupper():
             raise ValueError("initial_priority_label must be one uppercase character.")
+        if priority_schedule is not None:
+            if not priority_schedule:
+                raise ValueError("priority_schedule must not be empty when provided.")
+            if any(
+                len(label) != 1 or not label.isupper() for label in priority_schedule
+            ):
+                raise ValueError("priority_schedule labels must be uppercase letters.")
         if blocked_forward_penalty < 0.0:
             raise ValueError("blocked_forward_penalty must not be negative.")
 
@@ -101,7 +112,12 @@ class DynamicWarehouse(Warehouse):
         self._shelf_home = {
             shelf.id: (shelf.x, shelf.y) for shelf in self.shelfs
         }
-        self._create_batch([shelf.id for shelf in self.request_queue])
+        shelf_ids = [shelf.id for shelf in self.request_queue]
+        if self.priority_schedule:
+            for shelf_id in shelf_ids:
+                self._create_batch([shelf_id])
+        else:
+            self._create_batch(shelf_ids)
         self._refresh_request_queue()
         self._assign_available_tasks()
         observations = tuple(self._make_obs(agent) for agent in self.agents)
@@ -202,11 +218,16 @@ class DynamicWarehouse(Warehouse):
     def _create_batch(self, shelf_ids: Sequence[int]) -> Sequence[Task]:
         if not shelf_ids:
             return ()
-        letter = (
-            self.initial_priority_label
-            if self._batch_index == 0
-            else chr(ord("A") + min(self._batch_index, 25))
-        )
+        if self.priority_schedule:
+            letter = self.priority_schedule[
+                self._batch_index % len(self.priority_schedule)
+            ]
+        else:
+            letter = (
+                self.initial_priority_label
+                if self._batch_index == 0
+                else chr(ord("A") + min(self._batch_index, 25))
+            )
         batch_id = self._batch_index + 1
         self._batch_index += 1
         tasks = self.task_queue.create_batch(
