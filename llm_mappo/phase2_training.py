@@ -42,6 +42,7 @@ class Phase2TrainingConfig:
     bc_learning_rate: float = 3e-4
     bc_validation_episodes: int = 0
     bc_completion_rate_min: float = 0.8
+    expert_completion_rate_min: float = 1.0
     ppo: PPOHyperparameters = field(default_factory=PPOHyperparameters)
 
     @classmethod
@@ -85,6 +86,9 @@ class Phase2TrainingConfig:
             ),
             bc_completion_rate_min=training.get(
                 "bc_completion_rate_min", cls.bc_completion_rate_min
+            ),
+            expert_completion_rate_min=training.get(
+                "expert_completion_rate_min", cls.expert_completion_rate_min
             ),
             ppo=ppo,
         )
@@ -231,7 +235,7 @@ def _run_expert_curriculum(
     )
     result["expert_validation"] = validation
     if (
-        validation["task_completion_rate"] < 1.0
+        validation["task_completion_rate"] < config.expert_completion_rate_min
         or validation["mean_collisions"] != 0.0
     ):
         raise RuntimeError(

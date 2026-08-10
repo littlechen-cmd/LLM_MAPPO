@@ -40,7 +40,14 @@ class ExpertDataset:
 class AStarExpert:
     """Deterministic task controller using the Phase 2 A* waypoint teacher."""
 
+    def __init__(self):
+        self._last_state = {}
+        self._stalled_steps = {}
+        self.path_livelocks = 0
+        self.state_deadlocks = 0
+
     def action_preferences(self, env: Phase2Warehouse) -> np.ndarray:
+        self._update_progress(env)
         if env.n_agents > 1:
             return self._reserved_action_preferences(env)
         preferences = np.zeros((env.n_agents, ACTION_COUNT), dtype=np.float32)
@@ -59,7 +66,7 @@ class AStarExpert:
         return preferences
 
     def _reserved_action_preferences(self, env: Phase2Warehouse) -> np.ndarray:
-        horizon = 16
+        horizon = self._reservation_horizon(env)
         reservations = ReservationTable(horizon)
         preferences = np.zeros((env.n_agents, ACTION_COUNT), dtype=np.float32)
         priorities = sorted(
@@ -75,7 +82,7 @@ class AStarExpert:
                 preferences[index, Action.TOGGLE_LOAD.value] = 1.0
                 reservations.reserve([(agent.x, agent.y)])
                 continue
-            target, _ = env._target_for_agent(agent.id)
+            target, _ = self._target_for_agent(env, agent.id)
             plan = env._planner.plan_with_reservations(
                 env.env, agent.id, target, reservations
             )
@@ -90,6 +97,73 @@ class AStarExpert:
             )
             reservations.reserve(timed_path)
         return preferences
+
+    def _target_for_agent(self, env: Phase2Warehouse, agent_id: int):
+        if agent_id in self._yielding_agents(env):
+            agent = env.env.agents[agent_id - 1]
+            target = min(
+                env.env.charging_stations,
+                key=lambda point: abs(point[0] - agent.x) + abs(point[1] - agent.y),
+            )
+            return target, "parking"
+        return env._target_for_agent(agent_id)
+
+    def _yielding_agents(self, env: Phase2Warehouse) -> set[int]:
+        stalled_loaded = {
+            agent.id
+            for agent in env.env.agents
+            if agent.carrying_shelf is not None
+            and self._stalled_steps.get(agent.id, 0) >= 20
+        }
+        if not stalled_loaded:
+            return set()
+        priorities = sorted(
+            (agent.id for agent in env.env.agents if agent.id not in stalled_loaded),
+            reverse=True,
+        )
+        return set(priorities[: max(1, len(priorities) - 1)])
+
+    def _reservation_horizon(self, env: Phase2Warehouse) -> int:
+        escape = 16
+        for agent in env.env.agents:
+            if agent.carrying_shelf is None:
+                continue
+            distance = min(
+                abs(agent.x - goal[0]) + abs(agent.y - goal[1])
+                for goal in env.env.picking_stations
+            )
+            escape = max(escape, distance + 8)
+        return min(64, escape)
+
+    def _update_progress(self, env: Phase2Warehouse) -> None:
+        if not self._last_state or env.env._cur_steps == 0:
+            self._last_state = {}
+            self._stalled_steps = {}
+        for agent in env.env.agents:
+            target, _ = self._target_for_agent(env, agent.id)
+            distance = abs(agent.x - target[0]) + abs(agent.y - target[1])
+            state = (
+                (agent.x, agent.y),
+                agent.dir,
+                agent.carrying_shelf is not None,
+                distance,
+                agent.picking_lock_steps,
+            )
+            previous = self._last_state.get(agent.id)
+            if previous is not None and agent.carrying_shelf is not None:
+                moved = state[0] != previous[0]
+                improved = distance < previous[3]
+                if not moved and not improved:
+                    self._stalled_steps[agent.id] = (
+                        self._stalled_steps.get(agent.id, 0) + 1
+                    )
+                    if state[1] != previous[1]:
+                        self.path_livelocks += 1
+                else:
+                    self._stalled_steps[agent.id] = 0
+            self._last_state[agent.id] = state
+            if previous == state and agent.carrying_shelf is not None:
+                self.state_deadlocks += 1
 
     @staticmethod
     def _priority_key(env: Phase2Warehouse, index: int) -> tuple[int, int]:
@@ -179,12 +253,21 @@ def collect_expert_episodes(
     expert = AStarExpert()
     dataset = ExpertDataset([], [], [])
     records = []
+    livelock_count = 0
+    state_deadlock_count = 0
     for episode in range(episodes):
+        expert.path_livelocks = 0
+        expert.state_deadlocks = 0
         observations = env.reset(seed=seed + episode)
+        episode_observations = []
+        episode_masks = []
+        episode_preferences = []
         while True:
             masks = env.action_masks()
             actions, preferences = expert.act(env, masks)
-            dataset.append(observations, masks, preferences)
+            episode_observations.append(observations)
+            episode_masks.append(masks)
+            episode_preferences.append(preferences)
             transition = env.step(actions)
             observations = transition.observations
             if (
@@ -193,6 +276,14 @@ def collect_expert_episodes(
                 or transition.metrics.deadlocked
             ):
                 records.append(transition.metrics.as_dict())
+                if transition.metrics.success:
+                    dataset.append(
+                        np.concatenate(episode_observations),
+                        np.concatenate(episode_masks),
+                        np.concatenate(episode_preferences),
+                    )
+                livelock_count += expert.path_livelocks
+                state_deadlock_count += expert.state_deadlocks
                 break
             if max_transitions is not None and len(dataset) >= max_transitions:
                 break
@@ -214,6 +305,8 @@ def collect_expert_episodes(
         "pickup_delivery_match": bool(np.array_equal(pickups, deliveries)),
         "mean_collisions": float(collisions.mean()),
         "mean_blocked_forwards": float(blocked.mean()),
+        "path_livelocks": livelock_count,
+        "state_deadlocks": state_deadlock_count,
     }
 
 

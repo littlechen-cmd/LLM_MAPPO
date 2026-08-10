@@ -30,7 +30,7 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
   - [x] Add deterministic checkpoint visualization with GIF and paced human modes.
   - [ ] If server training is needed, record whether the 4080S run uses Linux or WSL plus CUDA/PyTorch details.
   - [x] Train the 1-AGV waypoint/charging curriculum stage.
-  - [ ] Train the 3-AGV avoidance/charging-coordination stage.
+  - [ ] Train the 3-AGV avoidance/charging-coordination stage (first local trial No-Go: 0.82 completion, 3.94 collisions/episode, 0.385 deadlock rate).
     - [ ] Pass the 100-episode A* multi-AGV safety/completion gate before collecting demonstrations; rolling-horizon reservations reach 99.0% completion with zero collisions, but three seeds still stall with a loaded AGV.
   - [ ] Run the 10-seed Go/No-Go evaluation and record the acceptance result.
 - [ ] Phase 3: Dual-head Actor and A* distillation ablation.

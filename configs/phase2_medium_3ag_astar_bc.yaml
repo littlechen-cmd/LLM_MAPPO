@@ -18,6 +18,7 @@ training:
   checkpoint_interval: 200
   output_dir: artifacts/phase2_medium_3ag_astar_bc
   expert_validation_episodes: 100
+  expert_completion_rate_min: 0.95
   bc_transitions: 24000
   bc_epochs: 30
   bc_batch_size: 256
