@@ -8,14 +8,15 @@ environment:
   priority_schedule: [A, B, C]
 
 training:
+  phase: 3a
   seed: 7
   device: cpu
   torch_num_threads: 1
-  episodes: 800
+  episodes: 1000
   rollout_steps: 512
   checkpoint_interval: 200
   metrics_write_interval: 20
-  output_dir: artifacts/phase3a_dual_head
+  output_dir: artifacts/phase3a_r2_semantic
 
 ppo:
   gamma: 0.99
@@ -29,3 +30,6 @@ ppo:
   minibatch_steps: 64
   engagement_coefficient: 0.10
   reservation_kl_coefficient: 0.0
+  reservation_kl_decay_interval: 2000
+  reservation_kl_decay_factor: 0.90
+  reservation_kl_minimum: 0.0

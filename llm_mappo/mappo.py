@@ -35,24 +35,24 @@ class SharedActor(nn.Module):
 
 
 class DualHeadActor(nn.Module):
-    """Shared encoder with rule-labelled engagement and motion heads."""
+    """Separate semantic and motion branches for the Phase 3 r2 ablation."""
 
     def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int = 128):
         super().__init__()
-        self.encoder = _mlp((observation_dim, hidden_dim, 64))
+        self.motion_encoder = _mlp((observation_dim, hidden_dim, 64))
+        self.engagement_encoder = _mlp((observation_dim, hidden_dim, 64))
         self.engagement_head = nn.Sequential(nn.Linear(64, 1), nn.Sigmoid())
         self.motion_head = nn.Linear(65, action_dim)
 
-    def features(self, observations: Tensor) -> Tensor:
-        return self.encoder(observations)
-
     def engagement(self, observations: Tensor) -> Tensor:
-        return self.engagement_head(self.features(observations)).squeeze(-1)
+        encoded = self.engagement_encoder(observations)
+        return self.engagement_head(encoded).squeeze(-1)
 
     def forward(self, observations: Tensor) -> Tensor:
-        encoded = self.features(observations)
-        engagement = self.engagement_head(encoded)
-        return self.motion_head(torch.cat((encoded, engagement), dim=-1))
+        motion_features = self.motion_encoder(observations)
+        engagement = self.engagement(observations).unsqueeze(-1)
+        motion_input = torch.cat((motion_features, engagement.detach()), dim=-1)
+        return self.motion_head(motion_input)
 
 
 class CentralizedCritic(nn.Module):

@@ -10,6 +10,7 @@ def main() -> None:
     parser = ArgumentParser()
     parser.add_argument("--config", default="configs/phase3a_dual_head.yaml")
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--training-seed-groups", type=int, nargs="+")
     parser.add_argument("--episodes", type=int)
     parser.add_argument("--output-dir")
     args = parser.parse_args()
@@ -18,6 +19,8 @@ def main() -> None:
         value = getattr(args, name.replace("-", "_"), None)
         if value is not None:
             setattr(config, name.replace("-", "_"), value)
+    if args.training_seed_groups is not None:
+        config.training_seed_groups = tuple(args.training_seed_groups)
     print(json.dumps(train_phase3(config), indent=2))
 
 

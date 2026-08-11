@@ -44,11 +44,56 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
     distillation.
   - [x] Verify the Phase 3a entry point with a 2-episode CPU smoke run; this is
     an interface check only and is not the required feasibility result.
-  - [ ] Run the required local CPU 800-1000 episode Phase 3a feasibility test
-    and record the configuration, runtime, TensorBoard curves, checkpoint, and
-    seed-level evaluation before considering any server run.
-  - [ ] Phase 3b: add A* path distillation as the only change from the frozen
-    Phase 3a configuration, then run the on/off ablation.
+  - [x] Complete the Phase 3a training preflight: stabilize orientation-aware
+    A* heap ordering, persist live plotting data atomically, and report
+    priority-latency evaluation metrics.
+  - [x] Run the local CPU 800-episode Phase 3a feasibility test and 10-seed
+    evaluation. It reached 0.948 completion, 0.815 collisions/episode, 0.09
+    deadlock rate, and A<C priority latency; it is No-Go due to completion and
+    deadlock rate.
+  - [x] Phase 3b implementation: add time-reserved A* path distillation as the
+    only change from the frozen Phase 3a configuration. The A* teacher
+    completes seed 4's 20 evaluation instances with 1.0 completion, zero
+    collisions, and zero state deadlocks.
+  - [x] Supersede the original Phase 3a/3b pair with the r2 semantic ablation;
+    do not run the original Phase 3b configuration as a comparison baseline.
+  - [x] Implement the r2 semantic engagement architecture: A/B/C/idle labels
+    are 0.8/0.5/0.3/0.1, engagement has an independent encoder, and the motion
+    head consumes `e.detach()`.
+  - [x] Run Phase 3a-r2 for 1,000 local CPU episodes without A* KL, then freeze
+    its configuration as the only baseline for Phase 3b-r2. Its 10-seed x
+    20-episode result was No-Go: 0.895 completion, 2.960 collisions/episode,
+    0.180 deadlock rate, and no aggregate A<C priority latency.
+  - [x] Run Phase 3b-r2 for 1,000 local CPU episodes with only 0.05 time-reserved
+    A* KL added, then compare both r2 runs over 10 seeds x 20 episodes. It
+    improved to 0.993 completion, 2.690 collisions/episode, 0.005 deadlock
+    rate, 0.020 success-rate std, and A<C latency, but is No-Go on the
+    collision gate because seed 3 recorded 21.15 collisions/episode.
+  - [ ] Run the Phase 3b-r2 multi-seed robustness feasibility experiment with
+    round-robin training seed groups 100-109 and held-out evaluation seed
+    groups 0-9. Record per-episode seed provenance and compare the aggregate
+    and per-seed collision rates against the static 3b-r2 baseline.
+  - [ ] Phase 3 final acceptance: enable dynamic ingress after the current
+    static r2 training is complete. Preserve the static r2 configurations as
+    architecture-ablation baselines; do not modify the active run.
+    - [ ] Parameterize and pass through `batch_interval`,
+      `batch_size_range`, `initial_priority_label`, `request_queue_size`, and
+      `priority_schedule`, while preserving static defaults for reproducibility.
+    - [ ] Use `max_steps: 1000`, `batch_interval: 100`,
+      `batch_size_range: [1, 3]`, `request_queue_size: 4`,
+      `initial_priority_label: A`, and no priority-label wraparound.
+    - [ ] Replace fixed A/B/C engagement targets with the confirmed
+      active-letter rank linear mapping; keep idle or inactive agents at 0.1.
+    - [ ] Pass the dynamic-ingress time-reserved A* feasibility gate before
+      collecting demonstrations or running MAPPO: completion >= 0.95,
+      collisions <= 2.0, and deadlock rate <= 0.05.
+    - [ ] Run dynamic-ingress Phase 3a-r2 and Phase 3b-r2 with identical
+      ingress streams and seeds, then compare completion, collisions, deadlock,
+      A<C latency, and behavior-group metrics.
+    - [ ] Add dynamic-ingress behavior-group evaluation: narrow-corridor
+      yielding, high/low-priority intersection passage, and low-battery
+      charging diversion. Special scenario injection remains deferred to
+      Phase 4.
 - [ ] Phase 4: DeepSeek label adjustment and engagement distillation.
 - [ ] Phase 4b: Large-scale 6-AGV evaluation.
 - [ ] Phase 5: 80x120, 10-AGV target-scale evaluation and paper outputs.

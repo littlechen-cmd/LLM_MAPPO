@@ -8,14 +8,17 @@ environment:
   priority_schedule: [A, B, C]
 
 training:
+  phase: 3b
   seed: 7
+  # Round-robin training families; evaluation continues to hold out families 0-9.
+  training_seed_groups: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
   device: cpu
   torch_num_threads: 1
-  episodes: 800
+  episodes: 1000
   rollout_steps: 512
   checkpoint_interval: 200
   metrics_write_interval: 20
-  output_dir: artifacts/phase3a_dual_head
+  output_dir: artifacts/phase3b_r2_semantic_astar_kl_multiseed
 
 ppo:
   gamma: 0.99
@@ -28,4 +31,7 @@ ppo:
   update_epochs: 4
   minibatch_steps: 64
   engagement_coefficient: 0.10
-  reservation_kl_coefficient: 0.0
+  reservation_kl_coefficient: 0.05
+  reservation_kl_decay_interval: 2000
+  reservation_kl_decay_factor: 0.90
+  reservation_kl_minimum: 0.0
