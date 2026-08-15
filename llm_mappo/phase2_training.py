@@ -14,7 +14,11 @@ import torch
 import yaml
 
 from llm_mappo.mappo import MAPPOPolicy, MAPPOUpdater, PPOHyperparameters, RolloutBuffer
-from llm_mappo.phase2_expert import behavior_clone, collect_expert_episodes
+from llm_mappo.phase2_expert import (
+    AStarExpert,
+    behavior_clone,
+    collect_expert_episodes,
+)
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
 
 
@@ -115,7 +119,7 @@ def _writer(path: Path):
         return None
 
 
-def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
+def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:  # noqa: C901
     """Train MAPPO and persist metrics, configuration, and checkpoints."""
     set_seed(config.seed, config.torch_num_threads)
     run_dir = Path(config.output_dir) / f"seed_{config.seed:03d}"
@@ -136,17 +140,41 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
     policy = MAPPOPolicy(env.actor_observation_dim, ACTION_COUNT, config.device)
     curriculum = _run_expert_curriculum(env, policy, config)
     updater = MAPPOUpdater(policy, config.ppo)
+    reservation_kl_initial = config.ppo.reservation_kl_coefficient
     buffer = RolloutBuffer(config.n_agents)
     writer = _writer(run_dir / "tensorboard")
+    reservation_expert = (
+        AStarExpert()
+        if config.n_agents > 1 and config.ppo.reservation_kl_coefficient > 0
+        else None
+    )
     episode_records: List[dict] = []
     update_records: List[dict] = []
     episodes = 0
     steps = 0
     next_checkpoint = config.checkpoint_interval
+    if writer is not None:
+        writer.add_scalar("config/episodes", config.episodes, 0)
+        writer.add_scalar("config/n_agents", config.n_agents, 0)
+        writer.add_scalar("config/max_steps", config.max_steps, 0)
+        writer.add_scalar(
+            "config/reservation_kl_initial", reservation_kl_initial, 0
+        )
+        writer.add_scalar(
+            "config/reservation_kl_minimum",
+            config.ppo.reservation_kl_minimum,
+            0,
+        )
+        writer.flush()
 
     try:
         while episodes < config.episodes:
             action_masks = env.action_masks()
+            reservation_preferences = None
+            if reservation_expert is not None:
+                _, reservation_preferences = reservation_expert.act(
+                    env, action_masks
+                )
             actions, log_probs, value = policy.act(observations, action_masks)
             transition = env.step(actions)
             done = (
@@ -162,6 +190,7 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
                 done,
                 value,
                 action_masks,
+                reservation_preferences,
             )
             observations = transition.observations
             steps += 1
@@ -182,12 +211,16 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:
                 episodes == config.episodes and len(buffer)
             ):
                 last_value = 0.0 if done else policy.act(observations)[2]
+                config.ppo.reservation_kl_coefficient = _reservation_coefficient(
+                    config.ppo, reservation_kl_initial, episodes
+                )
                 losses = updater.update(buffer, last_value)
                 update = {"update": len(update_records) + 1, "steps": steps, **losses}
                 update_records.append(update)
                 if writer is not None:
                     for key, loss in losses.items():
                         writer.add_scalar(f"training/{key}", loss, steps)
+                    writer.flush()
             next_checkpoint = _checkpoint_if_due(
                 episodes,
                 next_checkpoint,
@@ -324,6 +357,24 @@ def _loss_convergence(updates: Sequence[dict]) -> Dict[str, float | bool | None]
         "recent_value_loss_std": float(recent.std()),
         "relative_value_loss_shift": float(relative_shift),
     }
+
+
+def _reservation_coefficient(
+    hyperparameters: PPOHyperparameters, initial: float, episodes: int
+) -> float:
+    """Decay the reservation-policy trust-region weight without disabling it."""
+    if initial <= 0:
+        return 0.0
+    if hyperparameters.reservation_kl_decay_interval < 1:
+        raise ValueError("reservation_kl_decay_interval must be positive.")
+    if not 0 < hyperparameters.reservation_kl_decay_factor <= 1:
+        raise ValueError("reservation_kl_decay_factor must be in (0, 1].")
+    return max(
+        hyperparameters.reservation_kl_minimum,
+        initial
+        * hyperparameters.reservation_kl_decay_factor
+        ** (episodes // hyperparameters.reservation_kl_decay_interval),
+    )
 
 
 def _checkpoint_if_due(

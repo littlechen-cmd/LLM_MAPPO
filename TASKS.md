@@ -2,6 +2,25 @@
 
 Update this file whenever a task begins, completes, or is blocked. Major completed milestones require a Git commit.
 
+## Ongoing Experiment Observability
+
+- [x] Provide deterministic visual replay, GIF capture, diagnostic traces, and
+  TensorBoard metrics for training and evaluation artifacts.
+- [ ] For every subsequent training or gate run, provide a TensorBoard command
+  and at least one deterministic replay command before judging the result.
+
+## Charging Layout And Coordination
+
+- [x] Expand the dynamic medium warehouse with a two-cell outer highway ring
+  (`20x16` to `24x20`) and place two charging stations in each outer corner.
+- [x] Permit charging-station capacity above fleet size; publish per-station
+  occupancy and reservation metadata for deterministic replay diagnostics.
+- [x] Prevent full-battery idle AGVs from targeting charging stations and
+  allocate distinct stations to low-battery AGVs by battery urgency.
+- [ ] Evaluate the proposed reward-led charging policy separately. Do not
+  remove the current low-battery safety target until a controlled local
+  ablation demonstrates no energy-safety regression.
+
 ## Phase 0: Repository and Development Baseline
 
 - [x] Verify the upstream RWARE worktree and create a recoverable Git bundle.
@@ -69,32 +88,123 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
     improved to 0.993 completion, 2.690 collisions/episode, 0.005 deadlock
     rate, 0.020 success-rate std, and A<C latency, but is No-Go on the
     collision gate because seed 3 recorded 21.15 collisions/episode.
-  - [ ] Run the Phase 3b-r2 multi-seed robustness feasibility experiment with
+  - [x] Run the Phase 3b-r2 multi-seed robustness feasibility experiment with
     round-robin training seed groups 100-109 and held-out evaluation seed
-    groups 0-9. Record per-episode seed provenance and compare the aggregate
-    and per-seed collision rates against the static 3b-r2 baseline.
+    groups 0-9. Its 10-seed x 20-episode result passes the static gate: 0.978
+    completion, 1.575 collisions/episode, 0.005 deadlock rate, 0.037 success
+    std, and A<C latency. Retain seed 2's 9.8 collisions/episode as a
+    per-seed risk to monitor during dynamic-ingress validation.
   - [ ] Phase 3 final acceptance: enable dynamic ingress after the current
     static r2 training is complete. Preserve the static r2 configurations as
     architecture-ablation baselines; do not modify the active run.
-    - [ ] Parameterize and pass through `batch_interval`,
+    - [x] Parameterize and pass through `batch_interval`,
       `batch_size_range`, `initial_priority_label`, `request_queue_size`, and
       `priority_schedule`, while preserving static defaults for reproducibility.
-    - [ ] Use `max_steps: 1000`, `batch_interval: 100`,
+    - [x] Add matched dynamic-ingress 3a-r2 and 3b-r2 configurations using
+      `max_steps: 1000`, `batch_interval: 40`,
       `batch_size_range: [1, 3]`, `request_queue_size: 4`,
-      `initial_priority_label: A`, and no priority-label wraparound.
-    - [ ] Replace fixed A/B/C engagement targets with the confirmed
+      `task_completion_target: 9`, initial A/B batches, and no priority-label
+      wraparound. Batch arrivals continue while the completion target has not
+      been reached, even when more than nine tasks have already arrived.
+    - [x] Replace fixed A/B/C engagement targets with the confirmed
       active-letter rank linear mapping; keep idle or inactive agents at 0.1.
     - [ ] Pass the dynamic-ingress time-reserved A* feasibility gate before
       collecting demonstrations or running MAPPO: completion >= 0.95,
       collisions <= 2.0, and deadlock rate <= 0.05.
+      - [x] Add the independent `eval/evaluate_dynamic_ingress_astar.py` gate.
+        Its prior 1-episode smoke used the superseded 100-step ingress policy;
+        rerun the gate with the 40-step, initial-A/B, target-9 contract before
+        collecting demonstrations. The required 10-seed x 20-episode gate
+        remains pending.
     - [ ] Run dynamic-ingress Phase 3a-r2 and Phase 3b-r2 with identical
       ingress streams and seeds, then compare completion, collisions, deadlock,
       A<C latency, and behavior-group metrics.
+      - [x] Complete matched local CPU training for both configurations:
+        3a reached 1,000 episodes / 311,834 steps and 3b reached 1,000
+        episodes / 235,500 steps. In their final 200 training-distribution
+        episodes, both reached 1.0 completion and 0 deadlocks; mean collisions
+        were 1.84 (3a) and 1.72 (3b). These are development metrics, not
+        held-out acceptance results.
+      - [ ] Archive or rerun the matched held-out dynamic-policy 10-seed
+        evaluation. No dynamic 3a/3b `evaluation_10x20.json` artifact was
+        present when results were reviewed on 2026-08-13, so completion,
+        collision, deadlock, and A<C acceptance cannot be claimed.
     - [ ] Add dynamic-ingress behavior-group evaluation: narrow-corridor
       yielding, high/low-priority intersection passage, and low-battery
-      charging diversion. Special scenario injection remains deferred to
-      Phase 4.
+      charging diversion.
+      - [x] Implement and run natural-rollout behavior evaluation over held-out
+        seeds 0-9 with 5 episodes each. 3b observed 95 priority-intersection
+        decisions with 16.84% high-priority-first actions; 3a observed 466
+        with 5.15%. 3a saw one narrow-corridor opportunity and did not yield;
+        3b saw none. Neither model naturally covered low-battery loaded-AGV
+        charging diversion. Uncovered groups are reported as such, not passed.
+      - [ ] Add controlled Phase 4 scenarios for sufficiently sampled
+        narrow-corridor yielding and low-battery charging diversion. This is
+        scenario injection for evaluation/training and remains deferred from
+        Phase 3.
 - [ ] Phase 4: DeepSeek label adjustment and engagement distillation.
+  - [x] Replace the ambiguous single engagement scalar with the frozen Phase 4
+    dual-semantic contract (`task_commitment`, `local_assertiveness`) before
+    any local CPU feasibility training. The actor, offline teacher, rollout
+    buffer, losses, checkpoint, and audit path now preserve both dimensions.
+  - [x] Define an offline-only semantic-teacher contract: strict JSON schemas,
+    label-only priority adjustments, cached JSONL labels, and zero API calls in
+    MAPPO training/evaluation.
+  - [x] Add a deterministic mock teacher plus a Phase 4 configuration. Mock
+    labels are limited to interface/smoke validation and are not experimental
+    evidence for LLM distillation.
+  - [x] Freeze the Phase 4 scale as `medium / 5 AGV / batch [4,8] / N=50`.
+    It is a new scale track, not a direct Phase 3b ablation; retain a matched
+    rule-engagement + A* KL baseline before attributing effects to LLM labels.
+  - [x] Add controlled scenario injection and stratified label sampling:
+    120 normal transport (30%), 100 priority conflicts (25%), 80 narrow-corridor
+    yields (20%), 60 low-battery diversions (15%), and 40 station/exit conflicts
+    (10%). Controlled states are label-only and never replace PPO rollouts.
+  - [x] Run a 5-AGV A* safety/completion preflight before DeepSeek collection.
+    The local 3-seed x 2-episode run reached 1.0 completion, 0 collisions, and
+    0 terminating deadlocks under [4,8] ingress and N=50; it also recorded
+    344-362 path-livelock and 1-7 transient state-repeat events per seed, so
+    retain them as Phase 4 diagnostics rather than treating the gate as a
+    coordination-quality proof.
+  - [x] Generate and review the frozen 400-record DeepSeek offline label set.
+    Audit at least 10% of records for scenario type, bounded JSON, rationale,
+    priority semantics, and absence of action/assignment instructions.
+    - [x] Stabilize DeepSeek response parsing, safe empty-response diagnostics,
+      and the local tests required before a one-request smoke collection.
+    - [x] Run and inspect one real DeepSeek request before starting the full
+      400-record collection. The smoke produced one schema-valid 615-dimension
+      record with label 0.8 and removed its partial checkpoint.
+    - [x] Pass the dual-semantic pilot gate on 25 real DeepSeek records (five per
+      scenario type): all automatic direction/schema checks and the full
+      rationale review passed after isolating controlled-scene geometry.
+    - [x] Resume the user-run formal collection from its validated 79-record
+      checkpoint and complete the frozen 120/100/80/60/40 quotas. The final
+      dataset has 400 unique v2 IDs. Its SHA-256 is recorded in the formal
+      audit report.
+    - [x] Close the formal rationale audit: the deterministic 10% review and a
+      full text/state scan found 11 rationale-only anomalies, including two
+      score/reason contradictions. Two targeted repair rounds corrected all
+      affected rationales without changing any numeric training target.
+      - [x] Add a non-destructive, resumable targeted re-label utility and a
+        frozen 11-ID repair list. The audit now detects all 11 affected records
+        automatically instead of relying only on sampled manual review.
+      - [x] Re-audit the final `repaired_r2` artifact: all 400 records, fixed
+        quotas, 400 unique IDs, and the deterministic 10% sample passed; the
+        full automatic issue count is zero.
+    - [ ] Optionally run a same-scenario Flash non-thinking versus Flash-high
+      versus Pro-high label-quality pilot. This is a provider-quality study and
+      does not block the Phase 4 CPU feasibility experiment.
+  - [x] Verify the dual-semantic training interface with a one-episode local CPU
+    Mock-label smoke: both component losses were non-zero and the checkpoint
+    stored a 2-output semantic head feeding a 66-input motion head.
+  - [x] Repeat the one-episode local CPU interface smoke with the formal 400
+    records: both component losses were non-zero, the checkpoint shapes were
+    `(2, 64)` and `(5, 66)`, and training made zero API calls.
+  - [ ] Run the required local CPU 800-episode Phase 4 feasibility experiment,
+    with TensorBoard and deterministic visual replay, before any server run.
+  - [ ] Evaluate the Phase 3b versus Phase 4 comparison on 10 held-out seeds;
+    report significance, priority latency, starvation, safety, and zero online
+    LLM calls.
 - [ ] Phase 4b: Large-scale 6-AGV evaluation.
 - [ ] Phase 5: 80x120, 10-AGV target-scale evaluation and paper outputs.
 - [ ] Phase 6 (optional): Runtime LLM exception handling.

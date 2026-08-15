@@ -21,6 +21,7 @@ from llm_mappo.mappo import (
 )
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
 from llm_mappo.phase2_expert import AStarExpert
+from llm_mappo.phase4 import OfflineSemanticTeacher
 
 
 @dataclass
@@ -35,7 +36,12 @@ class Phase3TrainingConfig:
     n_agents: int = 3
     max_steps: int = 400
     env_id: str = "llm-mappo-medium-3ag-v1"
-    priority_schedule: tuple[str, ...] = ("A", "B", "C")
+    priority_schedule: tuple[str, ...] | None = ("A", "B", "C")
+    batch_interval: int | None = None
+    batch_size_range: tuple[int, int] | None = None
+    initial_priority_label: str = "B"
+    request_queue_size: int | None = None
+    task_completion_target: int | None = None
     charge_threshold: float = 0.2
     waypoint_reward: float = 0.01
     oracle_interaction_mask: bool = True
@@ -45,6 +51,8 @@ class Phase3TrainingConfig:
     checkpoint_interval: int = 200
     metrics_write_interval: int = 20
     output_dir: str = "artifacts/phase3a_dual_head"
+    offline_semantic_dataset: str | None = None
+    offline_semantic_neighbours: int = 3
     ppo: PPOHyperparameters = field(
         default_factory=lambda: PPOHyperparameters(
             reservation_kl_coefficient=0.0,
@@ -59,10 +67,12 @@ class Phase3TrainingConfig:
         environment = source.get("environment", {})
         training = source.get("training", {})
         ppo_values = dict(source.get("ppo", {}))
+        schedule = environment.get("priority_schedule", cls.priority_schedule)
+        batch_size_range = environment.get("batch_size_range")
         ppo_values.setdefault("reservation_kl_coefficient", 0.0)
         ppo_values.setdefault("engagement_coefficient", 0.1)
         return cls(
-            phase=training.get("phase", cls.phase),
+            phase=str(training.get("phase", cls.phase)),
             seed=training.get("seed", cls.seed),
             training_seed_groups=tuple(
                 training.get("training_seed_groups", cls.training_seed_groups)
@@ -72,9 +82,16 @@ class Phase3TrainingConfig:
             n_agents=environment.get("n_agents", cls.n_agents),
             max_steps=environment.get("max_steps", cls.max_steps),
             env_id=environment.get("id", cls.env_id),
-            priority_schedule=tuple(
-                environment.get("priority_schedule", cls.priority_schedule)
+            priority_schedule=tuple(schedule) if schedule else None,
+            batch_interval=environment.get("batch_interval"),
+            batch_size_range=(
+                tuple(batch_size_range) if batch_size_range is not None else None
             ),
+            initial_priority_label=environment.get(
+                "initial_priority_label", cls.initial_priority_label
+            ),
+            request_queue_size=environment.get("request_queue_size"),
+            task_completion_target=environment.get("task_completion_target"),
             charge_threshold=environment.get("charge_threshold", cls.charge_threshold),
             waypoint_reward=environment.get("waypoint_reward", cls.waypoint_reward),
             oracle_interaction_mask=environment.get(
@@ -90,6 +107,15 @@ class Phase3TrainingConfig:
                 "metrics_write_interval", cls.metrics_write_interval
             ),
             output_dir=training.get("output_dir", cls.output_dir),
+            offline_semantic_dataset=training.get(
+                "offline_semantic_dataset", training.get("offline_engagement_dataset")
+            ),
+            offline_semantic_neighbours=training.get(
+                "offline_semantic_neighbours",
+                training.get(
+                    "offline_engagement_neighbours", cls.offline_semantic_neighbours
+                ),
+            ),
             ppo=PPOHyperparameters(**ppo_values),
         )
 
@@ -137,11 +163,18 @@ def _writer(path: Path):
 
 
 def _engagement_targets(env: Phase2Warehouse) -> np.ndarray:
+    active_letters = sorted(
+        {task.label[0] for task in env.env.task_queue.active_tasks}
+    )
     values = []
     for agent in env.env.agents:
         task = env.env.task_queue.task_for_agent(agent.id)
         if agent.dead or agent.picking_lock_steps or task is None:
             values.append(0.1)
+        elif env.priority_schedule is None:
+            rank = active_letters.index(task.label[0])
+            count = len(active_letters)
+            values.append(0.1 + 0.7 * (1.0 - (rank + 1) / count))
         elif task.label.startswith("A"):
             values.append(0.8)
         elif task.label.startswith("B"):
@@ -149,6 +182,23 @@ def _engagement_targets(env: Phase2Warehouse) -> np.ndarray:
         else:
             values.append(0.3)
     return np.asarray(values, dtype=np.float32)
+
+
+def _engagement_label_definition(
+    config: Phase3TrainingConfig,
+) -> Dict[str, float | str]:
+    """Describe the supervision semantics persisted beside a checkpoint."""
+    if config.priority_schedule is None:
+        return {
+            "active_letter_rank": "0.1 + 0.7 * (1 - (rank + 1) / n)",
+            "idle_or_inactive": 0.1,
+        }
+    return {
+        "A": 0.8,
+        "B": 0.5,
+        "C": 0.3,
+        "idle_or_inactive": 0.1,
+    }
 
 
 def _save_checkpoint(path: Path, policy, config, episodes: int, steps: int) -> None:
@@ -217,16 +267,43 @@ def _reservation_coefficient(
     )
 
 
+def _engagement_coefficient(
+    hyperparameters: PPOHyperparameters, initial: float, episodes: int
+) -> float:
+    """Decay the offline semantic teacher weight as the policy becomes autonomous."""
+    if initial <= 0.0:
+        return 0.0
+    if hyperparameters.engagement_decay_interval < 1:
+        raise ValueError("engagement_decay_interval must be positive.")
+    if not 0.0 < hyperparameters.engagement_decay_factor <= 1.0:
+        raise ValueError("engagement_decay_factor must be in (0, 1].")
+    return max(
+        hyperparameters.engagement_minimum,
+        initial
+        * hyperparameters.engagement_decay_factor
+        ** (episodes // hyperparameters.engagement_decay_interval),
+    )
+
+
 def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C901
     """Train one Phase 3 architecture ablation on the fixed medium/3-AGV scale."""
-    if config.n_agents != 3:
-        raise ValueError("Phase 3a is fixed to the medium three-AGV setting.")
-    if config.phase not in {"3a", "3b"}:
-        raise ValueError("Phase must be either '3a' or '3b'.")
+    if config.phase in {"3a", "3b"} and config.n_agents != 3:
+        raise ValueError("Phase 3a and 3b are fixed to the medium three-AGV setting.")
+    if config.phase == "4" and config.n_agents != 5:
+        raise ValueError("Phase 4 is fixed to the controlled medium five-AGV setting.")
+    if config.phase not in {"3a", "3b", "4"}:
+        raise ValueError("Phase must be '3a', '3b', or '4'.")
     if config.phase == "3a" and config.ppo.reservation_kl_coefficient != 0.0:
         raise ValueError("Phase 3a must not enable A* path distillation.")
-    if config.phase == "3b" and config.ppo.reservation_kl_coefficient <= 0.0:
-        raise ValueError("Phase 3b requires a positive A* KL coefficient.")
+    if config.phase == "4" and not config.offline_semantic_dataset:
+        raise ValueError("Phase 4 requires an offline_semantic_dataset.")
+    if (
+        config.phase in {"3b", "4"}
+        and config.ppo.reservation_kl_coefficient <= 0.0
+    ):
+        raise ValueError("Phase 3b and Phase 4 require a positive A* KL coefficient.")
+    if config.offline_semantic_neighbours < 1:
+        raise ValueError("offline_semantic_neighbours must be positive.")
     if config.checkpoint_interval < 1 or config.metrics_write_interval < 1:
         raise ValueError("Phase 3 intervals must be positive.")
     _validate_training_seed_groups(config.training_seed_groups)
@@ -237,7 +314,7 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         json.dumps(asdict(config), indent=2), encoding="utf-8"
     )
     env = Phase2Warehouse(
-        n_agents=3,
+        n_agents=config.n_agents,
         max_steps=config.max_steps,
         env_id=config.env_id,
         charge_threshold=config.charge_threshold,
@@ -245,15 +322,37 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         oracle_interaction_mask=config.oracle_interaction_mask,
         deadlock_steps=config.deadlock_steps,
         priority_schedule=config.priority_schedule,
+        batch_interval=config.batch_interval,
+        batch_size_range=config.batch_size_range,
+        initial_priority_label=config.initial_priority_label,
+        request_queue_size=config.request_queue_size,
+        task_completion_target=config.task_completion_target,
+        include_priority_features=True,
     )
     environment_seed, seed_group, seed_offset = _training_episode_seed(config, 0)
     observations = env.reset(seed=environment_seed)
-    policy = DualHeadMAPPOPolicy(env.actor_observation_dim, ACTION_COUNT, config.device)
+    semantic_dim = 2 if config.phase == "4" else 1
+    policy = DualHeadMAPPOPolicy(
+        env.actor_observation_dim,
+        ACTION_COUNT,
+        config.device,
+        semantic_dim=semantic_dim,
+    )
     updater = MAPPOUpdater(policy, config.ppo)
-    buffer = RolloutBuffer(config.n_agents)
+    offline_teacher = (
+        OfflineSemanticTeacher.from_jsonl(config.offline_semantic_dataset)
+        if config.phase == "4"
+        else None
+    )
+    if offline_teacher is not None and (
+        offline_teacher.observation_dim != env.actor_observation_dim
+    ):
+        raise ValueError("Offline semantic dataset observation size is incompatible.")
+    buffer = RolloutBuffer(config.n_agents, semantic_dim=semantic_dim)
     writer = _writer(run_dir / "tensorboard")
-    reservation_expert = AStarExpert() if config.phase == "3b" else None
+    reservation_expert = AStarExpert() if config.phase in {"3b", "4"} else None
     reservation_kl_initial = config.ppo.reservation_kl_coefficient
+    engagement_initial = config.ppo.engagement_coefficient
     episodes = 0
     steps = 0
     episode_records: List[dict] = []
@@ -268,10 +367,35 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         writer.add_scalar("config/n_agents", config.n_agents, 0)
         writer.add_scalar("config/max_steps", config.max_steps, 0)
         writer.add_scalar(
-            "config/engagement_coefficient",
-            config.ppo.engagement_coefficient,
+            "config/dynamic_ingress_enabled",
+            int(config.batch_interval is not None),
             0,
         )
+        if config.batch_interval is not None:
+            writer.add_scalar("config/batch_interval", config.batch_interval, 0)
+        if config.batch_size_range is not None:
+            writer.add_scalar("config/batch_size_min", config.batch_size_range[0], 0)
+            writer.add_scalar("config/batch_size_max", config.batch_size_range[1], 0)
+        if config.request_queue_size is not None:
+            writer.add_scalar(
+                "config/request_queue_size", config.request_queue_size, 0
+            )
+        if config.task_completion_target is not None:
+            writer.add_scalar(
+                "config/task_completion_target", config.task_completion_target, 0
+            )
+        writer.add_scalar(
+            "config/engagement_coefficient",
+            engagement_initial,
+            0,
+        )
+        writer.add_scalar(
+            "config/offline_engagement_teacher", int(offline_teacher is not None), 0
+        )
+        if offline_teacher is not None:
+            writer.add_scalar(
+                "config/offline_engagement_records", offline_teacher.size, 0
+            )
         writer.add_scalar(
             "config/reservation_kl_coefficient",
             reservation_kl_initial,
@@ -283,7 +407,13 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
     try:
         while episodes < config.episodes:
             masks = env.action_masks()
-            engagement_targets = _engagement_targets(env)
+            engagement_targets = (
+                offline_teacher.targets(
+                    observations, config.offline_semantic_neighbours
+                )
+                if offline_teacher is not None
+                else _engagement_targets(env)
+            )
             reservation_preferences = None
             if reservation_expert is not None:
                 _, reservation_preferences = reservation_expert.act(env, masks)
@@ -346,7 +476,11 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 config.ppo.reservation_kl_coefficient = _reservation_coefficient(
                     config.ppo, reservation_kl_initial, episodes
                 )
+                config.ppo.engagement_coefficient = _engagement_coefficient(
+                    config.ppo, engagement_initial, episodes
+                )
                 losses = updater.update(buffer, last_value)
+                losses["engagement_coefficient"] = config.ppo.engagement_coefficient
                 update = {"update": len(update_records) + 1, "steps": steps, **losses}
                 update_records.append(update)
                 _write_csv(run_dir / "updates.csv", update_records)
@@ -388,15 +522,23 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         "checkpoint": str(final),
         "last_episode": episode_records[-1] if episode_records else None,
         "priority_mean_completion_steps": _mean_durations(priority_durations),
-        "a_star_distillation": config.phase == "3b",
-        "engagement_architecture": "separate_encoder_detached_for_motion",
-        "rule_engagement_labels": {
-            "A": 0.8,
-            "B": 0.5,
-            "C": 0.3,
-            "idle_or_inactive": 0.1,
-        },
+        "a_star_distillation": config.phase in {"3b", "4"},
+        "offline_llm_semantic_distillation": offline_teacher is not None,
+        "semantic_architecture": (
+            "task_commitment_and_local_assertiveness_detached_for_motion"
+            if semantic_dim == 2
+            else "single_engagement_detached_for_motion"
+        ),
+        "rule_engagement_labels": _engagement_label_definition(config),
     }
+    if offline_teacher is not None:
+        summary["offline_semantic_teacher"] = {
+            "dataset": config.offline_semantic_dataset,
+            "records": offline_teacher.size,
+            "models": list(offline_teacher.model_names),
+            "neighbours": config.offline_semantic_neighbours,
+            "api_calls_during_training": 0,
+        }
     if reservation_expert is not None:
         summary["reservation_teacher"] = {
             "path_livelocks": reservation_expert.path_livelocks,
@@ -418,7 +560,7 @@ def load_phase3_policy(checkpoint_path: str | Path, device: str = "cpu"):
     return policy, checkpoint["config"], checkpoint
 
 
-def evaluate_phase3(
+def evaluate_phase3(  # noqa: C901
     policy,
     config: Dict[str, object],
     seeds: Iterable[int],
@@ -437,15 +579,27 @@ def evaluate_phase3(
     """
     if engagement_sample_rate < 1:
         raise ValueError("engagement_sample_rate must be positive.")
+    priority_schedule = config.get("priority_schedule", ("A", "B", "C"))
+    batch_size_range = config.get("batch_size_range")
     env = Phase2Warehouse(
-        n_agents=3,
+        n_agents=int(config.get("n_agents", 3)),
         max_steps=config["max_steps"],
         env_id=config["env_id"],
         charge_threshold=config.get("charge_threshold", 0.2),
         waypoint_reward=config.get("waypoint_reward", 0.01),
         oracle_interaction_mask=config.get("oracle_interaction_mask", True),
         deadlock_steps=config.get("deadlock_steps", 180),
-        priority_schedule=tuple(config.get("priority_schedule", ("A", "B", "C"))),
+        priority_schedule=(
+            tuple(priority_schedule) if priority_schedule else None
+        ),
+        batch_interval=config.get("batch_interval"),
+        batch_size_range=(
+            tuple(batch_size_range) if batch_size_range is not None else None
+        ),
+        initial_priority_label=config.get("initial_priority_label", "B"),
+        request_queue_size=config.get("request_queue_size"),
+        task_completion_target=config.get("task_completion_target"),
+        include_priority_features=True,
     )
     per_seed: List[dict] = []
     engagement_samples: List[tuple[str, float]] = []

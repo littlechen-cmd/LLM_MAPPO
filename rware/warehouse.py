@@ -167,6 +167,7 @@ class Warehouse(gym.Env):
         image_observation_directional: bool = True,
         normalised_coordinates: bool = False,
         render_mode: str = "human",
+        outer_aisle_width: int = 0,
     ):
         """The robotic warehouse environment
 
@@ -234,8 +235,15 @@ class Warehouse(gym.Env):
 
         self.goals: List[Tuple[int, int]] = []
 
+        if outer_aisle_width < 0:
+            raise ValueError("outer_aisle_width must not be negative.")
+        if layout and outer_aisle_width:
+            raise ValueError("outer_aisle_width is only supported for parameter layouts.")
+
         if not layout:
-            self._make_layout_from_params(shelf_columns, shelf_rows, column_height)
+            self._make_layout_from_params(
+                shelf_columns, shelf_rows, column_height, outer_aisle_width
+            )
         else:
             self._make_layout_from_str(layout)
 
@@ -291,28 +299,39 @@ class Warehouse(gym.Env):
         self.renderer = None
         self.render_mode = render_mode
 
-    def _make_layout_from_params(self, shelf_columns, shelf_rows, column_height):
+    def _make_layout_from_params(
+        self, shelf_columns, shelf_rows, column_height, outer_aisle_width=0
+    ):
         assert shelf_columns % 2 == 1, "Only odd number of shelf columns is supported"
 
+        inner_height = (column_height + 1) * shelf_rows + 2
+        inner_width = (2 + 1) * shelf_columns + 1
         self.grid_size = (
-            (column_height + 1) * shelf_rows + 2,
-            (2 + 1) * shelf_columns + 1,
+            inner_height + outer_aisle_width * 2,
+            inner_width + outer_aisle_width * 2,
         )
         self.column_height = column_height
+        self.outer_aisle_width = outer_aisle_width
         self.grid = np.zeros((_COLLISION_LAYERS, *self.grid_size), dtype=np.int32)
         self.goals = [
-            (self.grid_size[1] // 2 - 1, self.grid_size[0] - 1),
-            (self.grid_size[1] // 2, self.grid_size[0] - 1),
+            (inner_width // 2 - 1 + outer_aisle_width,
+             inner_height - 1 + outer_aisle_width),
+            (inner_width // 2 + outer_aisle_width,
+             inner_height - 1 + outer_aisle_width),
         ]
 
         self.highways = np.zeros(self.grid_size, dtype=np.uint8)
 
         def highway_func(x, y):
-            is_on_vertical_highway = x % 3 == 0
-            is_on_horizontal_highway = y % (column_height + 1) == 0
-            is_on_delivery_row = y == self.grid_size[0] - 1
-            is_on_queue = (y > self.grid_size[0] - (column_height + 3)) and (
-                x == self.grid_size[1] // 2 - 1 or x == self.grid_size[1] // 2
+            inner_x = x - outer_aisle_width
+            inner_y = y - outer_aisle_width
+            if not (0 <= inner_x < inner_width and 0 <= inner_y < inner_height):
+                return True
+            is_on_vertical_highway = inner_x % 3 == 0
+            is_on_horizontal_highway = inner_y % (column_height + 1) == 0
+            is_on_delivery_row = inner_y == inner_height - 1
+            is_on_queue = (inner_y > inner_height - (column_height + 3)) and (
+                inner_x == inner_width // 2 - 1 or inner_x == inner_width // 2
             )
             return (
                 is_on_vertical_highway

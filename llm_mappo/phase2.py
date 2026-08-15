@@ -20,6 +20,7 @@ class EpisodeMetrics:
 
     completed_tasks: int = 0
     created_tasks: int = 0
+    task_completion_target: int = 0
     collisions: int = 0
     deadlocked: bool = False
     agent_deaths: int = 0
@@ -30,18 +31,25 @@ class EpisodeMetrics:
 
     @property
     def completion_rate(self) -> float:
-        if not self.created_tasks:
+        denominator = self.task_completion_target or self.created_tasks
+        if not denominator:
             return 0.0
-        return self.completed_tasks / self.created_tasks
+        return min(self.completed_tasks, denominator) / denominator
 
     @property
     def success(self) -> bool:
+        if self.task_completion_target:
+            return (
+                not self.deadlocked
+                and self.completed_tasks >= self.task_completion_target
+            )
         return not self.deadlocked and self.completion_rate >= 0.95
 
     def as_dict(self) -> Dict[str, float | bool | int]:
         return {
             "completed_tasks": self.completed_tasks,
             "created_tasks": self.created_tasks,
+            "task_completion_target": self.task_completion_target,
             "task_completion_rate": self.completion_rate,
             "collisions": self.collisions,
             "deadlocked": self.deadlocked,
@@ -83,6 +91,12 @@ class Phase2Warehouse:
     waypoint_reward: float = 1.0
     oracle_interaction_mask: bool = True
     priority_schedule: Optional[Sequence[str]] = None
+    batch_interval: Optional[int] = None
+    batch_size_range: Optional[Tuple[int, int]] = None
+    initial_priority_label: str = "B"
+    request_queue_size: Optional[int] = None
+    task_completion_target: Optional[int] = None
+    include_priority_features: bool = False
     render_mode: Optional[str] = None
     _env: gym.Env = field(init=False, repr=False)
     _planner: AStarPlanner = field(init=False, repr=False)
@@ -97,14 +111,27 @@ class Phase2Warehouse:
             raise ValueError("Phase 2 requires at least one AGV.")
         if self.waypoint_reward < 0.0:
             raise ValueError("waypoint_reward must not be negative.")
+        if self.batch_interval is not None and self.batch_interval < 2:
+            raise ValueError("batch_interval must be at least two when provided.")
+        if self.batch_size_range is not None:
+            if len(self.batch_size_range) != 2:
+                raise ValueError("batch_size_range must contain exactly two values.")
+            lower, upper = self.batch_size_range
+            if lower < 1 or lower > upper:
+                raise ValueError("batch_size_range must be a positive ordered pair.")
+        if self.request_queue_size is not None and self.request_queue_size < 1:
+            raise ValueError("request_queue_size must be positive when provided.")
+        if self.task_completion_target is not None and self.task_completion_target < 1:
+            raise ValueError("task_completion_target must be positive when provided.")
         make_options = {
             "disable_env_checker": True,
             "n_agents": self.n_agents,
-            "request_queue_size": self.n_agents,
+            "request_queue_size": self.request_queue_size or self.n_agents,
             "max_steps": self.max_steps,
-            "batch_interval": self.max_steps + 1,
-            "batch_size_range": (1, 1),
-            "initial_priority_label": "B",
+            "batch_interval": self.batch_interval or self.max_steps + 1,
+            "batch_size_range": self.batch_size_range or (1, 1),
+            "initial_priority_label": self.initial_priority_label,
+            "task_completion_target": self.task_completion_target,
         }
         if self.priority_schedule is not None:
             make_options["priority_schedule"] = tuple(self.priority_schedule)
@@ -128,7 +155,14 @@ class Phase2Warehouse:
 
     def reset(self, seed: Optional[int] = None) -> np.ndarray:
         self._raw_observations, info = self._env.reset(seed=seed)
-        self._metrics = EpisodeMetrics(created_tasks=len(info["tasks"]))
+        target = (
+            int(info["task_completion_target"])
+            if self._dynamic_ingress_enabled()
+            else 0
+        )
+        self._metrics = EpisodeMetrics(
+            created_tasks=len(info["tasks"]), task_completion_target=target
+        )
         self._last_progress_step = 0
         self._last_completed = 0
         self._last_picked = 0
@@ -138,14 +172,15 @@ class Phase2Warehouse:
         if len(actions) != self.n_agents:
             raise ValueError("Expected one discrete action for every AGV.")
 
-        before = self._waypoint_distances()
+        charging_targets = self._charging_targets()
+        before = self._waypoint_distances(charging_targets)
         carrying_before = {
             agent.id: agent.carrying_shelf is not None for agent in self.env.agents
         }
         raw_obs, rewards, terminated, truncated, info = self._env.step(actions)
         self._raw_observations = raw_obs
         shaped_rewards = np.asarray(rewards, dtype=np.float32)
-        movement_rewards = self._movement_rewards(before)
+        movement_rewards = self._movement_rewards(before, charging_targets)
         shaped_rewards += movement_rewards
         shaped_rewards -= 0.01
         shaped_rewards += self._low_battery_penalties(actions)
@@ -166,7 +201,15 @@ class Phase2Warehouse:
             team_reward=float(np.mean(shaped_rewards)),
             terminated=bool(
                 terminated
-                or self._metrics.completed_tasks == self._metrics.created_tasks
+                or (
+                    self._metrics.task_completion_target > 0
+                    and self._metrics.completed_tasks
+                    >= self._metrics.task_completion_target
+                )
+                or (
+                    self._metrics.completed_tasks == self._metrics.created_tasks
+                    and not self._dynamic_ingress_enabled()
+                )
             ),
             truncated=bool(truncated),
             info=info,
@@ -195,6 +238,13 @@ class Phase2Warehouse:
                     masks[index] = False
                     masks[index, Action.TOGGLE_LOAD.value] = True
         return masks
+
+    def _dynamic_ingress_enabled(self) -> bool:
+        """Keep episodes open until truncation while future batches can arrive."""
+        return (
+            self.batch_interval is not None
+            and self.batch_interval <= self.max_steps
+        )
 
     def _observations(self) -> np.ndarray:
         warehouse = self.env
@@ -237,7 +287,7 @@ class Phase2Warehouse:
                 ],
                 dtype=np.float32,
             )
-            if self.priority_schedule is not None:
+            if self.priority_schedule is not None or self.include_priority_features:
                 priority_weight, priority_rank = self._priority_features(agent.id)
                 own = np.concatenate(
                     (
@@ -266,15 +316,18 @@ class Phase2Warehouse:
             )
         return np.stack(rows).astype(np.float32, copy=False)
 
-    def _target_for_agent(self, agent_id: int) -> Tuple[Tuple[int, int], str]:
+    def _target_for_agent(
+        self,
+        agent_id: int,
+        charging_targets: Optional[Dict[int, Tuple[int, int]]] = None,
+    ) -> Tuple[Tuple[int, int], str]:
         warehouse = self.env
         agent = warehouse.agents[agent_id - 1]
         if agent.dead:
             return (agent.x, agent.y), "idle"
-        if agent.battery < self.charge_threshold:
-            station = self._nearest(
-                (agent.x, agent.y), warehouse.charging_stations
-            )
+        charging_targets = charging_targets or self._charging_targets()
+        station = charging_targets.get(agent_id)
+        if station is not None:
             return station, "charging"
         if agent.carrying_shelf is not None:
             station = self._nearest(
@@ -285,7 +338,58 @@ class Phase2Warehouse:
         if task is not None:
             shelf = warehouse.shelfs[task.shelf_id - 1]
             return (shelf.x, shelf.y), "task"
-        return self._nearest((agent.x, agent.y), warehouse.charging_stations), "idle"
+        return (agent.x, agent.y), "idle"
+
+    def _charging_targets(self) -> Dict[int, Tuple[int, int]]:
+        """Assign at-risk AGVs distinct stations by urgency and occupancy."""
+        warehouse = self.env
+        charging_agents = [
+            agent
+            for agent in warehouse.agents
+            if not agent.dead and agent.battery < self.charge_threshold
+        ]
+        charging_agents.sort(
+            key=lambda agent: (
+                agent.battery,
+                agent.id,
+            )
+        )
+        occupied = {
+            (agent.x, agent.y): agent.id
+            for agent in warehouse.agents
+            if (agent.x, agent.y) in warehouse.charging_stations
+        }
+        targets = {}
+        reserved = set()
+        for agent in charging_agents:
+            position = agent.x, agent.y
+            if position in warehouse.charging_stations:
+                targets[agent.id] = position
+                reserved.add(position)
+        for agent in charging_agents:
+            if agent.id in targets:
+                continue
+            available = [
+                station
+                for station in warehouse.charging_stations
+                if station not in reserved and station not in occupied
+            ]
+            if not available:
+                raise RuntimeError("No unoccupied charging station is available.")
+            station = min(
+                available,
+                key=lambda point: (
+                    abs(point[0] - agent.x) + abs(point[1] - agent.y),
+                    point[0],
+                    point[1],
+                ),
+            )
+            targets[agent.id] = station
+            reserved.add(station)
+        warehouse.charging_reservations = {
+            station: agent_id for agent_id, station in targets.items()
+        }
+        return targets
 
     def _requires_pickup(self, agent_id: int) -> bool:
         warehouse = self.env
@@ -365,15 +469,25 @@ class Phase2Warehouse:
         rank = (ord(task.label[0]) - ord("A")) / 25.0
         return weight, rank
 
-    def _waypoint_distances(self) -> List[int]:
+    def _waypoint_distances(
+        self, charging_targets: Optional[Dict[int, Tuple[int, int]]] = None
+    ) -> List[int]:
         distances = []
         for agent in self.env.agents:
-            target, _ = self._target_for_agent(agent.id)
+            target, _ = self._target_for_agent(agent.id, charging_targets)
             distances.append(abs(target[0] - agent.x) + abs(target[1] - agent.y))
         return distances
 
-    def _movement_rewards(self, before: Sequence[int]) -> np.ndarray:
-        after = self._waypoint_distances()
+    def _movement_rewards(
+        self,
+        before: Sequence[int],
+        charging_targets: Optional[Dict[int, Tuple[int, int]]] = None,
+    ) -> np.ndarray:
+        after = (
+            self._waypoint_distances()
+            if charging_targets is None
+            else self._waypoint_distances(charging_targets)
+        )
         return np.asarray(
             [
                 self.waypoint_reward if next_distance < prior else 0.0
@@ -409,6 +523,12 @@ class Phase2Warehouse:
             self._last_progress_step = info["step"]
         self._last_completed = completed
         self._metrics.completed_tasks = completed
+        self._metrics.created_tasks = len(info["tasks"])
+        self._metrics.task_completion_target = (
+            int(info["task_completion_target"])
+            if self._dynamic_ingress_enabled()
+            else 0
+        )
         self._metrics.collisions = int(info["collisions"])
         self._metrics.agent_deaths = sum(agent["dead"] for agent in info["agents"])
         self._metrics.picked_tasks += picked_tasks

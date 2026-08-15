@@ -60,6 +60,24 @@ class EngagementLabel:
 
 
 @dataclass(frozen=True)
+class SemanticPreferenceLabel:
+    """Two independent offline semantic preferences for Phase 4."""
+
+    scenario_id: str
+    observation_version: str
+    task_commitment: float
+    local_assertiveness: float
+    model: str
+    created_at: str
+
+    def __post_init__(self):
+        for name in ("task_commitment", "local_assertiveness"):
+            value = getattr(self, name)
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"SemanticPreferenceLabel.{name} must be in [0, 1].")
+
+
+@dataclass(frozen=True)
 class PathPlan:
     """An A* path and the action preference for its immediate waypoint."""
 

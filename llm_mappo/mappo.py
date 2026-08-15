@@ -35,23 +35,37 @@ class SharedActor(nn.Module):
 
 
 class DualHeadActor(nn.Module):
-    """Separate semantic and motion branches for the Phase 3 r2 ablation."""
+    """Separate semantic and motion branches with detached semantic features."""
 
-    def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int = 128):
+    def __init__(
+        self,
+        observation_dim: int,
+        action_dim: int,
+        hidden_dim: int = 128,
+        semantic_dim: int = 1,
+    ):
         super().__init__()
+        if semantic_dim not in (1, 2):
+            raise ValueError("semantic_dim must be one for Phase 3 or two for Phase 4.")
+        self.semantic_dim = semantic_dim
         self.motion_encoder = _mlp((observation_dim, hidden_dim, 64))
         self.engagement_encoder = _mlp((observation_dim, hidden_dim, 64))
-        self.engagement_head = nn.Sequential(nn.Linear(64, 1), nn.Sigmoid())
-        self.motion_head = nn.Linear(65, action_dim)
+        self.engagement_head = nn.Sequential(
+            nn.Linear(64, semantic_dim), nn.Sigmoid()
+        )
+        self.motion_head = nn.Linear(64 + semantic_dim, action_dim)
+
+    def semantic_preferences(self, observations: Tensor) -> Tensor:
+        encoded = self.engagement_encoder(observations)
+        return self.engagement_head(encoded)
 
     def engagement(self, observations: Tensor) -> Tensor:
-        encoded = self.engagement_encoder(observations)
-        return self.engagement_head(encoded).squeeze(-1)
+        return self.semantic_preferences(observations)[..., 0]
 
     def forward(self, observations: Tensor) -> Tensor:
         motion_features = self.motion_encoder(observations)
-        engagement = self.engagement(observations).unsqueeze(-1)
-        motion_input = torch.cat((motion_features, engagement.detach()), dim=-1)
+        semantics = self.semantic_preferences(observations)
+        motion_input = torch.cat((motion_features, semantics.detach()), dim=-1)
         return self.motion_head(motion_input)
 
 
@@ -135,9 +149,17 @@ class MAPPOPolicy(nn.Module):
 class DualHeadMAPPOPolicy(nn.Module):
     """CTDE MAPPO policy used by Phase 3a and its later ablations."""
 
-    def __init__(self, observation_dim: int, action_dim: int, device: str = "cpu"):
+    def __init__(
+        self,
+        observation_dim: int,
+        action_dim: int,
+        device: str = "cpu",
+        semantic_dim: int = 1,
+    ):
         super().__init__()
-        self.actor = DualHeadActor(observation_dim, action_dim)
+        self.actor = DualHeadActor(
+            observation_dim, action_dim, semantic_dim=semantic_dim
+        )
         self.critic = CentralizedCritic(observation_dim)
         self.device = torch.device(device)
         self.to(self.device)
@@ -161,7 +183,7 @@ class DualHeadMAPPOPolicy(nn.Module):
             actions.cpu().numpy(),
             distribution.log_prob(actions).cpu().numpy(),
             self.critic(actor_obs.unsqueeze(0)).item(),
-            self.actor.engagement(actor_obs).cpu().numpy(),
+            self._semantic_output(actor_obs).cpu().numpy(),
         )
 
     def evaluate_actions(
@@ -174,6 +196,13 @@ class DualHeadMAPPOPolicy(nn.Module):
 
     def engagement(self, observations: Tensor) -> Tensor:
         return self.actor.engagement(observations)
+
+    def semantic_preferences(self, observations: Tensor) -> Tensor:
+        return self.actor.semantic_preferences(observations)
+
+    def _semantic_output(self, observations: Tensor) -> Tensor:
+        values = self.semantic_preferences(observations)
+        return values.squeeze(-1) if self.actor.semantic_dim == 1 else values
 
     def _masked_logits(self, logits: Tensor, action_masks) -> Tensor:
         if action_masks is None:
@@ -205,14 +234,20 @@ class PPOHyperparameters:
     reservation_kl_decay_factor: float = 0.90
     reservation_kl_minimum: float = 0.03
     engagement_coefficient: float = 0.0
+    engagement_decay_interval: int = 1000
+    engagement_decay_factor: float = 0.90
+    engagement_minimum: float = 0.0
 
 
 class RolloutBuffer:
     """Collect whole-team transitions and calculate centralized GAE returns."""
 
-    def __init__(self, n_agents: int, action_dim: int = 5):
+    def __init__(self, n_agents: int, action_dim: int = 5, semantic_dim: int = 1):
         self.n_agents = n_agents
         self.action_dim = action_dim
+        if semantic_dim not in (1, 2):
+            raise ValueError("semantic_dim must be one or two.")
+        self.semantic_dim = semantic_dim
         self.observations: List[np.ndarray] = []
         self.actions: List[np.ndarray] = []
         self.log_probs: List[np.ndarray] = []
@@ -255,13 +290,25 @@ class RolloutBuffer:
             preferences = preferences.copy()
         self.reservation_preferences.append(preferences)
         if engagement_targets is None:
-            targets = np.full(self.n_agents, -1.0, dtype=np.float32)
+            shape = (
+                (self.n_agents,)
+                if self.semantic_dim == 1
+                else (self.n_agents, self.semantic_dim)
+            )
+            targets = np.full(shape, -1.0, dtype=np.float32)
         else:
             targets = np.asarray(engagement_targets, dtype=np.float32)
-            if targets.shape != (self.n_agents,):
-                raise ValueError("Engagement targets must contain one value per AGV.")
+            expected = (
+                (self.n_agents,)
+                if self.semantic_dim == 1
+                else (self.n_agents, self.semantic_dim)
+            )
+            if targets.shape != expected:
+                raise ValueError(
+                    "Semantic targets must match the team and semantic dimensions."
+                )
             if np.any((targets < 0.0) | (targets > 1.0)):
-                raise ValueError("Engagement targets must be within [0, 1].")
+                raise ValueError("Semantic targets must be within [0, 1].")
             targets = targets.copy()
         self.engagement_targets.append(targets)
         self.rewards.append(float(reward))
@@ -336,7 +383,9 @@ class MAPPOUpdater:
             policy.parameters(), lr=hyperparameters.learning_rate
         )
 
-    def update(self, buffer: RolloutBuffer, last_value: float) -> Dict[str, float]:
+    def update(  # noqa: C901
+        self, buffer: RolloutBuffer, last_value: float
+    ) -> Dict[str, float]:
         data = buffer.tensors(last_value, self.hyperparameters, self.policy.device)
         advantages = data["advantages"]
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -345,9 +394,12 @@ class MAPPOUpdater:
         metric_sums = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0}
         use_engagement = self.hyperparameters.engagement_coefficient > 0
         if use_engagement:
-            if not hasattr(self.policy, "engagement"):
-                raise TypeError("Engagement loss requires a dual-head MAPPO policy.")
+            if not hasattr(self.policy, "semantic_preferences"):
+                raise TypeError("Semantic loss requires a semantic MAPPO policy.")
             metric_sums["engagement_loss"] = 0.0
+            if buffer.semantic_dim == 2:
+                metric_sums["task_commitment_loss"] = 0.0
+                metric_sums["local_assertiveness_loss"] = 0.0
         use_reservation_kl = self.hyperparameters.reservation_kl_coefficient > 0
         if use_reservation_kl:
             metric_sums["reservation_kl"] = 0.0
@@ -368,7 +420,13 @@ class MAPPOUpdater:
                 reservation_preferences = reservation_preferences.reshape(
                     -1, reservation_preferences.shape[-1]
                 )
-                engagement_targets = data["engagement_targets"][indices].reshape(-1)
+                engagement_targets = data["engagement_targets"][indices]
+                if buffer.semantic_dim == 1:
+                    engagement_targets = engagement_targets.reshape(-1)
+                else:
+                    engagement_targets = engagement_targets.reshape(
+                        -1, buffer.semantic_dim
+                    )
                 batch_advantages = data["advantages"][indices].repeat_interleave(
                     batch_agents
                 )
@@ -405,14 +463,30 @@ class MAPPOUpdater:
                         teacher_probs * (teacher_log_probs - actor_log_probs)
                     ).sum(dim=-1).mean()
                 engagement_loss = torch.zeros((), device=self.policy.device)
+                component_losses = None
                 if use_engagement:
                     valid_targets = engagement_targets >= 0.0
+                    if buffer.semantic_dim == 2:
+                        valid_targets = torch.all(valid_targets, dim=-1)
                     if torch.any(valid_targets):
-                        engagement_values = self.policy.engagement(actor_observations)
+                        semantic_values = self.policy.semantic_preferences(
+                            actor_observations
+                        )
+                        if buffer.semantic_dim == 1:
+                            semantic_values = semantic_values.squeeze(-1)
                         engagement_loss = nn.functional.mse_loss(
-                            engagement_values[valid_targets],
+                            semantic_values[valid_targets],
                             engagement_targets[valid_targets],
                         )
+                        if buffer.semantic_dim == 2:
+                            component_losses = torch.mean(
+                                (
+                                    semantic_values[valid_targets]
+                                    - engagement_targets[valid_targets]
+                                )
+                                ** 2,
+                                dim=0,
+                            )
                 loss = (
                     policy_loss
                     + self.hyperparameters.value_coefficient * value_loss
@@ -434,6 +508,13 @@ class MAPPOUpdater:
                     metric_sums["reservation_kl"] += reservation_kl.item()
                 if use_engagement:
                     metric_sums["engagement_loss"] += engagement_loss.item()
+                    if component_losses is not None:
+                        metric_sums["task_commitment_loss"] += (
+                            component_losses[0].item()
+                        )
+                        metric_sums["local_assertiveness_loss"] += (
+                            component_losses[1].item()
+                        )
                 updates += 1
         buffer.clear()
         metrics = {key: value / updates for key, value in metric_sums.items()}

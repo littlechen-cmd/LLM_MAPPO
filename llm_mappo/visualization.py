@@ -29,13 +29,18 @@ def render_warehouse_frame(warehouse, cell_size: int = 32) -> np.ndarray:
     for x, y in warehouse.goals:
         _fill_cell(draw, x, y, cell_size, "#3c3c3c")
         _label_cell(draw, x, y, cell_size, "G", "white")
-    for x, y in getattr(warehouse, "charging_stations", ()):
-        _label_cell(draw, x, y, cell_size, "C", "#008000")
+    _draw_charging_stations(draw, warehouse, cell_size)
 
     requested = set(warehouse.request_queue)
+    task_labels = {
+        task.shelf_id: task.label for task in warehouse.task_queue.active_tasks
+    }
     for shelf in warehouse.shelfs:
         color = "#008080" if shelf in requested else "#483d8b"
         _fill_cell(draw, shelf.x, shelf.y, cell_size, color, padding=3)
+        label = task_labels.get(shelf.id)
+        if label is not None:
+            _label_cell(draw, shelf.x, shelf.y, cell_size, label, "#ffffff")
 
     for agent in warehouse.agents:
         color = "#ff0000" if agent.carrying_shelf is not None else "#ff8c00"
@@ -59,6 +64,21 @@ def render_warehouse_frame(warehouse, cell_size: int = 32) -> np.ndarray:
         )
         _label_cell(draw, agent.x, agent.y, cell_size, str(agent.id), "black")
     return np.asarray(image)
+
+
+def _draw_charging_stations(draw, warehouse, cell_size: int) -> None:
+    """Show station availability and low-battery reservations in each frame."""
+    reservations = getattr(warehouse, "charging_reservations", {})
+    occupied_stations = {
+        (agent.x, agent.y): agent.id
+        for agent in warehouse.agents
+        if (agent.x, agent.y) in getattr(warehouse, "charging_stations", ())
+    }
+    for x, y in getattr(warehouse, "charging_stations", ()):
+        station = x, y
+        color = "#b22222" if station in occupied_stations else "#008000"
+        label = str(reservations[station]) if station in reservations else "C"
+        _label_cell(draw, x, y, cell_size, label, color)
 
 
 def _fill_cell(draw, x, y, cell_size, color, padding: int = 0) -> None:

@@ -2,6 +2,7 @@
 
 import heapq
 from collections import defaultdict
+from itertools import count
 from typing import Dict, Optional, Sequence, Set, Tuple
 
 from llm_mappo.types import PathPlan, PlannerEvent
@@ -56,7 +57,7 @@ class AStarPlanner:
         blocked = self._blocked_cells(env, agent_id)
         blocked.discard(start)
         blocked.discard(goal)
-        path = self._search(start, goal, env.grid_size, blocked)
+        path = self._search(start, agent.dir, goal, env.grid_size, blocked)
         if path is None:
             return PathPlan((), self._noop_preferences(), PlannerEvent.BLOCKED)
         return PathPlan(tuple(path), self.action_preferences(agent.dir, path), None)
@@ -75,7 +76,7 @@ class AStarPlanner:
         blocked.discard(start)
         blocked.discard(goal)
         path = self._temporal_search(
-            start, goal, env.grid_size, blocked, reservations
+            start, agent.dir, goal, env.grid_size, blocked, reservations
         )
         if path is None:
             return PathPlan((), self._noop_preferences(), PlannerEvent.BLOCKED)
@@ -126,69 +127,122 @@ class AStarPlanner:
     def _search(
         self,
         start: Tuple[int, int],
+        start_dir: Direction,
         goal: Tuple[int, int],
         grid_size: Tuple[int, int],
         blocked: Set[Tuple[int, int]],
     ) -> Optional[Sequence[Tuple[int, int]]]:
-        frontier = [(0, start)]
-        came_from = {start: None}
-        cost = {start: 0}
+        """Orientation-aware A* that counts LEFT/RIGHT turns in g(n) and h(n).
+
+        Search state is ``(x, y, direction)``. Moving forward costs 1 step; a
+        90-degree turn costs 1 extra step. The heuristic adds the minimum turns
+        needed to face the goal, which stays admissible (never overestimates)
+        while pruning turn-heavy detours early.
+        """
+        start_state = (start[0], start[1], start_dir)
+        sequence = count()
+        frontier = [(0, next(sequence), start_state)]
+        came_from = {start_state: None}
+        cost = {start_state: 0}
         while frontier:
-            _, current = heapq.heappop(frontier)
-            if current == goal:
-                return self._reconstruct(came_from, current)
-            for neighbour in self._neighbours(current, grid_size):
+            _, _, current = heapq.heappop(frontier)
+            if (current[0], current[1]) == goal:
+                return self._reconstruct_oriented(came_from, current)
+            cx, cy, cdir = current
+            for neighbour, ndir, step_cost in self._oriented_neighbours(
+                (cx, cy), cdir, grid_size
+            ):
                 if neighbour in blocked:
                     continue
-                new_cost = cost[current] + 1
-                if neighbour not in cost or new_cost < cost[neighbour]:
-                    cost[neighbour] = new_cost
-                    priority = new_cost + self._manhattan(neighbour, goal)
-                    heapq.heappush(frontier, (priority, neighbour))
-                    came_from[neighbour] = current
+                next_state = (neighbour[0], neighbour[1], ndir)
+                new_cost = cost[current] + step_cost
+                if next_state not in cost or new_cost < cost[next_state]:
+                    cost[next_state] = new_cost
+                    priority = new_cost + self._heuristic(neighbour, ndir, goal)
+                    heapq.heappush(frontier, (priority, next(sequence), next_state))
+                    came_from[next_state] = current
         return None
 
     def _temporal_search(
         self,
-        start,
-        goal,
-        grid_size,
-        blocked,
+        start: Tuple[int, int],
+        start_dir: Direction,
+        goal: Tuple[int, int],
+        grid_size: Tuple[int, int],
+        blocked: Set[Tuple[int, int]],
         reservations: ReservationTable,
     ) -> Optional[Sequence[Tuple[int, int]]]:
-        frontier = [(0, 0, start)]
-        came_from = {(start, 0): None}
-        cost = {(start, 0): 0}
-        best_state = (start, 0)
+        """Orientation-aware temporal A* with turn costs.
+
+        State is ``(position, direction, time)``. Forward moves cost 1 time
+        step; a 90-degree turn costs 1 extra time step during which the AGV
+        stays in place. The heuristic combines spatial Manhattan distance with
+        the minimum turns to face the goal.
+
+        Turns reserve the current cell for each intermediate time step so the
+        reservation table correctly blocks other AGVs from moving into it.
+        """
+        start_key = (start, start_dir, 0)
+        sequence = count()
+        frontier = [(0, next(sequence), 0, start, start_dir)]
+        came_from = {start_key: None}
+        cost = {start_key: 0}
+        best_key = start_key
         best_distance = self._manhattan(start, goal)
         while frontier:
-            _, time, current = heapq.heappop(frontier)
-            state = current, time
+            _, _, time, current, cdir = heapq.heappop(frontier)
+            state_key = (current, cdir, time)
             if current == goal:
-                return self._reconstruct_timed(came_from, state)
+                return self._reconstruct_timed_oriented(came_from, state_key)
             distance = self._manhattan(current, goal)
             if distance < best_distance:
-                best_state = state
+                best_key = state_key
                 best_distance = distance
             if time >= reservations.horizon:
                 continue
-            for next_state in self._temporal_neighbours(
-                current, time, grid_size, blocked, reservations
+            for neighbour, ndir, step_cost in self._oriented_neighbours(
+                current, cdir, grid_size
             ):
-                candidate, next_time = next_state
-                new_cost = cost[state] + 1
-                if next_state not in cost or new_cost < cost[next_state]:
-                    cost[next_state] = new_cost
-                    priority = new_cost + self._manhattan(candidate, goal)
-                    heapq.heappush(frontier, (priority, next_time, candidate))
-                    came_from[next_state] = state
-        if best_state != (start, 0):
-            return self._reconstruct_timed(came_from, best_state)
+                if neighbour in blocked:
+                    continue
+                # Validate every intermediate time step (turns stay in place).
+                ok = True
+                for t in range(time + 1, time + step_cost + 1):
+                    stay = current if t < time + step_cost else neighbour
+                    if not reservations.is_available(stay, t):
+                        ok = False
+                        break
+                    if t < time + step_cost:
+                        # Turn step: stay in place, no edge traversal.
+                        continue
+                    if not reservations.permits_edge(current, neighbour, t):
+                        ok = False
+                        break
+                if not ok:
+                    continue
+                next_time = time + step_cost
+                next_key = (neighbour, ndir, next_time)
+                new_cost = cost[state_key] + step_cost
+                if next_key not in cost or new_cost < cost[next_key]:
+                    cost[next_key] = new_cost
+                    priority = new_cost + self._heuristic(
+                        neighbour, ndir, goal
+                    )
+                    heapq.heappush(
+                        frontier,
+                        (priority, next(sequence), next_time, neighbour, ndir),
+                    )
+                    came_from[next_key] = state_key
+        if best_key != start_key:
+            return self._reconstruct_timed_oriented(came_from, best_key)
         return None
 
     def _temporal_neighbours(
         self, current, time, grid_size, blocked, reservations: ReservationTable
     ):
+        """Deprecated: kept for backward compatibility with tests that call it
+        directly. New code should use :meth:`_oriented_neighbours` instead.
+        """
         next_time = time + 1
         candidates = list(self._neighbours(current, grid_size)) + [current]
         for candidate in candidates:
@@ -201,6 +255,9 @@ class AStarPlanner:
 
     @staticmethod
     def _reconstruct_timed(came_from, state):
+        """Deprecated: kept for backward compatibility. New temporal search uses
+        :meth:`_reconstruct_timed_oriented`.
+        """
         path = []
         while state is not None:
             path.append(state[0])
@@ -241,6 +298,121 @@ class AStarPlanner:
             candidate = x + dx, y + dy
             if 0 <= candidate[0] < width and 0 <= candidate[1] < height:
                 yield candidate
+
+    def _oriented_neighbours(
+        self,
+        point: Tuple[int, int],
+        direction: Direction,
+        grid_size: Tuple[int, int],
+    ):
+        """Yield ``(neighbour, new_direction, step_cost)`` for every reachable
+        adjacent cell plus an in-place turn.
+
+        ``step_cost`` is 1 for a forward move (no turn) or ``1 + turn_steps``
+        for a move that requires turning first (turn steps + the forward step).
+        A pure in-place turn is yielded as ``(point, turned_dir, turn_steps)``
+        so the search can still explore rotational shortcuts when boxed in.
+        """
+        x, y = point
+        height, width = grid_size
+        for target_dir, (dx, dy) in _DIRECTIONS.items():
+            candidate = x + dx, y + dy
+            if not (0 <= candidate[0] < width and 0 <= candidate[1] < height):
+                continue
+            turn_steps = self._turn_steps(direction, target_dir)
+            step_cost = 1 + turn_steps  # turns + 1 forward
+            yield candidate, target_dir, step_cost
+        # In-place turn option (useful when surrounded but need to reorient)
+        left = self._turn(direction, right=False)
+        right = self._turn(direction, right=True)
+        yield point, left, 1
+        if right != left:  # 4-direction system: right != left
+            yield point, right, 1
+
+    @staticmethod
+    def _turn_steps(src: Direction, dst: Direction) -> int:
+        """Minimum LEFT/RIGHT actions to rotate from ``src`` to ``dst``.
+
+        In the 4-direction cycle UP→RIGHT→DOWN→LEFT→UP the maximum is 2 (a
+        180-degree U-turn requires two turns).
+        """
+        if src == dst:
+            return 0
+        order = (Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT)
+        diff = abs(order.index(src) - order.index(dst))
+        return min(diff, len(order) - diff)
+
+    def _heuristic(
+        self,
+        position: Tuple[int, int],
+        direction: Direction,
+        goal: Tuple[int, int],
+    ) -> float:
+        """Admissible heuristic = Manhattan distance + minimum turns to face goal.
+
+        The turn lower bound is 0 when already aligned with the dominant axis,
+        1 for a 90-degree offset, or 2 when facing away (180 degrees). This
+        never overestimates because any real path must cover the Manhattan
+        distance *and* perform at least this many turns before moving forward.
+        """
+        distance = self._manhattan(position, goal)
+        if distance == 0:
+            return 0
+        dx = goal[0] - position[0]
+        dy = goal[1] - position[1]
+        # Pick the axis with the larger displacement as the "dominant" direction
+        # the AGV ultimately needs to travel along.
+        if abs(dx) >= abs(dy):
+            if dx > 0:
+                target_dir = Direction.RIGHT
+            elif dx < 0:
+                target_dir = Direction.LEFT
+            else:  # dx == 0, dy dominates but abs tie-break went here
+                target_dir = (
+                    Direction.DOWN if dy > 0 else Direction.UP
+                )
+        else:
+            target_dir = (
+                Direction.DOWN if dy > 0 else Direction.UP
+            )
+        return distance + self._turn_steps(direction, target_dir)
+
+    @staticmethod
+    def _reconstruct_oriented(came_from, state):
+        """Rebuild a spatial path from orientation-aware search state.
+
+        When consecutive states share the same position (in-place turns), only
+        the final position is kept, yielding a clean spatial waypoint list.
+        """
+        path = []
+        seen_pos = None
+        while state is not None:
+            pos = (state[0], state[1])
+            if pos != seen_pos:
+                path.append(pos)
+                seen_pos = pos
+            state = came_from[state]
+        path.reverse()
+        return path
+
+    @staticmethod
+    def _reconstruct_timed_oriented(came_from, state):
+        """Rebuild a timed spatial path from orientation-aware temporal search.
+
+        State is ``((x, y), direction, time)``; consecutive same-position
+        entries (turns/waiting) are collapsed to keep the waypoint list clean
+        while preserving the first occurrence so timing is visible if needed.
+        """
+        path = []
+        seen_pos = None
+        while state is not None:
+            pos = state[0]
+            if pos != seen_pos:
+                path.append(pos)
+                seen_pos = pos
+            state = came_from[state]
+        path.reverse()
+        return path
 
     @staticmethod
     def _reconstruct(came_from, current):

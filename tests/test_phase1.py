@@ -3,6 +3,7 @@ import pytest
 
 import rware
 from llm_mappo.environment import DynamicWarehouse
+from llm_mappo.phase2 import Phase2Warehouse
 from llm_mappo.planner import AStarPlanner, ReservationTable
 from llm_mappo.rules import TaskQueue
 from llm_mappo.types import PlannerEvent, PriorityAdjustment, TaskStatus
@@ -35,11 +36,69 @@ def test_registered_dynamic_environment_exposes_phase1_info():
     observations, info = env.reset(seed=5)
 
     assert len(observations) == 3
-    assert info["queue"] == ["A1", "A2", "A3"]
-    assert len(info["charging_stations"]) == 3
+    assert len(info["queue"]) >= 2
+    assert {label[0] for label in info["queue"]} == {"A", "B"}
+    assert info["task_completion_target"] == 9
+    assert len(info["charging_stations"]) == 8
+    assert env.unwrapped.grid_size == (24, 20)
+    assert all(
+        env.unwrapped._is_highway(*station["position"])
+        for station in info["charging_station_status"]
+    )
     assert all(agent["battery"] == 1.0 for agent in info["agents"])
 
     env.close()
+
+
+def test_charging_targets_are_unique_and_idle_agents_do_not_occupy_stations():
+    env = Phase2Warehouse(
+        n_agents=3,
+        max_steps=100,
+        env_id="llm-mappo-medium-3ag-v1",
+        batch_interval=101,
+    )
+    try:
+        env.reset(seed=5)
+        warehouse = env.env
+        warehouse.task_queue.release_agent(1)
+        warehouse.agents[0].task_id = None
+        warehouse.agents[0].battery = 1.0
+        warehouse.agents[1].battery = 0.15
+        warehouse.agents[2].battery = 0.12
+
+        idle_target, idle_kind = env._target_for_agent(1)
+        targets = env._charging_targets()
+
+        assert idle_target == (warehouse.agents[0].x, warehouse.agents[0].y)
+        assert idle_kind == "idle"
+        assert targets[2] != targets[3]
+        assert set(warehouse.charging_reservations.values()) == {2, 3}
+    finally:
+        env.close()
+
+
+def test_charging_target_does_not_reuse_an_occupied_station():
+    env = Phase2Warehouse(
+        n_agents=3,
+        max_steps=100,
+        env_id="llm-mappo-medium-3ag-v1",
+        batch_interval=101,
+    )
+    try:
+        env.reset(seed=8)
+        warehouse = env.env
+        occupied_station = warehouse.charging_stations[0]
+        warehouse.agents[0].x, warehouse.agents[0].y = occupied_station
+        warehouse.agents[0].battery = 1.0
+        warehouse.agents[1].battery = 0.15
+        warehouse.agents[2].battery = 1.0
+        warehouse._recalc_grid()
+
+        targets = env._charging_targets()
+
+        assert targets[2] != occupied_station
+    finally:
+        env.close()
 
 
 def test_task_queue_filters_low_battery_and_validates_adjustments_atomically():
@@ -114,6 +173,7 @@ def test_delivery_completes_task_and_enforces_picking_lock():
     env = make_env(batch_interval=100)
     env.reset(seed=8)
     task = env.task_queue.task_for_agent(1)
+    expected_delivery_reward = 5.0 * env.task_queue.priority_weight(task.label)
     shelf = env.shelfs[task.shelf_id - 1]
     goal_x, goal_y = env.goals[0]
     env.agents[0].x, env.agents[0].y, env.agents[0].dir = (
@@ -131,7 +191,7 @@ def test_delivery_completes_task_and_enforces_picking_lock():
     completed = next(item for item in info["tasks"] if item["task_id"] == task.task_id)
     assert completed["status"] == TaskStatus.COMPLETED.value
     assert info["agents"][0]["picking_lock_steps"] == 3
-    assert rewards[0] == pytest.approx(5.0)
+    assert rewards[0] == pytest.approx(expected_delivery_reward)
 
     position = env.agents[0].x, env.agents[0].y
     env.step([Action.FORWARD, Action.NOOP])

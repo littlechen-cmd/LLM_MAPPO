@@ -19,9 +19,10 @@ register(
         "max_inactivity_steps": None,
         "max_steps": 1000,
         "reward_type": RewardType.INDIVIDUAL,
-        "batch_interval": 20,
+        "batch_interval": 40,
         "batch_size_range": (1, 3),
         "picking_lock_steps": 3,
+        "outer_aisle_width": 2,
     },
 )
 

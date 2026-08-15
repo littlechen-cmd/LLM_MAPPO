@@ -1,0 +1,11 @@
+phase4-semantic-v2-priority_conflict-agv1-26f493f06ee2654b
+phase4-semantic-v2-priority_conflict-agv1-850f00112b3396c4
+phase4-semantic-v2-low_battery_diversion-agv1-f4438f690198a43e
+phase4-semantic-v2-low_battery_diversion-agv1-1d07f7c78217554f
+phase4-semantic-v2-low_battery_diversion-agv1-2857f48dcb9a3ddf
+phase4-semantic-v2-low_battery_diversion-agv1-0acbfb38138af6b8
+phase4-semantic-v2-low_battery_diversion-agv1-c99d41d32c2799c6
+phase4-semantic-v2-low_battery_diversion-agv1-354f61ded141658d
+phase4-semantic-v2-low_battery_diversion-agv1-6cfe292c405fafd5
+phase4-semantic-v2-station_exit_congestion-agv1-3e7d79f4ed641a56
+phase4-semantic-v2-station_exit_congestion-agv1-f5110a75cf6f1b00

@@ -15,7 +15,7 @@ class DynamicWarehouse(Warehouse):
     def __init__(
         self,
         *args,
-        batch_interval: int = 20,
+        batch_interval: int = 40,
         batch_size_range: Tuple[int, int] = (1, 3),
         charging_stations: Optional[Sequence[Tuple[int, int]]] = None,
         charging_rate: float = 0.02,
@@ -24,6 +24,7 @@ class DynamicWarehouse(Warehouse):
         initial_priority_label: str = "A",
         priority_schedule: Optional[Sequence[str]] = None,
         blocked_forward_penalty: float = 0.05,
+        task_completion_target: Optional[int] = None,
         **kwargs,
     ):
         self._validate_options(
@@ -34,6 +35,7 @@ class DynamicWarehouse(Warehouse):
             initial_priority_label,
             priority_schedule,
             blocked_forward_penalty,
+            task_completion_target,
         )
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
@@ -49,10 +51,23 @@ class DynamicWarehouse(Warehouse):
         self.total_collisions = 0
         self.total_blocked_forwards = 0
         self.last_events: List[dict] = []
+        self.charging_reservations = {}
         super().__init__(*args, **kwargs)
+        self.task_completion_target = (
+            task_completion_target
+            if task_completion_target is not None
+            else self.n_agents * 3
+        )
+        if self._dynamic_ingress_enabled() and self.task_completion_target < 2:
+            raise ValueError(
+                "Dynamic ingress requires task_completion_target to allow "
+                "the initial A and B batches."
+            )
         stations = charging_stations or self._default_charging_stations()
-        if len(stations) != self.n_agents:
-            raise ValueError("DynamicWarehouse requires one charging station per AGV.")
+        if len(stations) < self.n_agents:
+            raise ValueError(
+                "DynamicWarehouse requires at least one charging station per AGV."
+            )
         if len(set(stations)) != len(stations):
             raise ValueError("Charging station coordinates must be unique.")
         for station in stations:
@@ -61,6 +76,10 @@ class DynamicWarehouse(Warehouse):
                 raise ValueError(f"Charging station outside grid: {station}")
             if not self._is_highway(x, y):
                 raise ValueError(f"Charging station must be accessible: {station}")
+            if not self._has_highway_neighbor(x, y):
+                raise ValueError(
+                    f"Charging station must have an accessible neighbor: {station}"
+                )
         self.charging_stations = tuple(stations)
         self.picking_stations = tuple(self.goals)
 
@@ -73,6 +92,7 @@ class DynamicWarehouse(Warehouse):
         initial_priority_label,
         priority_schedule,
         blocked_forward_penalty,
+        task_completion_target,
     ):
         if batch_interval <= 0:
             raise ValueError("batch_interval must be positive.")
@@ -93,6 +113,10 @@ class DynamicWarehouse(Warehouse):
                 raise ValueError("priority_schedule labels must be uppercase letters.")
         if blocked_forward_penalty < 0.0:
             raise ValueError("blocked_forward_penalty must not be negative.")
+        if task_completion_target is not None and (
+            isinstance(task_completion_target, bool) or task_completion_target < 1
+        ):
+            raise ValueError("task_completion_target must be a positive integer.")
 
     def reset(self, seed=None, options=None):
         self.task_queue = TaskQueue()
@@ -100,6 +124,7 @@ class DynamicWarehouse(Warehouse):
         self.total_collisions = 0
         self.total_blocked_forwards = 0
         self.last_events = []
+        self.charging_reservations = {}
         super().reset(seed=seed, options=options)
         for agent in self.agents:
             agent.battery = 1.0
@@ -113,7 +138,9 @@ class DynamicWarehouse(Warehouse):
             shelf.id: (shelf.x, shelf.y) for shelf in self.shelfs
         }
         shelf_ids = [shelf.id for shelf in self.request_queue]
-        if self.priority_schedule:
+        if self._dynamic_ingress_enabled():
+            self._create_initial_batches(shelf_ids)
+        elif self.priority_schedule:
             for shelf_id in shelf_ids:
                 self._create_batch([shelf_id])
         else:
@@ -166,7 +193,16 @@ class DynamicWarehouse(Warehouse):
         self._apply_blocked_forward_penalties(blocked_forwards, rewards)
         self._update_batteries(pre_state, locked_before, rewards)
         self._advance_picking_locks(locked_before)
-        self._spawn_scheduled_batch()
+        if self._completion_target_reached():
+            terminated = True
+            self.last_events.append(
+                {
+                    "type": "task_completion_target_reached",
+                    "target": self.task_completion_target,
+                }
+            )
+        else:
+            self._spawn_scheduled_batch()
         self._assign_available_tasks()
         self._refresh_request_queue()
 
@@ -194,7 +230,11 @@ class DynamicWarehouse(Warehouse):
                 "step": self._cur_steps,
                 "queue": [task.label for task in self.task_queue.active_tasks],
                 "tasks": self.task_queue.as_dict(),
+                "task_completion_target": self.task_completion_target,
+                "completed_task_count": self._completed_task_count(),
+                "task_target_reached": self._completion_target_reached(),
                 "charging_stations": list(self.charging_stations),
+                "charging_station_status": self._charging_station_status(),
                 "picking_stations": list(self.picking_stations),
                 "collisions": self.total_collisions,
                 "blocked_forwards": self.total_blocked_forwards,
@@ -215,6 +255,31 @@ class DynamicWarehouse(Warehouse):
         )
         return info
 
+    def _charging_station_status(self) -> List[dict]:
+        occupants = {
+            (agent.x, agent.y): agent.id
+            for agent in self.agents
+            if (agent.x, agent.y) in self.charging_stations
+        }
+        return [
+            {
+                "position": [x, y],
+                "occupant_agent_id": occupants.get((x, y)),
+                "reserved_agent_id": self.charging_reservations.get((x, y)),
+            }
+            for x, y in self.charging_stations
+        ]
+
+    def _has_highway_neighbor(self, x: int, y: int) -> bool:
+        for next_x, next_y in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if (
+                0 <= next_x < self.grid_size[1]
+                and 0 <= next_y < self.grid_size[0]
+                and self._is_highway(next_x, next_y)
+            ):
+                return True
+        return False
+
     def _create_batch(self, shelf_ids: Sequence[int]) -> Sequence[Task]:
         if not shelf_ids:
             return ()
@@ -223,11 +288,10 @@ class DynamicWarehouse(Warehouse):
                 self._batch_index % len(self.priority_schedule)
             ]
         else:
-            letter = (
-                self.initial_priority_label
-                if self._batch_index == 0
-                else chr(ord("A") + min(self._batch_index, 25))
-            )
+            letter_code = ord(self.initial_priority_label) + self._batch_index
+            if letter_code > ord("Z"):
+                raise RuntimeError("Dynamic priority labels are exhausted at Z.")
+            letter = chr(letter_code)
         batch_id = self._batch_index + 1
         self._batch_index += 1
         tasks = self.task_queue.create_batch(
@@ -242,8 +306,45 @@ class DynamicWarehouse(Warehouse):
         )
         return tasks
 
+    def _create_initial_batches(self, preferred_shelf_ids: Sequence[int]) -> None:
+        """Create the required A and B arrivals before the first action."""
+        candidates = list(dict.fromkeys(preferred_shelf_ids))
+        candidates.extend(
+            shelf.id for shelf in self.shelfs if shelf.id not in candidates
+        )
+        minimum = self.batch_size_range[0]
+        if len(candidates) < minimum * 2:
+            raise RuntimeError(
+                "Dynamic ingress requires enough shelves for two initial batches."
+            )
+        first_upper = min(self.batch_size_range[1], len(candidates) - minimum)
+        first_count = int(self.np_random.integers(minimum, first_upper + 1))
+        first = candidates[:first_count]
+        second_count = self._draw_initial_batch_size(len(candidates) - first_count)
+        second = candidates[first_count : first_count + second_count]
+        self._create_batch(first)
+        self._create_batch(second)
+
+    def _draw_initial_batch_size(self, available: int) -> int:
+        upper = min(self.batch_size_range[1], available)
+        lower = min(self.batch_size_range[0], upper)
+        return int(self.np_random.integers(lower, upper + 1))
+
+    def _dynamic_ingress_enabled(self) -> bool:
+        return self.max_steps is not None and self.batch_interval <= self.max_steps
+
+    def _completed_task_count(self) -> int:
+        return sum(task.status.value == "completed" for task in self.task_queue.tasks)
+
+    def _completion_target_reached(self) -> bool:
+        return self._completed_task_count() >= self.task_completion_target
+
     def _spawn_scheduled_batch(self):
-        if self._cur_steps == 0 or self._cur_steps % self.batch_interval:
+        if (
+            self._cur_steps == 0
+            or self._cur_steps >= self.max_steps
+            or self._cur_steps % self.batch_interval
+        ):
             return
         active_shelf_ids = {task.shelf_id for task in self.task_queue.active_tasks}
         carried_shelf_ids = {
@@ -467,6 +568,18 @@ class DynamicWarehouse(Warehouse):
     def _default_charging_stations(self) -> Sequence[Tuple[int, int]]:
         width = self.grid_size[1]
         height = self.grid_size[0]
+        outer_aisle_width = getattr(self, "outer_aisle_width", 0)
+        if outer_aisle_width >= 2:
+            return (
+                (0, 0),
+                (1, 0),
+                (width - 2, 0),
+                (width - 1, 0),
+                (0, height - 1),
+                (1, height - 1),
+                (width - 2, height - 1),
+                (width - 1, height - 1),
+            )
         preferred = [
             (0, 0),
             (width - 1, 0),
