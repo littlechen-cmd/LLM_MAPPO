@@ -19,6 +19,7 @@ from llm_mappo.phase3_training import (
     _validate_training_seed_groups,
     _write_csv,
     evaluate_phase3,
+    train_phase3,
 )
 
 
@@ -188,6 +189,32 @@ def test_phase3_config_disables_astar_kl_and_enables_rule_labels():
     config = Phase3TrainingConfig()
     assert config.ppo.reservation_kl_coefficient == 0.0
     assert config.ppo.engagement_coefficient > 0.0
+
+
+def test_phase3_uses_twelve_persistent_environment_processes(tmp_path):
+    config = Phase3TrainingConfig(
+        phase="3b",
+        seed=3,
+        n_agents=3,
+        max_steps=1,
+        episodes=12,
+        parallel_envs=12,
+        rollout_steps=12,
+        checkpoint_interval=20,
+        metrics_write_interval=12,
+        output_dir=str(tmp_path / "run"),
+        ppo=PPOHyperparameters(
+            update_epochs=1,
+            minibatch_steps=12,
+            engagement_coefficient=0.1,
+            reservation_kl_coefficient=0.05,
+        ),
+    )
+    summary = train_phase3(config)
+    assert summary["episodes"] == 12
+    assert summary["parallel_envs"] == 12
+    assert summary["steps"] == 12
+    assert summary["reservation_teacher"]["cache_misses"] == 12
 
 
 def test_phase3_round_robins_isolated_training_seed_groups():

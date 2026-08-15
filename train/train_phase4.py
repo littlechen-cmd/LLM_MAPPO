@@ -12,6 +12,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int)
     parser.add_argument("--training-seed-groups", type=int, nargs="+")
     parser.add_argument("--episodes", type=int)
+    parser.add_argument("--max-steps", type=int)
+    parser.add_argument("--rollout-steps", type=int)
     parser.add_argument("--device")
     parser.add_argument("--parallel-envs", type=int)
     parser.add_argument("--output-dir")
@@ -21,6 +23,8 @@ def main() -> None:
     for name in (
         "seed",
         "episodes",
+        "max_steps",
+        "rollout_steps",
         "device",
         "parallel_envs",
         "output_dir",

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import csv
-from concurrent.futures import ThreadPoolExecutor
 import json
+import multiprocessing as mp
 import random
+import sys
+import time
+import traceback
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List
@@ -241,16 +244,6 @@ def _make_training_env(config: Phase3TrainingConfig) -> Phase2Warehouse:
     )
 
 
-def _expert_step(arguments):
-    expert, env, masks = arguments
-    return expert.act(env, masks)[1]
-
-
-def _environment_step(arguments):
-    env, actions = arguments
-    return env.step(actions)
-
-
 def _engagement_targets(env: Phase2Warehouse) -> np.ndarray:
     active_letters = sorted(
         {task.label[0] for task in env.env.task_queue.active_tasks}
@@ -271,6 +264,157 @@ def _engagement_targets(env: Phase2Warehouse) -> np.ndarray:
         else:
             values.append(0.3)
     return np.asarray(values, dtype=np.float32)
+
+
+def _environment_worker(connection, config: Phase3TrainingConfig) -> None:
+    """Own one environment and A* teacher for the lifetime of a worker."""
+    env = None
+    expert = None
+    try:
+        env = _make_training_env(config)
+        if config.phase in {"3b", "4"}:
+            expert = AStarExpert()
+        env.reset(seed=config.seed)
+        connection.send(
+            (
+                "ok",
+                {
+                    "actor_observation_dim": env.actor_observation_dim,
+                    "n_agents": env.n_agents,
+                },
+            )
+        )
+        while True:
+            command, payload = connection.recv()
+            response, should_close = _handle_environment_command(
+                env, expert, command, payload
+            )
+            connection.send(("ok", response))
+            if should_close:
+                break
+    except EOFError:
+        pass
+    except BaseException:
+        try:
+            connection.send(("error", traceback.format_exc()))
+        except (BrokenPipeError, EOFError, OSError):
+            pass
+    finally:
+        if env is not None:
+            env.close()
+        connection.close()
+
+
+def _handle_environment_command(env, expert, command: str, payload):
+    if command == "reset":
+        return env.reset(seed=payload), False
+    if command == "snapshot":
+        masks = env.action_masks()
+        preferences = expert.act(env, masks)[1] if expert else None
+        return (masks, preferences, _engagement_targets(env)), False
+    if command == "step":
+        return env.step(payload), False
+    if command == "stats":
+        return _expert_statistics(expert), False
+    if command == "close":
+        return _expert_statistics(expert), True
+    raise ValueError(f"Unknown environment-worker command: {command}")
+
+
+def _expert_statistics(expert: AStarExpert | None) -> dict:
+    if expert is None:
+        return {}
+    return {
+        "path_livelocks": expert.path_livelocks,
+        "state_deadlocks": expert.state_deadlocks,
+        "cache_hits": expert.cache_hits,
+        "cache_misses": expert.cache_misses,
+    }
+
+
+class _EnvironmentPool:
+    """Synchronous vector environments backed by persistent spawned processes."""
+
+    def __init__(self, config: Phase3TrainingConfig, count: int):
+        self._context = mp.get_context("spawn")
+        self._connections = []
+        self._processes = []
+        self._closed = False
+        for index in range(count):
+            parent, child = self._context.Pipe()
+            process = self._context.Process(
+                target=_environment_worker,
+                args=(child, config),
+                name=f"phase3-env-{index:02d}",
+            )
+            process.start()
+            child.close()
+            self._connections.append(parent)
+            self._processes.append(process)
+        ready = [self._receive(index) for index in range(count)]
+        dimensions = {item["actor_observation_dim"] for item in ready}
+        agent_counts = {item["n_agents"] for item in ready}
+        if len(dimensions) != 1 or agent_counts != {config.n_agents}:
+            self.close()
+            raise RuntimeError("Environment workers returned incompatible spaces.")
+        self.actor_observation_dim = dimensions.pop()
+
+    def _receive(self, index: int):
+        try:
+            status, payload = self._connections[index].recv()
+        except EOFError as exc:
+            process = self._processes[index]
+            raise RuntimeError(
+                f"Environment worker {index} exited unexpectedly "
+                f"with code {process.exitcode}."
+            ) from exc
+        if status != "ok":
+            raise RuntimeError(f"Environment worker {index} failed:\n{payload}")
+        return payload
+
+    def _broadcast(self, indices, command: str, payloads=None):
+        selected = list(indices)
+        values = [None] * len(selected) if payloads is None else list(payloads)
+        for index, payload in zip(selected, values):
+            self._connections[index].send((command, payload))
+        return [self._receive(index) for index in selected]
+
+    def reset(self, index: int, seed: int):
+        self._connections[index].send(("reset", seed))
+        return self._receive(index)
+
+    def snapshots(self, indices):
+        return self._broadcast(indices, "snapshot")
+
+    def step(self, indices, actions):
+        return self._broadcast(indices, "step", actions)
+
+    def close(self) -> list[dict]:  # noqa: C901
+        if self._closed:
+            return []
+        self._closed = True
+        live = []
+        for index, process in enumerate(self._processes):
+            if process.is_alive():
+                try:
+                    self._connections[index].send(("close", None))
+                    live.append(index)
+                except (BrokenPipeError, EOFError, OSError):
+                    pass
+        statistics = []
+        for index in live:
+            try:
+                statistics.append(self._receive(index))
+            except (BrokenPipeError, EOFError, RuntimeError):
+                statistics.append({})
+        for connection in self._connections:
+            connection.close()
+        for process in self._processes:
+            process.join(timeout=10)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+        return statistics
 
 
 def _engagement_label_definition(
@@ -428,38 +572,36 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
     (run_dir / "runtime.json").write_text(
         json.dumps(accelerator, indent=2), encoding="utf-8"
     )
-    environment_count = min(config.parallel_envs, config.episodes)
-    envs = [_make_training_env(config) for _ in range(environment_count)]
-    observations = []
-    episode_metadata = []
-    next_episode_index = 0
-    for env in envs:
-        metadata = _training_episode_seed(config, next_episode_index)
-        observations.append(env.reset(seed=metadata[0]))
-        episode_metadata.append(metadata)
-        next_episode_index += 1
-    semantic_dim = 2 if config.phase == "4" else 1
-    policy = DualHeadMAPPOPolicy(
-        envs[0].actor_observation_dim,
-        ACTION_COUNT,
-        str(resolved_device),
-        semantic_dim=semantic_dim,
-    )
-    updater = MAPPOUpdater(policy, config.ppo)
     offline_teacher = (
         OfflineSemanticTeacher.from_jsonl(config.offline_semantic_dataset)
         if config.phase == "4"
         else None
     )
+    environment_count = min(config.parallel_envs, config.episodes)
+    environment_pool = _EnvironmentPool(config, environment_count)
     if offline_teacher is not None and (
-        offline_teacher.observation_dim != envs[0].actor_observation_dim
+        offline_teacher.observation_dim != environment_pool.actor_observation_dim
     ):
+        environment_pool.close()
         raise ValueError("Offline semantic dataset observation size is incompatible.")
+    observations = []
+    episode_metadata = []
+    next_episode_index = 0
+    for index in range(environment_count):
+        metadata = _training_episode_seed(config, next_episode_index)
+        observations.append(environment_pool.reset(index, metadata[0]))
+        episode_metadata.append(metadata)
+        next_episode_index += 1
+    semantic_dim = 2 if config.phase == "4" else 1
+    policy = DualHeadMAPPOPolicy(
+        environment_pool.actor_observation_dim,
+        ACTION_COUNT,
+        str(resolved_device),
+        semantic_dim=semantic_dim,
+    )
+    updater = MAPPOUpdater(policy, config.ppo)
     buffer = RolloutBuffer(config.n_agents, semantic_dim=semantic_dim)
     writer = _writer(run_dir / "tensorboard")
-    reservation_experts = (
-        [AStarExpert() for _ in envs] if config.phase in {"3b", "4"} else None
-    )
     reservation_kl_initial = config.ppo.reservation_kl_coefficient
     engagement_initial = config.ppo.engagement_coefficient
     episodes = 0
@@ -471,11 +613,10 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
     active = [True] * environment_count
     updates_path = run_dir / "updates.csv"
     updates_path.unlink(missing_ok=True)
-    executor = (
-        ThreadPoolExecutor(max_workers=environment_count)
-        if environment_count > 1
-        else None
-    )
+    training_started = time.perf_counter()
+    last_update_time = training_started
+    last_update_steps = 0
+    worker_statistics: List[dict] = []
     if writer:
         writer.add_scalar("config/episodes", config.episodes, 0)
         writer.add_scalar(
@@ -530,7 +671,8 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
     try:
         while episodes < config.episodes:
             active_indices = [index for index, enabled in enumerate(active) if enabled]
-            masks = np.stack([envs[index].action_masks() for index in active_indices])
+            snapshots = environment_pool.snapshots(active_indices)
+            masks = np.stack([snapshot[0] for snapshot in snapshots])
             observation_batch = np.stack(
                 [observations[index] for index in active_indices]
             )
@@ -543,33 +685,15 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 ).reshape(len(active_indices), config.n_agents, semantic_dim)
             else:
                 engagement_targets = np.stack(
-                    [_engagement_targets(envs[index]) for index in active_indices]
+                    [snapshot[2] for snapshot in snapshots]
                 )
-            reservation_preferences = None
-            if reservation_experts is not None:
-                expert_arguments = [
-                    (reservation_experts[index], envs[index], masks[offset])
-                    for offset, index in enumerate(active_indices)
-                ]
-                if executor is None:
-                    reservation_preferences = np.stack(
-                        [_expert_step(arguments) for arguments in expert_arguments]
-                    )
-                else:
-                    reservation_preferences = np.stack(
-                        list(executor.map(_expert_step, expert_arguments))
-                    )
+            reservation_preferences = (
+                np.stack([snapshot[1] for snapshot in snapshots])
+                if config.phase in {"3b", "4"}
+                else None
+            )
             actions, log_probs, values, _ = policy.act(observation_batch, masks)
-            step_arguments = [
-                (envs[index], actions[offset])
-                for offset, index in enumerate(active_indices)
-            ]
-            if executor is None:
-                transitions = [
-                    _environment_step(arguments) for arguments in step_arguments
-                ]
-            else:
-                transitions = list(executor.map(_environment_step, step_arguments))
+            transitions = environment_pool.step(active_indices, actions)
             for offset, index in enumerate(active_indices):
                 transition = transitions[offset]
                 done = (
@@ -624,10 +748,22 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 if next_episode_index < config.episodes:
                     metadata = _training_episode_seed(config, next_episode_index)
                     episode_metadata[index] = metadata
-                    observations[index] = envs[index].reset(seed=metadata[0])
+                    observations[index] = environment_pool.reset(index, metadata[0])
                     next_episode_index += 1
                 else:
                     active[index] = False
+                if episodes % config.metrics_write_interval == 0:
+                    elapsed = max(time.perf_counter() - training_started, 1e-9)
+                    message = {
+                        "episodes": episodes,
+                        "target_episodes": config.episodes,
+                        "steps": steps,
+                        "env_steps_per_second": round(steps / elapsed, 2),
+                        "elapsed_seconds": round(elapsed, 1),
+                    }
+                    print(json.dumps(message), file=sys.stderr, flush=True)
+                    if writer:
+                        writer.flush()
             if len(buffer) >= config.rollout_steps or not any(active):
                 active_indices = [
                     index for index, enabled in enumerate(active) if enabled
@@ -654,14 +790,23 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 )
                 losses = updater.update(buffer, last_values)
                 losses["engagement_coefficient"] = config.ppo.engagement_coefficient
+                update_finished = time.perf_counter()
+                interval_seconds = max(update_finished - last_update_time, 1e-9)
+                total_seconds = max(update_finished - training_started, 1e-9)
+                losses["rollout_env_steps_per_second"] = (
+                    steps - last_update_steps
+                ) / interval_seconds
+                losses["overall_env_steps_per_second"] = steps / total_seconds
+                losses["elapsed_seconds"] = total_seconds
+                last_update_time = update_finished
+                last_update_steps = steps
                 update_count += 1
                 update = {"update": update_count, "steps": steps, **losses}
                 _append_csv(updates_path, update)
                 if writer:
                     for key, metric in losses.items():
                         writer.add_scalar(f"training/{key}", metric, steps)
-            if writer:
-                writer.flush()
+                    writer.flush()
             while episodes >= next_checkpoint:
                 _save_checkpoint(
                     run_dir / f"checkpoint_ep_{next_checkpoint:05d}.pt",
@@ -672,15 +817,13 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 )
                 next_checkpoint += config.checkpoint_interval
     finally:
-        if executor is not None:
-            executor.shutdown(wait=True)
-        for env in envs:
-            env.close()
+        worker_statistics = environment_pool.close()
         if writer:
             writer.close()
     final = run_dir / "checkpoint_final.pt"
     _save_checkpoint(final, policy, config, episodes, steps)
     _write_csv(run_dir / "episodes.csv", episode_records)
+    training_elapsed_seconds = time.perf_counter() - training_started
     summary = {
         "phase": config.phase,
         "seed": config.seed,
@@ -695,6 +838,10 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         },
         "episodes": episodes,
         "steps": steps,
+        "training_elapsed_seconds": training_elapsed_seconds,
+        "env_steps_per_second": (
+            steps / training_elapsed_seconds if training_elapsed_seconds > 0 else 0.0
+        ),
         "parallel_envs": environment_count,
         "accelerator": accelerator,
         "checkpoint": str(final),
@@ -717,18 +864,15 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
             "neighbours": config.offline_semantic_neighbours,
             "api_calls_during_training": 0,
         }
-    if reservation_experts is not None:
+    if config.phase in {"3b", "4"}:
         summary["reservation_teacher"] = {
-            "path_livelocks": sum(
-                expert.path_livelocks for expert in reservation_experts
-            ),
-            "state_deadlocks": sum(
-                expert.state_deadlocks for expert in reservation_experts
-            ),
-            "cache_hits": sum(expert.cache_hits for expert in reservation_experts),
-            "cache_misses": sum(
-                expert.cache_misses for expert in reservation_experts
-            ),
+            key: sum(statistics.get(key, 0) for statistics in worker_statistics)
+            for key in (
+                "path_livelocks",
+                "state_deadlocks",
+                "cache_hits",
+                "cache_misses",
+            )
         }
     (run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"

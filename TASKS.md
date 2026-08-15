@@ -12,6 +12,8 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
 ## Training Throughput Optimization
 
 - [x] Collect synchronous rollouts from configurable independent environments.
+- [x] Replace Windows thread workers with 12 persistent spawned environment
+  processes and validate Phase 4 throughput and deterministic rollout behavior.
 - [x] Cache unchanged A* teacher decisions and streamline reservations/search.
 - [x] Build the offline semantic nearest-neighbour index once at load time.
 - [x] Append training-update metrics instead of rewriting `updates.csv`.

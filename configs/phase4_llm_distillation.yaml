@@ -19,7 +19,7 @@ training:
   device: auto
   torch_num_threads: 1
   cuda_allow_tf32: true
-  parallel_envs: 4
+  parallel_envs: 12
   episodes: 800
   rollout_steps: 512
   checkpoint_interval: 200

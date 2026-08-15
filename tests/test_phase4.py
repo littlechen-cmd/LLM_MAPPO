@@ -156,7 +156,7 @@ def test_phase4_config_requires_cached_dataset_and_path_teacher():
     assert config.n_agents == 5
     assert config.batch_size_range == (4, 8)
     assert config.task_completion_target == 50
-    assert config.parallel_envs == 4
+    assert config.parallel_envs == 12
     assert config.device == "auto"
     assert config.cuda_allow_tf32 is True
     assert config.ppo.reservation_kl_coefficient == 0.05
@@ -207,6 +207,8 @@ def test_phase4_training_aggregates_two_environment_rollouts(tmp_path):
     assert summary["episodes"] == 2
     assert summary["parallel_envs"] == 2
     assert summary["steps"] == 4
+    assert summary["training_elapsed_seconds"] > 0
+    assert summary["env_steps_per_second"] > 0
     assert summary["accelerator"]["resolved"] == "cpu"
     runtime = json.loads(
         (tmp_path / "run" / "seed_003" / "runtime.json").read_text(
