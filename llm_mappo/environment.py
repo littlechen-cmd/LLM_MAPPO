@@ -84,7 +84,7 @@ class DynamicWarehouse(Warehouse):
         self.picking_stations = tuple(self.goals)
 
     @staticmethod
-    def _validate_options(
+    def _validate_options(  # noqa: C901
         batch_interval,
         batch_size_range,
         charging_rate,
@@ -321,7 +321,7 @@ class DynamicWarehouse(Warehouse):
         first_count = int(self.np_random.integers(minimum, first_upper + 1))
         first = candidates[:first_count]
         second_count = self._draw_initial_batch_size(len(candidates) - first_count)
-        second = candidates[first_count : first_count + second_count]
+        second = candidates[first_count:first_count + second_count]
         self._create_batch(first)
         self._create_batch(second)
 
@@ -371,6 +371,10 @@ class DynamicWarehouse(Warehouse):
         self.request_queue = [
             self.shelfs[task.shelf_id - 1] for task in self.task_queue.active_tasks
         ]
+
+    def _renew_delivered_request(self, delivered_shelf) -> None:
+        """Let the dynamic TaskQueue, rather than base RWARE, create new work."""
+        self.request_queue.remove(delivered_shelf)
 
     def _assign_available_tasks(self):
         if not self.auto_assign:

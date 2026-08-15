@@ -56,10 +56,9 @@ incrementally (medium map before multi-AGV coordination); do not move to the
 Record a deterministic, non-flashing GIF directly from the saved checkpoint:
 
 ```powershell
-python visualize_phase2.py artifacts/phase2_small_astar_bc/seed_007/checkpoint_final.pt --fps 5
+python visualize.py artifacts/phase2_small_astar_bc/seed_007/checkpoint_final.pt --fps 5
 ```
 
-The default output is `visualization.gif` beside the checkpoint. This mode uses
-a deterministic software frame renderer, avoiding dependence on the unstable
-Windows OpenGL readback path. Use `--render human --fps 5` only when an
-interactive Pyglet window is required.
+This opens one stable real-time software-rendered window. Add `--record-gif`
+to save a replay, or `--no-live --record-gif` for a headless recording. Use
+`--seeds 3 7 11` to replay several seeds sequentially in the same window.

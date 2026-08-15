@@ -36,6 +36,10 @@ ppo:
   max_grad_norm: 0.5
   update_epochs: 4
   minibatch_steps: 64
+  reservation_kl_coefficient: 0.20
+  reservation_kl_decay_interval: 100
+  reservation_kl_decay_factor: 0.90
+  reservation_kl_minimum: 0.03
 
 evaluation:
   seeds: 10

@@ -12,10 +12,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int)
     parser.add_argument("--training-seed-groups", type=int, nargs="+")
     parser.add_argument("--episodes", type=int)
+    parser.add_argument("--device")
+    parser.add_argument("--parallel-envs", type=int)
     parser.add_argument("--output-dir")
     args = parser.parse_args()
     config = Phase3TrainingConfig.from_yaml(args.config)
-    for name in ("seed", "episodes", "output_dir"):
+    for name in ("seed", "episodes", "device", "parallel_envs", "output_dir"):
         value = getattr(args, name.replace("-", "_"), None)
         if value is not None:
             setattr(config, name.replace("-", "_"), value)

@@ -112,16 +112,17 @@ class MAPPOPolicy(nn.Module):
         actor_obs = torch.as_tensor(
             observations, dtype=torch.float32, device=self.device
         )
-        state = actor_obs.unsqueeze(0)
+        state = actor_obs.unsqueeze(0) if actor_obs.ndim == 2 else actor_obs
         logits = self._masked_logits(self.actor(actor_obs), action_masks)
         distribution = Categorical(logits=logits)
         actions = (
             torch.argmax(logits, dim=-1) if deterministic else distribution.sample()
         )
+        values = self.critic(state).cpu().numpy()
         return (
             actions.cpu().numpy(),
             distribution.log_prob(actions).cpu().numpy(),
-            self.critic(state).item(),
+            float(values[0]) if actor_obs.ndim == 2 else values,
         )
 
     def evaluate_actions(
@@ -179,10 +180,12 @@ class DualHeadMAPPOPolicy(nn.Module):
         actions = (
             torch.argmax(logits, dim=-1) if deterministic else distribution.sample()
         )
+        state = actor_obs.unsqueeze(0) if actor_obs.ndim == 2 else actor_obs
+        values = self.critic(state).cpu().numpy()
         return (
             actions.cpu().numpy(),
             distribution.log_prob(actions).cpu().numpy(),
-            self.critic(actor_obs.unsqueeze(0)).item(),
+            float(values[0]) if actor_obs.ndim == 2 else values,
             self._semantic_output(actor_obs).cpu().numpy(),
         )
 
@@ -257,6 +260,7 @@ class RolloutBuffer:
         self.rewards: List[float] = []
         self.dones: List[bool] = []
         self.values: List[float] = []
+        self.stream_ids: List[int] = []
 
     def add(
         self,
@@ -269,6 +273,7 @@ class RolloutBuffer:
         action_masks: np.ndarray | None = None,
         reservation_preferences: np.ndarray | None = None,
         engagement_targets: np.ndarray | None = None,
+        stream_id: int = 0,
     ) -> None:
         self.observations.append(np.asarray(observations, dtype=np.float32).copy())
         self.actions.append(np.asarray(actions, dtype=np.int64).copy())
@@ -314,23 +319,48 @@ class RolloutBuffer:
         self.rewards.append(float(reward))
         self.dones.append(bool(done))
         self.values.append(float(value))
+        self.stream_ids.append(int(stream_id))
 
     def __len__(self) -> int:
         return len(self.rewards)
 
-    def tensors(self, last_value: float, hyperparameters: PPOHyperparameters, device):
+    def tensors(self, last_value, hyperparameters: PPOHyperparameters, device):
         if not self.rewards:
             raise ValueError("Cannot update MAPPO with an empty rollout.")
         advantages = np.zeros(len(self), dtype=np.float32)
-        gae = 0.0
-        next_value = float(last_value)
+        stream_ids = set(self.stream_ids)
+        if np.isscalar(last_value):
+            bootstrap = {stream_id: float(last_value) for stream_id in stream_ids}
+        elif isinstance(last_value, dict):
+            bootstrap = {
+                stream_id: float(last_value.get(stream_id, 0.0))
+                for stream_id in stream_ids
+            }
+        else:
+            values = np.asarray(last_value, dtype=np.float32).reshape(-1)
+            bootstrap = {
+                stream_id: float(values[stream_id])
+                for stream_id in stream_ids
+            }
+        gae_by_stream = {stream_id: 0.0 for stream_id in stream_ids}
+        next_value_by_stream = dict(bootstrap)
         for index in reversed(range(len(self))):
+            stream_id = self.stream_ids[index]
             mask = 1.0 - float(self.dones[index])
-            delta = self.rewards[index] + hyperparameters.gamma * next_value * mask
+            delta = (
+                self.rewards[index]
+                + hyperparameters.gamma * next_value_by_stream[stream_id] * mask
+            )
             delta -= self.values[index]
-            gae = delta + hyperparameters.gamma * hyperparameters.gae_lambda * mask * gae
+            gae = delta + (
+                hyperparameters.gamma
+                * hyperparameters.gae_lambda
+                * mask
+                * gae_by_stream[stream_id]
+            )
             advantages[index] = gae
-            next_value = self.values[index]
+            gae_by_stream[stream_id] = gae
+            next_value_by_stream[stream_id] = self.values[index]
         returns = advantages + np.asarray(self.values, dtype=np.float32)
         return {
             "states": torch.as_tensor(
@@ -371,6 +401,7 @@ class RolloutBuffer:
         self.rewards.clear()
         self.dones.clear()
         self.values.clear()
+        self.stream_ids.clear()
 
 
 class MAPPOUpdater:
@@ -384,7 +415,7 @@ class MAPPOUpdater:
         )
 
     def update(  # noqa: C901
-        self, buffer: RolloutBuffer, last_value: float
+        self, buffer: RolloutBuffer, last_value
     ) -> Dict[str, float]:
         data = buffer.tensors(last_value, self.hyperparameters, self.policy.device)
         advantages = data["advantages"]

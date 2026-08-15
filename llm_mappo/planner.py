@@ -1,9 +1,8 @@
 """A* path teacher for the orientation-based RWARE action space."""
 
 import heapq
-from collections import defaultdict
 from itertools import count
-from typing import Dict, Optional, Sequence, Set, Tuple
+from typing import Optional, Sequence, Set, Tuple
 
 from llm_mappo.types import PathPlan, PlannerEvent
 from rware.warehouse import Action, Direction
@@ -15,6 +14,13 @@ _DIRECTIONS = {
     Direction.LEFT: (-1, 0),
     Direction.RIGHT: (1, 0),
 }
+_DIRECTION_ORDER = (
+    Direction.UP,
+    Direction.RIGHT,
+    Direction.DOWN,
+    Direction.LEFT,
+)
+_DIRECTION_INDEX = {direction: index for index, direction in enumerate(_DIRECTION_ORDER)}
 
 
 class ReservationTable:
@@ -24,32 +30,58 @@ class ReservationTable:
         if horizon < 1:
             raise ValueError("reservation horizon must be positive.")
         self.horizon = horizon
-        self.cells: Dict[int, Set[Tuple[int, int]]] = defaultdict(set)
-        self.edges: Dict[int, Set[Tuple[Tuple[int, int], Tuple[int, int]]]] = (
-            defaultdict(set)
-        )
+        self.cells: list[Set[Tuple[int, int]]] = [
+            set() for _ in range(horizon + 1)
+        ]
+        self.edges: list[Set[Tuple[Tuple[int, int], Tuple[int, int]]]] = [
+            set() for _ in range(horizon + 1)
+        ]
 
     def reserve(self, path: Sequence[Tuple[int, int]]) -> None:
         if not path:
             raise ValueError("cannot reserve an empty path.")
-        expanded = list(path)
-        expanded.extend([expanded[-1]] * (self.horizon + 1 - len(expanded)))
-        for time, position in enumerate(expanded[:self.horizon + 1]):
+        last_index = len(path) - 1
+        previous = path[0]
+        for time in range(self.horizon + 1):
+            position = path[min(time, last_index)]
             self.cells[time].add(position)
             if time:
-                self.edges[time].add((expanded[time - 1], position))
+                self.edges[time].add((previous, position))
+            previous = position
 
     def is_available(self, position: Tuple[int, int], time: int) -> bool:
-        return position not in self.cells[time]
+        return time <= self.horizon and position not in self.cells[time]
 
     def permits_edge(
         self, start: Tuple[int, int], end: Tuple[int, int], time: int
     ) -> bool:
-        return (end, start) not in self.edges[time]
+        return time <= self.horizon and (end, start) not in self.edges[time]
+
+    def permits_transition(
+        self,
+        start: Tuple[int, int],
+        end: Tuple[int, int],
+        start_time: int,
+        step_cost: int,
+    ) -> bool:
+        """Check all turn/wait cells and the final directed edge in one pass."""
+        arrival = start_time + step_cost
+        if arrival > self.horizon:
+            return False
+        for time in range(start_time + 1, arrival):
+            if start in self.cells[time]:
+                return False
+        return (
+            end not in self.cells[arrival]
+            and (end, start) not in self.edges[arrival]
+        )
 
 
 class AStarPlanner:
     """Grid A* that returns waypoints and a smooth five-action preference."""
+
+    def __init__(self):
+        self._oriented_neighbour_cache = {}
 
     def plan(self, env, agent_id: int, goal: Tuple[int, int]) -> PathPlan:
         agent = env.agents[agent_id - 1]
@@ -205,20 +237,9 @@ class AStarPlanner:
             ):
                 if neighbour in blocked:
                     continue
-                # Validate every intermediate time step (turns stay in place).
-                ok = True
-                for t in range(time + 1, time + step_cost + 1):
-                    stay = current if t < time + step_cost else neighbour
-                    if not reservations.is_available(stay, t):
-                        ok = False
-                        break
-                    if t < time + step_cost:
-                        # Turn step: stay in place, no edge traversal.
-                        continue
-                    if not reservations.permits_edge(current, neighbour, t):
-                        ok = False
-                        break
-                if not ok:
+                if not reservations.permits_transition(
+                    current, neighbour, time, step_cost
+                ):
                     continue
                 next_time = time + step_cost
                 next_key = (neighbour, ndir, next_time)
@@ -313,21 +334,29 @@ class AStarPlanner:
         A pure in-place turn is yielded as ``(point, turned_dir, turn_steps)``
         so the search can still explore rotational shortcuts when boxed in.
         """
+        key = point, direction, grid_size
+        cached = self._oriented_neighbour_cache.get(key)
+        if cached is not None:
+            return cached
         x, y = point
         height, width = grid_size
+        neighbours = []
         for target_dir, (dx, dy) in _DIRECTIONS.items():
             candidate = x + dx, y + dy
             if not (0 <= candidate[0] < width and 0 <= candidate[1] < height):
                 continue
             turn_steps = self._turn_steps(direction, target_dir)
             step_cost = 1 + turn_steps  # turns + 1 forward
-            yield candidate, target_dir, step_cost
+            neighbours.append((candidate, target_dir, step_cost))
         # In-place turn option (useful when surrounded but need to reorient)
         left = self._turn(direction, right=False)
         right = self._turn(direction, right=True)
-        yield point, left, 1
+        neighbours.append((point, left, 1))
         if right != left:  # 4-direction system: right != left
-            yield point, right, 1
+            neighbours.append((point, right, 1))
+        result = tuple(neighbours)
+        self._oriented_neighbour_cache[key] = result
+        return result
 
     @staticmethod
     def _turn_steps(src: Direction, dst: Direction) -> int:
@@ -338,9 +367,8 @@ class AStarPlanner:
         """
         if src == dst:
             return 0
-        order = (Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT)
-        diff = abs(order.index(src) - order.index(dst))
-        return min(diff, len(order) - diff)
+        diff = abs(_DIRECTION_INDEX[src] - _DIRECTION_INDEX[dst])
+        return min(diff, len(_DIRECTION_ORDER) - diff)
 
     def _heuristic(
         self,
@@ -437,9 +465,10 @@ class AStarPlanner:
 
     @staticmethod
     def _turn(direction: Direction, right: bool) -> Direction:
-        order = (Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT)
         offset = 1 if right else -1
-        return order[(order.index(direction) + offset) % len(order)]
+        return _DIRECTION_ORDER[
+            (_DIRECTION_INDEX[direction] + offset) % len(_DIRECTION_ORDER)
+        ]
 
     @staticmethod
     def _smooth_preferences(

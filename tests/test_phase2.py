@@ -8,6 +8,21 @@ from llm_mappo.visualization import render_warehouse_frame
 from rware.warehouse import Action
 
 
+def test_astar_expert_reuses_unchanged_state_and_target():
+    env = Phase2Warehouse(n_agents=3, max_steps=8)
+    expert = AStarExpert()
+    try:
+        env.reset(seed=4)
+        masks = env.action_masks()
+        expert.act(env, masks)
+        env.env._cur_steps = 1
+        expert.act(env, masks)
+    finally:
+        env.close()
+    assert expert.cache_misses == 1
+    assert expert.cache_hits == 1
+
+
 def test_phase2_adapter_provides_oracle_features_and_single_b_priority():
     env = Phase2Warehouse(n_agents=3, max_steps=8)
     try:

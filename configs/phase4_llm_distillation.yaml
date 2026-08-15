@@ -16,8 +16,10 @@ training:
   phase: "4"
   seed: 7
   training_seed_groups: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
-  device: cpu
+  device: auto
   torch_num_threads: 1
+  cuda_allow_tf32: true
+  parallel_envs: 4
   episodes: 800
   rollout_steps: 512
   checkpoint_interval: 200

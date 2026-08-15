@@ -66,17 +66,17 @@ reservation-policy KL term or a protected coordination head, before another
 Generate GIFs and per-step traces for the three known failures:
 
 ```powershell
-python visualize_failed_seeds.py
+python visualize.py --controller expert --seeds 50 85 96 --record-gif --trace
 ```
 
 Outputs are written to:
 
 ```text
-artifacts/phase2_medium_3ag_astar_bc/failed_seed_visualizations/
+artifacts/visualizations/
 ```
 
 To visualize a selected seed or change the frame rate:
 
 ```powershell
-python visualize_failed_seeds.py --seeds 50 --fps 8 --output-dir artifacts/failed_seed_050
+python visualize.py --controller expert --seeds 50 --fps 8 --record-gif --trace --output-dir artifacts/failed_seed_050
 ```

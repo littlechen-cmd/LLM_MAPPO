@@ -4,11 +4,17 @@ import numpy as np
 import pytest
 import torch
 
-from llm_mappo.mappo import DualHeadMAPPOPolicy
+from llm_mappo.mappo import (
+    DualHeadMAPPOPolicy,
+    PPOHyperparameters,
+    RolloutBuffer,
+)
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
 from llm_mappo.phase3_training import (
     Phase3TrainingConfig,
+    _append_csv,
     _engagement_targets,
+    _resolve_device,
     _training_episode_seed,
     _validate_training_seed_groups,
     _write_csv,
@@ -254,6 +260,67 @@ def test_phase3_csv_writer_preserves_late_priority_columns(tmp_path):
         rows = list(csv.DictReader(stream))
     assert rows[1]["priority_A_mean_completion_steps"] == "10.0"
     assert rows[0]["priority_A_mean_completion_steps"] == ""
+
+
+def test_phase3_update_csv_appends_without_rewriting_prior_rows(tmp_path):
+    path = tmp_path / "updates.csv"
+    _append_csv(path, {"update": 1, "steps": 8, "loss": 0.5})
+    first_size = path.stat().st_size
+    _append_csv(path, {"update": 2, "steps": 16, "loss": 0.25})
+
+    with path.open("r", encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert [row["update"] for row in rows] == ["1", "2"]
+    assert path.stat().st_size > first_size
+
+
+def test_rollout_buffer_computes_gae_per_parallel_environment_stream():
+    buffer = RolloutBuffer(n_agents=1)
+    observation = np.zeros((1, 2), dtype=np.float32)
+    action = np.zeros(1, dtype=np.int64)
+    log_prob = np.zeros(1, dtype=np.float32)
+    for stream_id, reward, done in (
+        (0, 1.0, False),
+        (1, 10.0, False),
+        (0, 2.0, True),
+        (1, 20.0, True),
+    ):
+        buffer.add(
+            observation,
+            action,
+            log_prob,
+            reward,
+            done,
+            value=0.0,
+            stream_id=stream_id,
+        )
+    data = buffer.tensors(
+        {0: 0.0, 1: 0.0},
+        PPOHyperparameters(gamma=1.0, gae_lambda=1.0),
+        "cpu",
+    )
+    assert np.allclose(data["advantages"].numpy(), [3.0, 30.0, 2.0, 20.0])
+
+
+def test_dual_head_policy_batches_independent_environments():
+    policy = DualHeadMAPPOPolicy(6, ACTION_COUNT, semantic_dim=2)
+    observations = np.zeros((3, 5, 6), dtype=np.float32)
+    masks = np.ones((3, 5, ACTION_COUNT), dtype=bool)
+    actions, log_probs, values, semantics = policy.act(observations, masks)
+    assert actions.shape == log_probs.shape == (3, 5)
+    assert values.shape == (3,)
+    assert semantics.shape == (3, 5, 2)
+
+
+def test_training_device_resolution_supports_auto_and_clear_cuda_errors(
+    monkeypatch,
+):
+    assert _resolve_device("cpu").type == "cpu"
+    automatic = _resolve_device("auto")
+    assert automatic.type in {"cpu", "cuda"}
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="CUDA was requested"):
+        _resolve_device("cuda:0")
 
 
 def test_phase3_evaluation_rejects_nonpositive_engagement_sample_rate():

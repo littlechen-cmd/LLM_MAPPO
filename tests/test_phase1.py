@@ -205,6 +205,30 @@ def test_delivery_completes_task_and_enforces_picking_lock():
     assert any(event["type"] == "picking_complete" for event in info["events"])
 
 
+def test_dynamic_delivery_does_not_sample_an_empty_request_candidate_set():
+    env = make_env(batch_interval=100)
+    env.reset(seed=8)
+    task = env.task_queue.task_for_agent(1)
+    shelf = env.shelfs[task.shelf_id - 1]
+    goal_x, goal_y = env.goals[0]
+    env.request_queue = list(env.shelfs)
+    env.agents[0].x, env.agents[0].y, env.agents[0].dir = (
+        goal_x,
+        goal_y - 1,
+        Direction.DOWN,
+    )
+    env.agents[1].x, env.agents[1].y = 9, 0
+    shelf.x, shelf.y = goal_x, goal_y - 1
+    env.agents[0].carrying_shelf = shelf
+    env._recalc_grid()
+
+    _, _, _, _, info = env.step([Action.FORWARD, Action.NOOP])
+
+    completed = next(item for item in info["tasks"] if item["task_id"] == task.task_id)
+    assert completed["status"] == TaskStatus.COMPLETED.value
+    assert shelf not in env.request_queue
+
+
 def test_astar_returns_orientation_aware_preferences():
     env = make_env(batch_interval=100)
     env.reset(seed=1)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from concurrent.futures import ThreadPoolExecutor
 import json
 import random
 from dataclasses import asdict, dataclass, field
@@ -33,6 +34,8 @@ class Phase3TrainingConfig:
     training_seed_groups: tuple[int, ...] = ()
     device: str = "cpu"
     torch_num_threads: int = 1
+    cuda_allow_tf32: bool = True
+    parallel_envs: int = 1
     n_agents: int = 3
     max_steps: int = 400
     env_id: str = "llm-mappo-medium-3ag-v1"
@@ -79,6 +82,10 @@ class Phase3TrainingConfig:
             ),
             device=training.get("device", cls.device),
             torch_num_threads=training.get("torch_num_threads", cls.torch_num_threads),
+            cuda_allow_tf32=training.get(
+                "cuda_allow_tf32", cls.cuda_allow_tf32
+            ),
+            parallel_envs=training.get("parallel_envs", cls.parallel_envs),
             n_agents=environment.get("n_agents", cls.n_agents),
             max_steps=environment.get("max_steps", cls.max_steps),
             env_id=environment.get("id", cls.env_id),
@@ -129,6 +136,59 @@ def _set_seed(seed: int, threads: int) -> None:
     torch.manual_seed(seed)
 
 
+def _resolve_device(requested: str) -> torch.device:
+    """Resolve an explicit or automatic Torch device with actionable errors."""
+    normalized = str(requested).strip().lower()
+    if normalized == "auto":
+        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    try:
+        device = torch.device(normalized)
+    except (RuntimeError, ValueError) as exc:
+        raise ValueError(f"Unsupported training device: {requested!r}.") from exc
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA was requested but PyTorch cannot access a CUDA device. "
+                "Install a CUDA-enabled PyTorch build and verify the NVIDIA driver."
+            )
+        index = device.index if device.index is not None else 0
+        if index >= torch.cuda.device_count():
+            raise RuntimeError(
+                f"CUDA device index {index} is unavailable; "
+                f"detected {torch.cuda.device_count()} device(s)."
+            )
+        return torch.device(f"cuda:{index}")
+    if device.type != "cpu":
+        raise ValueError("Training device must be 'auto', 'cpu', or a CUDA device.")
+    return device
+
+
+def _configure_accelerator(device: torch.device, allow_tf32: bool) -> dict:
+    metadata = {
+        "resolved": str(device),
+        "torch_version": torch.__version__,
+        "cuda_runtime": torch.version.cuda,
+    }
+    if device.type != "cuda":
+        return metadata
+    torch.cuda.set_device(device)
+    torch.cuda.manual_seed_all(torch.initial_seed())
+    torch.backends.cuda.matmul.allow_tf32 = bool(allow_tf32)
+    torch.backends.cudnn.allow_tf32 = bool(allow_tf32)
+    if hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision("high" if allow_tf32 else "highest")
+    properties = torch.cuda.get_device_properties(device)
+    metadata.update(
+        {
+            "name": properties.name,
+            "capability": [properties.major, properties.minor],
+            "total_memory_bytes": int(properties.total_memory),
+            "allow_tf32": bool(allow_tf32),
+        }
+    )
+    return metadata
+
+
 def _training_episode_seed(
     config: Phase3TrainingConfig, episode_index: int
 ) -> tuple[int, int | None, int]:
@@ -160,6 +220,35 @@ def _writer(path: Path):
         return SummaryWriter(log_dir=str(path))
     except ImportError:
         return None
+
+
+def _make_training_env(config: Phase3TrainingConfig) -> Phase2Warehouse:
+    return Phase2Warehouse(
+        n_agents=config.n_agents,
+        max_steps=config.max_steps,
+        env_id=config.env_id,
+        charge_threshold=config.charge_threshold,
+        waypoint_reward=config.waypoint_reward,
+        oracle_interaction_mask=config.oracle_interaction_mask,
+        deadlock_steps=config.deadlock_steps,
+        priority_schedule=config.priority_schedule,
+        batch_interval=config.batch_interval,
+        batch_size_range=config.batch_size_range,
+        initial_priority_label=config.initial_priority_label,
+        request_queue_size=config.request_queue_size,
+        task_completion_target=config.task_completion_target,
+        include_priority_features=True,
+    )
+
+
+def _expert_step(arguments):
+    expert, env, masks = arguments
+    return expert.act(env, masks)[1]
+
+
+def _environment_step(arguments):
+    env, actions = arguments
+    return env.step(actions)
 
 
 def _engagement_targets(env: Phase2Warehouse) -> np.ndarray:
@@ -226,6 +315,20 @@ def _write_csv(path: Path, rows: List[dict]) -> None:
         writer.writeheader()
         writer.writerows(rows)
     temporary_path.replace(path)
+
+
+def _append_csv(path: Path, row: dict) -> None:
+    """Append one fixed-schema metric row without rewriting prior updates."""
+    write_header = not path.exists() or path.stat().st_size == 0
+    fieldnames = list(row)
+    if not write_header:
+        with path.open("r", newline="", encoding="utf-8") as stream:
+            fieldnames = next(csv.reader(stream))
+    with path.open("a", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def _completion_durations(tasks: List[dict]) -> Dict[str, List[float]]:
@@ -304,38 +407,42 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         raise ValueError("Phase 3b and Phase 4 require a positive A* KL coefficient.")
     if config.offline_semantic_neighbours < 1:
         raise ValueError("offline_semantic_neighbours must be positive.")
+    if config.parallel_envs < 1:
+        raise ValueError("parallel_envs must be positive.")
+    if config.episodes < 1:
+        raise ValueError("episodes must be positive.")
     if config.checkpoint_interval < 1 or config.metrics_write_interval < 1:
         raise ValueError("Phase 3 intervals must be positive.")
     _validate_training_seed_groups(config.training_seed_groups)
     _set_seed(config.seed, config.torch_num_threads)
+    resolved_device = _resolve_device(config.device)
+    accelerator = _configure_accelerator(
+        resolved_device, config.cuda_allow_tf32
+    )
+    accelerator["requested"] = config.device
     run_dir = Path(config.output_dir) / f"seed_{config.seed:03d}"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "config.json").write_text(
         json.dumps(asdict(config), indent=2), encoding="utf-8"
     )
-    env = Phase2Warehouse(
-        n_agents=config.n_agents,
-        max_steps=config.max_steps,
-        env_id=config.env_id,
-        charge_threshold=config.charge_threshold,
-        waypoint_reward=config.waypoint_reward,
-        oracle_interaction_mask=config.oracle_interaction_mask,
-        deadlock_steps=config.deadlock_steps,
-        priority_schedule=config.priority_schedule,
-        batch_interval=config.batch_interval,
-        batch_size_range=config.batch_size_range,
-        initial_priority_label=config.initial_priority_label,
-        request_queue_size=config.request_queue_size,
-        task_completion_target=config.task_completion_target,
-        include_priority_features=True,
+    (run_dir / "runtime.json").write_text(
+        json.dumps(accelerator, indent=2), encoding="utf-8"
     )
-    environment_seed, seed_group, seed_offset = _training_episode_seed(config, 0)
-    observations = env.reset(seed=environment_seed)
+    environment_count = min(config.parallel_envs, config.episodes)
+    envs = [_make_training_env(config) for _ in range(environment_count)]
+    observations = []
+    episode_metadata = []
+    next_episode_index = 0
+    for env in envs:
+        metadata = _training_episode_seed(config, next_episode_index)
+        observations.append(env.reset(seed=metadata[0]))
+        episode_metadata.append(metadata)
+        next_episode_index += 1
     semantic_dim = 2 if config.phase == "4" else 1
     policy = DualHeadMAPPOPolicy(
-        env.actor_observation_dim,
+        envs[0].actor_observation_dim,
         ACTION_COUNT,
-        config.device,
+        str(resolved_device),
         semantic_dim=semantic_dim,
     )
     updater = MAPPOUpdater(policy, config.ppo)
@@ -345,26 +452,42 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         else None
     )
     if offline_teacher is not None and (
-        offline_teacher.observation_dim != env.actor_observation_dim
+        offline_teacher.observation_dim != envs[0].actor_observation_dim
     ):
         raise ValueError("Offline semantic dataset observation size is incompatible.")
     buffer = RolloutBuffer(config.n_agents, semantic_dim=semantic_dim)
     writer = _writer(run_dir / "tensorboard")
-    reservation_expert = AStarExpert() if config.phase in {"3b", "4"} else None
+    reservation_experts = (
+        [AStarExpert() for _ in envs] if config.phase in {"3b", "4"} else None
+    )
     reservation_kl_initial = config.ppo.reservation_kl_coefficient
     engagement_initial = config.ppo.engagement_coefficient
     episodes = 0
     steps = 0
     episode_records: List[dict] = []
-    update_records: List[dict] = []
+    update_count = 0
     priority_durations: Dict[str, List[float]] = {}
     next_checkpoint = config.checkpoint_interval
+    active = [True] * environment_count
+    updates_path = run_dir / "updates.csv"
+    updates_path.unlink(missing_ok=True)
+    executor = (
+        ThreadPoolExecutor(max_workers=environment_count)
+        if environment_count > 1
+        else None
+    )
     if writer:
         writer.add_scalar("config/episodes", config.episodes, 0)
         writer.add_scalar(
             "config/training_seed_group_count", len(config.training_seed_groups), 0
         )
         writer.add_scalar("config/n_agents", config.n_agents, 0)
+        writer.add_scalar("config/parallel_envs", environment_count, 0)
+        writer.add_text("config/requested_device", config.device, 0)
+        writer.add_text("config/resolved_device", str(resolved_device), 0)
+        writer.add_scalar(
+            "config/cuda_enabled", int(resolved_device.type == "cuda"), 0
+        )
         writer.add_scalar("config/max_steps", config.max_steps, 0)
         writer.add_scalar(
             "config/dynamic_ingress_enabled",
@@ -406,41 +529,79 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         writer.flush()
     try:
         while episodes < config.episodes:
-            masks = env.action_masks()
-            engagement_targets = (
-                offline_teacher.targets(
-                    observations, config.offline_semantic_neighbours
+            active_indices = [index for index, enabled in enumerate(active) if enabled]
+            masks = np.stack([envs[index].action_masks() for index in active_indices])
+            observation_batch = np.stack(
+                [observations[index] for index in active_indices]
+            )
+            if offline_teacher is not None:
+                flat_observations = observation_batch.reshape(
+                    -1, observation_batch.shape[-1]
                 )
-                if offline_teacher is not None
-                else _engagement_targets(env)
-            )
+                engagement_targets = offline_teacher.targets(
+                    flat_observations, config.offline_semantic_neighbours
+                ).reshape(len(active_indices), config.n_agents, semantic_dim)
+            else:
+                engagement_targets = np.stack(
+                    [_engagement_targets(envs[index]) for index in active_indices]
+                )
             reservation_preferences = None
-            if reservation_expert is not None:
-                _, reservation_preferences = reservation_expert.act(env, masks)
-            actions, log_probs, value, engagement = policy.act(observations, masks)
-            transition = env.step(actions)
-            done = (
-                transition.terminated
-                or transition.truncated
-                or transition.metrics.deadlocked
-            )
-            buffer.add(
-                observations,
-                actions,
-                log_probs,
-                transition.team_reward,
-                done,
-                value,
-                masks,
-                reservation_preferences=reservation_preferences,
-                engagement_targets=engagement_targets,
-            )
-            observations = transition.observations
-            steps += 1
-            if done:
+            if reservation_experts is not None:
+                expert_arguments = [
+                    (reservation_experts[index], envs[index], masks[offset])
+                    for offset, index in enumerate(active_indices)
+                ]
+                if executor is None:
+                    reservation_preferences = np.stack(
+                        [_expert_step(arguments) for arguments in expert_arguments]
+                    )
+                else:
+                    reservation_preferences = np.stack(
+                        list(executor.map(_expert_step, expert_arguments))
+                    )
+            actions, log_probs, values, _ = policy.act(observation_batch, masks)
+            step_arguments = [
+                (envs[index], actions[offset])
+                for offset, index in enumerate(active_indices)
+            ]
+            if executor is None:
+                transitions = [
+                    _environment_step(arguments) for arguments in step_arguments
+                ]
+            else:
+                transitions = list(executor.map(_environment_step, step_arguments))
+            for offset, index in enumerate(active_indices):
+                transition = transitions[offset]
+                done = (
+                    transition.terminated
+                    or transition.truncated
+                    or transition.metrics.deadlocked
+                )
+                buffer.add(
+                    observations[index],
+                    actions[offset],
+                    log_probs[offset],
+                    transition.team_reward,
+                    done,
+                    values[offset],
+                    masks[offset],
+                    reservation_preferences=(
+                        reservation_preferences[offset]
+                        if reservation_preferences is not None
+                        else None
+                    ),
+                    engagement_targets=engagement_targets[offset],
+                    stream_id=index,
+                )
+                observations[index] = transition.observations
+                steps += 1
+                if not done:
+                    continue
                 episodes += 1
+                environment_seed, seed_group, seed_offset = episode_metadata[index]
                 record = {
                     "episode": episodes,
+                    "environment_index": index,
                     "environment_seed": environment_seed,
                     "training_seed_offset": seed_offset,
                     **transition.metrics.as_dict(),
@@ -458,37 +619,50 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                     for key, metric in record.items():
                         if key != "episode" and isinstance(metric, (int, float, bool)):
                             writer.add_scalar(f"episode/{key}", metric, episodes)
-                    writer.flush()
                 if episodes % config.metrics_write_interval == 0:
                     _write_csv(run_dir / "episodes.csv", episode_records)
-                environment_seed, seed_group, seed_offset = _training_episode_seed(
-                    config, episodes
-                )
-                observations = env.reset(seed=environment_seed)
-            if len(buffer) >= config.rollout_steps or (
-                episodes == config.episodes and len(buffer)
-            ):
-                last_value = (
-                    0.0
-                    if done
-                    else policy.act(observations, env.action_masks())[2]
-                )
+                if next_episode_index < config.episodes:
+                    metadata = _training_episode_seed(config, next_episode_index)
+                    episode_metadata[index] = metadata
+                    observations[index] = envs[index].reset(seed=metadata[0])
+                    next_episode_index += 1
+                else:
+                    active[index] = False
+            if len(buffer) >= config.rollout_steps or not any(active):
+                active_indices = [
+                    index for index, enabled in enumerate(active) if enabled
+                ]
+                last_values = {index: 0.0 for index in range(environment_count)}
+                if active_indices:
+                    bootstrap_observations = torch.as_tensor(
+                        np.stack([observations[index] for index in active_indices]),
+                        dtype=torch.float32,
+                        device=policy.device,
+                    )
+                    with torch.no_grad():
+                        bootstrap_values = policy.values(
+                            bootstrap_observations
+                        ).cpu().numpy()
+                    last_values.update(
+                        zip(active_indices, bootstrap_values.astype(float))
+                    )
                 config.ppo.reservation_kl_coefficient = _reservation_coefficient(
                     config.ppo, reservation_kl_initial, episodes
                 )
                 config.ppo.engagement_coefficient = _engagement_coefficient(
                     config.ppo, engagement_initial, episodes
                 )
-                losses = updater.update(buffer, last_value)
+                losses = updater.update(buffer, last_values)
                 losses["engagement_coefficient"] = config.ppo.engagement_coefficient
-                update = {"update": len(update_records) + 1, "steps": steps, **losses}
-                update_records.append(update)
-                _write_csv(run_dir / "updates.csv", update_records)
+                update_count += 1
+                update = {"update": update_count, "steps": steps, **losses}
+                _append_csv(updates_path, update)
                 if writer:
                     for key, metric in losses.items():
                         writer.add_scalar(f"training/{key}", metric, steps)
-                    writer.flush()
-            if episodes >= next_checkpoint:
+            if writer:
+                writer.flush()
+            while episodes >= next_checkpoint:
                 _save_checkpoint(
                     run_dir / f"checkpoint_ep_{next_checkpoint:05d}.pt",
                     policy,
@@ -498,13 +672,15 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 )
                 next_checkpoint += config.checkpoint_interval
     finally:
-        env.close()
+        if executor is not None:
+            executor.shutdown(wait=True)
+        for env in envs:
+            env.close()
         if writer:
             writer.close()
     final = run_dir / "checkpoint_final.pt"
     _save_checkpoint(final, policy, config, episodes, steps)
     _write_csv(run_dir / "episodes.csv", episode_records)
-    _write_csv(run_dir / "updates.csv", update_records)
     summary = {
         "phase": config.phase,
         "seed": config.seed,
@@ -519,6 +695,8 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         },
         "episodes": episodes,
         "steps": steps,
+        "parallel_envs": environment_count,
+        "accelerator": accelerator,
         "checkpoint": str(final),
         "last_episode": episode_records[-1] if episode_records else None,
         "priority_mean_completion_steps": _mean_durations(priority_durations),
@@ -539,10 +717,18 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
             "neighbours": config.offline_semantic_neighbours,
             "api_calls_during_training": 0,
         }
-    if reservation_expert is not None:
+    if reservation_experts is not None:
         summary["reservation_teacher"] = {
-            "path_livelocks": reservation_expert.path_livelocks,
-            "state_deadlocks": reservation_expert.state_deadlocks,
+            "path_livelocks": sum(
+                expert.path_livelocks for expert in reservation_experts
+            ),
+            "state_deadlocks": sum(
+                expert.state_deadlocks for expert in reservation_experts
+            ),
+            "cache_hits": sum(expert.cache_hits for expert in reservation_experts),
+            "cache_misses": sum(
+                expert.cache_misses for expert in reservation_experts
+            ),
         }
     (run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"

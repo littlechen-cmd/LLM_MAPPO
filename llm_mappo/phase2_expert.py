@@ -45,27 +45,43 @@ class AStarExpert:
         self._stalled_steps = {}
         self.path_livelocks = 0
         self.state_deadlocks = 0
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self._cached_signature = None
+        self._cached_preferences = None
 
     def action_preferences(self, env: Phase2Warehouse) -> np.ndarray:
         self._update_progress(env)
+        targets = tuple(
+            self._target_for_agent(env, agent.id)[0] for agent in env.env.agents
+        )
+        signature = self._planning_signature(env, targets)
+        if signature == self._cached_signature:
+            self.cache_hits += 1
+            return self._cached_preferences.copy()
+        self.cache_misses += 1
         if env.n_agents > 1:
-            return self._reserved_action_preferences(env)
-        preferences = np.zeros((env.n_agents, ACTION_COUNT), dtype=np.float32)
-        for index, agent in enumerate(env.env.agents):
-            if agent.dead or agent.picking_lock_steps:
-                preferences[index, Action.NOOP.value] = 1.0
-                continue
-            if env._requires_pickup(agent.id):
-                preferences[index, Action.TOGGLE_LOAD.value] = 1.0
-                continue
-            target, _ = env._target_for_agent(agent.id)
-            plan = env._planner.plan(env.env, agent.id, target)
-            preferences[index] = np.asarray(
-                plan.action_preferences, dtype=np.float32
-            )
+            preferences = self._reserved_action_preferences(env, targets)
+        else:
+            preferences = np.zeros((env.n_agents, ACTION_COUNT), dtype=np.float32)
+            for index, agent in enumerate(env.env.agents):
+                if agent.dead or agent.picking_lock_steps:
+                    preferences[index, Action.NOOP.value] = 1.0
+                    continue
+                if env._requires_pickup(agent.id):
+                    preferences[index, Action.TOGGLE_LOAD.value] = 1.0
+                    continue
+                plan = env._planner.plan(env.env, agent.id, targets[index])
+                preferences[index] = np.asarray(
+                    plan.action_preferences, dtype=np.float32
+                )
+        self._cached_signature = signature
+        self._cached_preferences = preferences.copy()
         return preferences
 
-    def _reserved_action_preferences(self, env: Phase2Warehouse) -> np.ndarray:
+    def _reserved_action_preferences(
+        self, env: Phase2Warehouse, targets
+    ) -> np.ndarray:
         horizon = self._reservation_horizon(env)
         reservations = ReservationTable(horizon)
         preferences = np.zeros((env.n_agents, ACTION_COUNT), dtype=np.float32)
@@ -82,7 +98,7 @@ class AStarExpert:
                 preferences[index, Action.TOGGLE_LOAD.value] = 1.0
                 reservations.reserve([(agent.x, agent.y)])
                 continue
-            target, _ = self._target_for_agent(env, agent.id)
+            target = targets[index]
             plan = env._planner.plan_with_reservations(
                 env.env, agent.id, target, reservations
             )
@@ -97,6 +113,22 @@ class AStarExpert:
             )
             reservations.reserve(timed_path)
         return preferences
+
+    @staticmethod
+    def _planning_signature(env: Phase2Warehouse, targets) -> tuple:
+        return tuple(
+            (
+                agent.id,
+                agent.x,
+                agent.y,
+                int(agent.dir.value),
+                getattr(agent.carrying_shelf, "id", None),
+                bool(agent.dead),
+                int(agent.picking_lock_steps),
+                targets[index],
+            )
+            for index, agent in enumerate(env.env.agents)
+        )
 
     def _target_for_agent(self, env: Phase2Warehouse, agent_id: int):
         if agent_id in self._yielding_agents(env):
@@ -139,6 +171,8 @@ class AStarExpert:
         if not self._last_state or env.env._cur_steps == 0:
             self._last_state = {}
             self._stalled_steps = {}
+            self._cached_signature = None
+            self._cached_preferences = None
         for agent in env.env.agents:
             target, _ = self._target_for_agent(env, agent.id)
             distance = abs(agent.x - target[0]) + abs(agent.y - target[1])

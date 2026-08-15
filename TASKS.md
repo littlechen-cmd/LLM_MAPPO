@@ -9,6 +9,16 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
 - [ ] For every subsequent training or gate run, provide a TensorBoard command
   and at least one deterministic replay command before judging the result.
 
+## Training Throughput Optimization
+
+- [x] Collect synchronous rollouts from configurable independent environments.
+- [x] Cache unchanged A* teacher decisions and streamline reservations/search.
+- [x] Build the offline semantic nearest-neighbour index once at load time.
+- [x] Append training-update metrics instead of rewriting `updates.csv`.
+- [x] Validate compatibility, rollout correctness, and a multi-environment smoke run.
+- [x] Prevent base RWARE request renewal from conflicting with dynamic task ingress.
+- [x] Support reproducible CPU/CUDA device selection for accelerator training.
+
 ## Charging Layout And Coordination
 
 - [x] Expand the dynamic medium warehouse with a two-cell outer highway ring

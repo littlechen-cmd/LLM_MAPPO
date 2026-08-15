@@ -1,3 +1,4 @@
+import csv
 import json
 from io import BytesIO
 from urllib import error
@@ -15,7 +16,7 @@ from llm_mappo.llm_teacher import (
     parse_priority_adjustments,
     parse_semantic_response,
 )
-from llm_mappo.mappo import DualHeadMAPPOPolicy
+from llm_mappo.mappo import DualHeadMAPPOPolicy, PPOHyperparameters
 from llm_mappo.phase2 import Phase2Warehouse
 from llm_mappo.phase3_training import Phase3TrainingConfig, train_phase3
 from llm_mappo.phase4 import (
@@ -142,6 +143,7 @@ def test_phase4_cached_teacher_has_no_provider_at_training_lookup(tmp_path):
 
     teacher = OfflineSemanticTeacher.from_jsonl(path)
     assert result["records"] == teacher.size == 3
+    assert teacher.index.n == 3
     targets = teacher.targets(teacher.observations, neighbours=1)
     assert np.allclose(targets, teacher.preferences)
     assert targets.shape == (3, 2)
@@ -154,6 +156,9 @@ def test_phase4_config_requires_cached_dataset_and_path_teacher():
     assert config.n_agents == 5
     assert config.batch_size_range == (4, 8)
     assert config.task_completion_target == 50
+    assert config.parallel_envs == 4
+    assert config.device == "auto"
+    assert config.cuda_allow_tf32 is True
     assert config.ppo.reservation_kl_coefficient == 0.05
     assert config.offline_semantic_dataset.endswith(
         "deepseek_medium_5ag_400_v2_repaired_r2.jsonl"
@@ -162,6 +167,57 @@ def test_phase4_config_requires_cached_dataset_and_path_teacher():
     missing = Phase3TrainingConfig(phase="4", n_agents=5, offline_semantic_dataset=None)
     with pytest.raises(ValueError, match="offline_semantic_dataset"):
         train_phase3(missing)
+
+
+def test_phase4_training_aggregates_two_environment_rollouts(tmp_path):
+    dataset = tmp_path / "labels.jsonl"
+    label_env = Phase2Warehouse(
+        n_agents=5, max_steps=8, include_priority_features=True
+    )
+    try:
+        collect_offline_labels(
+            label_env,
+            MockTeacher(),
+            dataset,
+            seeds=[3],
+            scenarios_per_seed=2,
+        )
+    finally:
+        label_env.close()
+    config = Phase3TrainingConfig(
+        phase="4",
+        seed=3,
+        n_agents=5,
+        max_steps=2,
+        episodes=2,
+        parallel_envs=2,
+        rollout_steps=2,
+        checkpoint_interval=10,
+        metrics_write_interval=1,
+        output_dir=str(tmp_path / "run"),
+        offline_semantic_dataset=str(dataset),
+        ppo=PPOHyperparameters(
+            update_epochs=1,
+            minibatch_steps=2,
+            engagement_coefficient=0.1,
+            reservation_kl_coefficient=0.05,
+        ),
+    )
+    summary = train_phase3(config)
+    assert summary["episodes"] == 2
+    assert summary["parallel_envs"] == 2
+    assert summary["steps"] == 4
+    assert summary["accelerator"]["resolved"] == "cpu"
+    runtime = json.loads(
+        (tmp_path / "run" / "seed_003" / "runtime.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert runtime["requested"] == runtime["resolved"] == "cpu"
+    updates = tmp_path / "run" / "seed_003" / "updates.csv"
+    with updates.open("r", encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert [int(row["steps"]) for row in rows] == [2, 4]
 
 
 def test_phase4_label_parser_rejects_task_assignment_fields():

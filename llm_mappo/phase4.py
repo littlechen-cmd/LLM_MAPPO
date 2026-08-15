@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from llm_mappo.llm_teacher import (
     LabelledScenario,
@@ -31,7 +32,7 @@ class OfflineSemanticTeacher:
     observations: np.ndarray
     preferences: np.ndarray
     model_names: tuple[str, ...]
-    squared_norms: np.ndarray
+    index: cKDTree
 
     @classmethod
     def from_jsonl(cls, path: str | Path) -> "OfflineSemanticTeacher":
@@ -53,7 +54,7 @@ class OfflineSemanticTeacher:
             observations=observations,
             preferences=preferences,
             model_names=tuple(sorted({record.label.model for record in records})),
-            squared_norms=np.sum(observations * observations, axis=1),
+            index=cKDTree(observations),
         )
 
     @property
@@ -72,12 +73,11 @@ class OfflineSemanticTeacher:
         if neighbours < 1:
             raise ValueError("neighbours must be positive.")
         count = min(neighbours, self.size)
-        values_norm = np.sum(values * values, axis=1, keepdims=True)
-        distances = values_norm + self.squared_norms[None, :]
-        distances -= 2.0 * values @ self.observations.T
-        distances = np.maximum(distances, 0.0) / self.observation_dim
-        indices = np.argpartition(distances, count - 1, axis=1)[:, :count]
-        nearest_distances = np.take_along_axis(distances, indices, axis=1)
+        distances, indices = self.index.query(values, k=count, workers=1)
+        if count == 1:
+            distances = distances[:, None]
+            indices = indices[:, None]
+        nearest_distances = np.square(distances) / self.observation_dim
         nearest_preferences = self.preferences[indices]
         weights = 1.0 / np.maximum(nearest_distances, 1e-8)
         weighted = nearest_preferences * weights[:, :, None]
