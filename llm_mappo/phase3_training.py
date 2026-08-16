@@ -11,7 +11,7 @@ import time
 import traceback
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Mapping
 
 import numpy as np
 import torch
@@ -49,6 +49,8 @@ class Phase3TrainingConfig:
     request_queue_size: int | None = None
     task_completion_target: int | None = None
     charge_threshold: float = 0.2
+    charge_release_threshold: float = 0.8
+    battery_cost_scale: float = 1.0
     waypoint_reward: float = 0.01
     oracle_interaction_mask: bool = True
     deadlock_steps: int = 180
@@ -103,6 +105,12 @@ class Phase3TrainingConfig:
             request_queue_size=environment.get("request_queue_size"),
             task_completion_target=environment.get("task_completion_target"),
             charge_threshold=environment.get("charge_threshold", cls.charge_threshold),
+            charge_release_threshold=environment.get(
+                "charge_release_threshold", cls.charge_release_threshold
+            ),
+            battery_cost_scale=environment.get(
+                "battery_cost_scale", cls.battery_cost_scale
+            ),
             waypoint_reward=environment.get("waypoint_reward", cls.waypoint_reward),
             oracle_interaction_mask=environment.get(
                 "oracle_interaction_mask", cls.oracle_interaction_mask
@@ -231,6 +239,8 @@ def _make_training_env(config: Phase3TrainingConfig) -> Phase2Warehouse:
         max_steps=config.max_steps,
         env_id=config.env_id,
         charge_threshold=config.charge_threshold,
+        charge_release_threshold=config.charge_release_threshold,
+        battery_cost_scale=config.battery_cost_scale,
         waypoint_reward=config.waypoint_reward,
         oracle_interaction_mask=config.oracle_interaction_mask,
         deadlock_steps=config.deadlock_steps,
@@ -440,6 +450,7 @@ def _save_checkpoint(path: Path, policy, config, episodes: int, steps: int) -> N
             "model_state": policy.state_dict(),
             "config": asdict(config),
             "actor_observation_dim": policy.actor.motion_encoder[0].in_features,
+            "semantic_dim": policy.actor.semantic_dim,
             "episodes": episodes,
             "steps": steps,
             "phase": config.phase,
@@ -880,14 +891,129 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
     return summary
 
 
+def _checkpoint_metadata_semantic_dims(
+    checkpoint: Mapping[str, object],
+) -> Dict[str, int]:
+    candidates: Dict[str, int] = {}
+    explicit = checkpoint.get("semantic_dim")
+    if explicit is not None:
+        try:
+            candidates["semantic_dim metadata"] = int(explicit)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Checkpoint semantic_dim must be an integer.") from error
+
+    phase = str(checkpoint.get("phase", ""))
+    if phase == "4":
+        candidates["phase metadata"] = 2
+    elif phase.startswith("3"):
+        candidates["phase metadata"] = 1
+    return candidates
+
+
+def _model_state_semantic_dims(model_state: Mapping[str, object]) -> Dict[str, int]:
+    candidates: Dict[str, int] = {}
+    semantic_weight = model_state.get("actor.engagement_head.0.weight")
+    if isinstance(semantic_weight, torch.Tensor) and semantic_weight.ndim == 2:
+        candidates["semantic-head weight"] = int(semantic_weight.shape[0])
+    semantic_bias = model_state.get("actor.engagement_head.0.bias")
+    if isinstance(semantic_bias, torch.Tensor) and semantic_bias.ndim == 1:
+        candidates["semantic-head bias"] = int(semantic_bias.shape[0])
+
+    motion_weight = model_state.get("actor.motion_head.weight")
+    encoder_weight = model_state.get("actor.motion_encoder.2.weight")
+    if (
+        isinstance(motion_weight, torch.Tensor)
+        and motion_weight.ndim == 2
+        and isinstance(encoder_weight, torch.Tensor)
+        and encoder_weight.ndim == 2
+    ):
+        candidates["motion-head input"] = int(
+            motion_weight.shape[1] - encoder_weight.shape[0]
+        )
+    return candidates
+
+
+def _checkpoint_semantic_dim(checkpoint: Mapping[str, object]) -> int:
+    """Infer and validate the semantic width of Phase 3/4 checkpoints.
+
+    Phase 4 checkpoints created before ``semantic_dim`` was persisted must be
+    inferred from their model tensors.  Cross-checking every available source
+    turns an otherwise opaque ``load_state_dict`` shape error into a clear
+    checkpoint-compatibility error.
+    """
+    candidates = _checkpoint_metadata_semantic_dims(checkpoint)
+    model_state = checkpoint.get("model_state")
+    if not isinstance(model_state, Mapping):
+        raise ValueError("Checkpoint model_state must be a parameter mapping.")
+    candidates.update(_model_state_semantic_dims(model_state))
+
+    if not candidates:
+        raise ValueError("Checkpoint does not describe a semantic policy dimension.")
+    invalid = {
+        source: width for source, width in candidates.items() if width not in (1, 2)
+    }
+    if invalid:
+        raise ValueError(
+            f"Checkpoint contains an invalid semantic dimension: {invalid}."
+        )
+    widths = set(candidates.values())
+    if len(widths) != 1:
+        raise ValueError(f"Checkpoint semantic dimensions disagree: {candidates}.")
+    return widths.pop()
+
+
 def load_phase3_policy(checkpoint_path: str | Path, device: str = "cpu"):
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    semantic_dim = _checkpoint_semantic_dim(checkpoint)
     policy = DualHeadMAPPOPolicy(
-        checkpoint["actor_observation_dim"], ACTION_COUNT, device=device
+        checkpoint["actor_observation_dim"],
+        ACTION_COUNT,
+        device=device,
+        semantic_dim=semantic_dim,
     )
     policy.load_state_dict(checkpoint["model_state"])
     policy.eval()
     return policy, checkpoint["config"], checkpoint
+
+
+def _charging_metrics_summary(records: Iterable[Dict[str, object]]) -> Dict[str, float]:
+    rows = list(records)
+    count_keys = (
+        "low_battery_triggers",
+        "charging_target_steps",
+        "charger_arrivals",
+        "charged_events",
+        "charging_wait_steps",
+        "task_recoveries",
+        "energy_deaths",
+    )
+    summary = {
+        f"mean_{key}_per_episode": float(
+            np.mean([float(row.get(key, 0.0)) for row in rows])
+        )
+        if rows
+        else 0.0
+        for key in count_keys
+    }
+    summary["mean_charging_exposure_rate"] = (
+        float(np.mean([float(row.get("charging_exposure_rate", 0.0)) for row in rows]))
+        if rows
+        else 0.0
+    )
+    summary["episodes_with_low_battery_rate"] = (
+        float(np.mean([float(row.get("low_battery_triggers", 0)) > 0 for row in rows]))
+        if rows
+        else 0.0
+    )
+    summary["episodes_with_charging_rate"] = (
+        float(np.mean([float(row.get("charged_events", 0)) > 0 for row in rows]))
+        if rows
+        else 0.0
+    )
+    summary["minimum_battery"] = (
+        min(float(row.get("minimum_battery", 1.0)) for row in rows) if rows else 1.0
+    )
+    return summary
 
 
 def evaluate_phase3(  # noqa: C901
@@ -916,6 +1042,8 @@ def evaluate_phase3(  # noqa: C901
         max_steps=config["max_steps"],
         env_id=config["env_id"],
         charge_threshold=config.get("charge_threshold", 0.2),
+        charge_release_threshold=config.get("charge_release_threshold", 0.8),
+        battery_cost_scale=config.get("battery_cost_scale", 1.0),
         waypoint_reward=config.get("waypoint_reward", 0.01),
         oracle_interaction_mask=config.get("oracle_interaction_mask", True),
         deadlock_steps=config.get("deadlock_steps", 180),
@@ -932,6 +1060,7 @@ def evaluate_phase3(  # noqa: C901
         include_priority_features=True,
     )
     per_seed: List[dict] = []
+    all_records: List[dict] = []
     engagement_samples: List[tuple[str, float]] = []
     try:
         for seed in seeds:
@@ -964,6 +1093,7 @@ def evaluate_phase3(  # noqa: C901
                     ):
                         record = transition.metrics.as_dict()
                         records.append(record)
+                        all_records.append(record)
                         for label, values in _completion_durations(
                             transition.info["tasks"]
                         ).items():
@@ -996,6 +1126,7 @@ def evaluate_phase3(  # noqa: C901
                     "priority_mean_completion_steps": _mean_durations(
                         priority_durations
                     ),
+                    **_charging_metrics_summary(records),
                 }
             )
     finally:
@@ -1034,6 +1165,7 @@ def evaluate_phase3(  # noqa: C901
         "success_rate_std": float(success_rates.std()) if len(per_seed) else 0.0,
         "priority_mean_completion_steps": priority_means,
         "high_priority_faster_than_low": priority_ordering,
+        **_charging_metrics_summary(all_records),
     }
     if collect_engagement:
         result["engagement_samples"] = engagement_samples

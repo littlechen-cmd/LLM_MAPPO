@@ -89,6 +89,8 @@ def _environment_from_config(config: Dict[str, object]) -> Phase2Warehouse:
         max_steps=int(config["max_steps"]),
         env_id=str(config["env_id"]),
         charge_threshold=float(config.get("charge_threshold", 0.2)),
+        charge_release_threshold=float(config.get("charge_release_threshold", 0.8)),
+        battery_cost_scale=float(config.get("battery_cost_scale", 1.0)),
         waypoint_reward=float(config.get("waypoint_reward", 0.01)),
         oracle_interaction_mask=bool(config.get("oracle_interaction_mask", True)),
         deadlock_steps=int(config.get("deadlock_steps", 180)),
@@ -225,7 +227,7 @@ def _finalize_group(group: dict) -> dict:
 
 def _pairs(items: Sequence[AgentState]):
     for index, first in enumerate(items):
-        for second in items[index + 1 :]:
+        for second in items[index + 1:]:
             yield first, second
 
 

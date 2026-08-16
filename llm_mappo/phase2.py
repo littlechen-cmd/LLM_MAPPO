@@ -26,6 +26,15 @@ class EpisodeMetrics:
     agent_deaths: int = 0
     picked_tasks: int = 0
     blocked_forwards: int = 0
+    low_battery_triggers: int = 0
+    charging_target_steps: int = 0
+    charger_arrivals: int = 0
+    charged_events: int = 0
+    charging_wait_steps: int = 0
+    task_recoveries: int = 0
+    energy_deaths: int = 0
+    minimum_battery: float = 1.0
+    agent_steps: int = 0
     steps: int = 0
     reward: float = 0.0
 
@@ -45,6 +54,12 @@ class EpisodeMetrics:
             )
         return not self.deadlocked and self.completion_rate >= 0.95
 
+    @property
+    def charging_exposure_rate(self) -> float:
+        if not self.agent_steps:
+            return 0.0
+        return self.charging_target_steps / self.agent_steps
+
     def as_dict(self) -> Dict[str, float | bool | int]:
         return {
             "completed_tasks": self.completed_tasks,
@@ -56,6 +71,15 @@ class EpisodeMetrics:
             "agent_deaths": self.agent_deaths,
             "picked_tasks": self.picked_tasks,
             "blocked_forwards": self.blocked_forwards,
+            "low_battery_triggers": self.low_battery_triggers,
+            "charging_target_steps": self.charging_target_steps,
+            "charging_exposure_rate": self.charging_exposure_rate,
+            "charger_arrivals": self.charger_arrivals,
+            "charged_events": self.charged_events,
+            "charging_wait_steps": self.charging_wait_steps,
+            "task_recoveries": self.task_recoveries,
+            "energy_deaths": self.energy_deaths,
+            "minimum_battery": self.minimum_battery,
             "steps": self.steps,
             "reward": self.reward,
             "success": self.success,
@@ -87,6 +111,8 @@ class Phase2Warehouse:
     max_steps: int = 400
     env_id: str = "llm-mappo-medium-3ag-v1"
     charge_threshold: float = 0.2
+    charge_release_threshold: float = 0.8
+    battery_cost_scale: float = 1.0
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
     oracle_interaction_mask: bool = True
@@ -105,12 +131,25 @@ class Phase2Warehouse:
     _last_progress_step: int = field(init=False, default=0, repr=False)
     _last_completed: int = field(init=False, default=0, repr=False)
     _last_picked: int = field(init=False, default=0, repr=False)
+    _low_battery_active: set[int] = field(
+        init=False, default_factory=set, repr=False
+    )
+    _charged_pending_recovery: set[int] = field(
+        init=False, default_factory=set, repr=False
+    )
+    _charging_active: set[int] = field(init=False, default_factory=set, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         if self.n_agents < 1:
             raise ValueError("Phase 2 requires at least one AGV.")
         if self.waypoint_reward < 0.0:
             raise ValueError("waypoint_reward must not be negative.")
+        if self.battery_cost_scale <= 0.0:
+            raise ValueError("battery_cost_scale must be positive.")
+        if not self.charge_threshold < self.charge_release_threshold <= 1.0:
+            raise ValueError(
+                "charge_release_threshold must be above charge_threshold and at most 1."
+            )
         if self.batch_interval is not None and self.batch_interval < 2:
             raise ValueError("batch_interval must be at least two when provided.")
         if self.batch_size_range is not None:
@@ -132,6 +171,7 @@ class Phase2Warehouse:
             "batch_size_range": self.batch_size_range or (1, 1),
             "initial_priority_label": self.initial_priority_label,
             "task_completion_target": self.task_completion_target,
+            "battery_cost_scale": self.battery_cost_scale,
         }
         if self.priority_schedule is not None:
             make_options["priority_schedule"] = tuple(self.priority_schedule)
@@ -166,6 +206,13 @@ class Phase2Warehouse:
         self._last_progress_step = 0
         self._last_completed = 0
         self._last_picked = 0
+        self._low_battery_active = {
+            agent.id
+            for agent in self.env.agents
+            if agent.battery < self.charge_threshold
+        }
+        self._charged_pending_recovery = set()
+        self._charging_active = set(self._low_battery_active)
         return self._observations()
 
     def step(self, actions: Sequence[int]) -> Phase2Step:
@@ -176,6 +223,12 @@ class Phase2Warehouse:
         before = self._waypoint_distances(charging_targets)
         carrying_before = {
             agent.id: agent.carrying_shelf is not None for agent in self.env.agents
+        }
+        positions_before = {
+            agent.id: (agent.x, agent.y) for agent in self.env.agents
+        }
+        batteries_before = {
+            agent.id: float(agent.battery) for agent in self.env.agents
         }
         raw_obs, rewards, terminated, truncated, info = self._env.step(actions)
         self._raw_observations = raw_obs
@@ -194,6 +247,10 @@ class Phase2Warehouse:
             float(np.mean(shaped_rewards)),
             bool(np.any(movement_rewards)),
             picked_tasks,
+            charging_targets,
+            positions_before,
+            batteries_before,
+            actions,
         )
         observations = self._observations()
         return Phase2Step(
@@ -343,10 +400,22 @@ class Phase2Warehouse:
     def _charging_targets(self) -> Dict[int, Tuple[int, int]]:
         """Assign at-risk AGVs distinct stations by urgency and occupancy."""
         warehouse = self.env
+        available_agents = {agent.id for agent in warehouse.agents if not agent.dead}
+        self._charging_active.intersection_update(available_agents)
+        self._charging_active.update(
+            agent.id
+            for agent in warehouse.agents
+            if not agent.dead and agent.battery < self.charge_threshold
+        )
+        self._charging_active.difference_update(
+            agent.id
+            for agent in warehouse.agents
+            if agent.battery >= self.charge_release_threshold
+        )
         charging_agents = [
             agent
             for agent in warehouse.agents
-            if not agent.dead and agent.battery < self.charge_threshold
+            if agent.id in self._charging_active
         ]
         charging_agents.sort(
             key=lambda agent: (
@@ -507,7 +576,15 @@ class Phase2Warehouse:
         return penalties
 
     def _update_metrics(
-        self, info: dict, reward: float, waypoint_progress: bool, picked_tasks: int
+        self,
+        info: dict,
+        reward: float,
+        waypoint_progress: bool,
+        picked_tasks: int,
+        charging_targets: Dict[int, Tuple[int, int]],
+        positions_before: Dict[int, Tuple[int, int]],
+        batteries_before: Dict[int, float],
+        actions: Sequence[int],
     ) -> None:
         completed = sum(task["status"] == "completed" for task in info["tasks"])
         events = info["events"]
@@ -533,7 +610,70 @@ class Phase2Warehouse:
         self._metrics.agent_deaths = sum(agent["dead"] for agent in info["agents"])
         self._metrics.picked_tasks += picked_tasks
         self._metrics.blocked_forwards = int(info["blocked_forwards"])
+        self._update_charging_metrics(
+            info, charging_targets, positions_before, batteries_before, actions
+        )
         self._metrics.steps = int(info["step"])
         self._metrics.reward += reward
         if info["step"] - self._last_progress_step >= self.deadlock_steps:
             self._metrics.deadlocked = True
+
+    def _update_charging_metrics(
+        self,
+        info: dict,
+        charging_targets: Dict[int, Tuple[int, int]],
+        positions_before: Dict[int, Tuple[int, int]],
+        batteries_before: Dict[int, float],
+        actions: Sequence[int],
+    ) -> None:
+        low_before = {
+            agent_id
+            for agent_id, battery in batteries_before.items()
+            if battery < self.charge_threshold
+        }
+        current_low = {
+            agent.id
+            for agent in self.env.agents
+            if agent.battery < self.charge_threshold
+        }
+        self._metrics.low_battery_triggers += len(
+            (low_before | current_low) - self._low_battery_active
+        )
+        self._low_battery_active = current_low
+        self._metrics.agent_steps += self.n_agents
+        self._metrics.charging_target_steps += len(charging_targets)
+        self._metrics.minimum_battery = min(
+            self._metrics.minimum_battery,
+            *batteries_before.values(),
+            *(float(agent.battery) for agent in self.env.agents),
+        )
+
+        for agent_id, target in charging_targets.items():
+            agent = self.env.agents[agent_id - 1]
+            if positions_before[agent_id] != target and (agent.x, agent.y) == target:
+                self._metrics.charger_arrivals += 1
+            if (
+                positions_before[agent_id] == target
+                and Action(actions[agent_id - 1]) == Action.NOOP
+            ):
+                self._metrics.charging_wait_steps += 1
+
+        charged_ids = {
+            int(event["agent_id"])
+            for event in info["events"]
+            if event["type"] == "charged"
+        }
+        self._metrics.charged_events += len(charged_ids)
+        self._charged_pending_recovery.update(charged_ids)
+        self._metrics.energy_deaths += sum(
+            event["type"] == "agent_dead" for event in info["events"]
+        )
+        for agent_id in tuple(self._charged_pending_recovery):
+            agent = self.env.agents[agent_id - 1]
+            has_task = (
+                agent.carrying_shelf is not None
+                or self.env.task_queue.task_for_agent(agent_id) is not None
+            )
+            if agent.battery >= self.charge_release_threshold and has_task:
+                self._metrics.task_recoveries += 1
+                self._charged_pending_recovery.remove(agent_id)

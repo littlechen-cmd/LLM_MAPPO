@@ -33,6 +33,9 @@ class Phase2TrainingConfig:
     max_steps: int = 400
     env_id: str = "llm-mappo-medium-3ag-v1"
     waypoint_reward: float = 1.0
+    charge_threshold: float = 0.2
+    charge_release_threshold: float = 0.8
+    battery_cost_scale: float = 1.0
     oracle_interaction_mask: bool = True
     deadlock_steps: int = 120
     episodes: int = 5000
@@ -67,6 +70,15 @@ class Phase2TrainingConfig:
             env_id=environment.get("id", cls.env_id),
             waypoint_reward=environment.get(
                 "waypoint_reward", cls.waypoint_reward
+            ),
+            charge_threshold=environment.get(
+                "charge_threshold", cls.charge_threshold
+            ),
+            battery_cost_scale=environment.get(
+                "battery_cost_scale", cls.battery_cost_scale
+            ),
+            charge_release_threshold=environment.get(
+                "charge_release_threshold", cls.charge_release_threshold
             ),
             oracle_interaction_mask=environment.get(
                 "oracle_interaction_mask", cls.oracle_interaction_mask
@@ -133,6 +145,9 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:  # noqa: C9
         max_steps=config.max_steps,
         env_id=config.env_id,
         waypoint_reward=config.waypoint_reward,
+        charge_threshold=config.charge_threshold,
+        battery_cost_scale=config.battery_cost_scale,
+        charge_release_threshold=config.charge_release_threshold,
         oracle_interaction_mask=config.oracle_interaction_mask,
         deadlock_steps=config.deadlock_steps,
     )

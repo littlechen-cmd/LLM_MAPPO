@@ -38,6 +38,8 @@ class EnvironmentSettings:
     oracle_interaction_mask: bool
     deadlock_steps: int
     charge_threshold: float = 0.2
+    charge_release_threshold: float = 0.8
+    battery_cost_scale: float = 1.0
     priority_schedule: Optional[Sequence[str]] = None
     batch_interval: Optional[int] = None
     batch_size_range: Optional[Sequence[int]] = None
@@ -246,6 +248,8 @@ def _settings_from_mapping(source: Mapping[str, object]) -> EnvironmentSettings:
         oracle_interaction_mask=bool(source.get("oracle_interaction_mask", True)),
         deadlock_steps=int(source.get("deadlock_steps", 180)),
         charge_threshold=float(source.get("charge_threshold", 0.2)),
+        charge_release_threshold=float(source.get("charge_release_threshold", 0.8)),
+        battery_cost_scale=float(source.get("battery_cost_scale", 1.0)),
         priority_schedule=tuple(priority_schedule) if priority_schedule else None,
         batch_interval=source.get("batch_interval"),
         batch_size_range=(

@@ -19,6 +19,7 @@ class DynamicWarehouse(Warehouse):
         batch_size_range: Tuple[int, int] = (1, 3),
         charging_stations: Optional[Sequence[Tuple[int, int]]] = None,
         charging_rate: float = 0.02,
+        battery_cost_scale: float = 1.0,
         picking_lock_steps: int = 3,
         auto_assign: bool = True,
         initial_priority_label: str = "A",
@@ -31,6 +32,7 @@ class DynamicWarehouse(Warehouse):
             batch_interval,
             batch_size_range,
             charging_rate,
+            battery_cost_scale,
             picking_lock_steps,
             initial_priority_label,
             priority_schedule,
@@ -40,6 +42,7 @@ class DynamicWarehouse(Warehouse):
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
         self.charging_rate = charging_rate
+        self.battery_cost_scale = battery_cost_scale
         self.picking_lock_steps = picking_lock_steps
         self.auto_assign = auto_assign
         self.initial_priority_label = initial_priority_label
@@ -88,6 +91,7 @@ class DynamicWarehouse(Warehouse):
         batch_interval,
         batch_size_range,
         charging_rate,
+        battery_cost_scale,
         picking_lock_steps,
         initial_priority_label,
         priority_schedule,
@@ -100,6 +104,8 @@ class DynamicWarehouse(Warehouse):
             raise ValueError("batch_size_range must be a positive ordered pair.")
         if not 0.0 < charging_rate <= 1.0:
             raise ValueError("charging_rate must be within (0, 1].")
+        if battery_cost_scale <= 0.0:
+            raise ValueError("battery_cost_scale must be positive.")
         if picking_lock_steps < 0:
             raise ValueError("picking_lock_steps must not be negative.")
         if len(initial_priority_label) != 1 or not initial_priority_label.isupper():
@@ -235,6 +241,8 @@ class DynamicWarehouse(Warehouse):
                 "task_target_reached": self._completion_target_reached(),
                 "charging_stations": list(self.charging_stations),
                 "charging_station_status": self._charging_station_status(),
+                "battery_cost_scale": self.battery_cost_scale,
+                "charging_rate": self.charging_rate,
                 "picking_stations": list(self.picking_stations),
                 "collisions": self.total_collisions,
                 "blocked_forwards": self.total_blocked_forwards,
@@ -531,12 +539,24 @@ class DynamicWarehouse(Warehouse):
 
     def _next_battery(self, agent, state, was_locked):
         if was_locked:
-            return max(0.0, state["battery"] - 0.0002)
+            return max(
+                0.0, state["battery"] - 0.0002 * self.battery_cost_scale
+            )
         action = agent.req_action
         if (agent.x, agent.y) in self.charging_stations and action == Action.NOOP:
-            self.last_events.append({"type": "charged", "agent_id": agent.id})
-            return min(1.0, state["battery"] + self.charging_rate)
-        return max(0.0, state["battery"] - self._battery_cost(agent, state))
+            next_battery = min(1.0, state["battery"] + self.charging_rate)
+            if next_battery > state["battery"]:
+                self.last_events.append(
+                    {
+                        "type": "charged",
+                        "agent_id": agent.id,
+                        "battery_before": state["battery"],
+                        "battery_after": next_battery,
+                    }
+                )
+            return next_battery
+        cost = self._battery_cost(agent, state) * self.battery_cost_scale
+        return max(0.0, state["battery"] - cost)
 
     @staticmethod
     def _battery_cost(agent, state):

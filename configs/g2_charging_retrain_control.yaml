@@ -23,11 +23,11 @@ training:
   torch_num_threads: 1
   cuda_allow_tf32: true
   parallel_envs: 12
-  episodes: 800
+  episodes: 200
   rollout_steps: 512
-  checkpoint_interval: 200
+  checkpoint_interval: 100
   metrics_write_interval: 20
-  output_dir: artifacts/phase4_llm_distillation
+  output_dir: artifacts/g2_charging_retrain_control
   offline_semantic_dataset: artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl
   offline_semantic_neighbours: 3
 

@@ -30,7 +30,7 @@ setup(
     extras_require={
         "test": ["pytest"],
         "dev": ["build", "flake8", "pytest", "PyYAML", "scipy", "tensorboard"],
-        "train": ["torch"],
+        "train": ["torch", "scipy"],
     },
     include_package_data=True,
 )

@@ -138,6 +138,77 @@ def test_dynamic_batches_and_charging_are_reported():
     assert any(event["type"] == "batch_arrived" for event in info["events"])
 
 
+def test_battery_cost_scale_multiplies_consumption_and_rejects_invalid_values():
+    with pytest.raises(ValueError, match="battery_cost_scale"):
+        make_env(n_agents=1, battery_cost_scale=0.0)
+
+    env = make_env(n_agents=1, battery_cost_scale=1.5, batch_interval=100)
+    env.reset(seed=4)
+    env.agents[0].x, env.agents[0].y = 1, 0
+    env.agents[0].dir = Direction.RIGHT
+    env._recalc_grid()
+
+    _, _, _, _, info = env.step([Action.LEFT])
+
+    assert info["battery_cost_scale"] == pytest.approx(1.5)
+    assert info["agents"][0]["battery"] == pytest.approx(0.9985)
+
+
+def test_charged_event_requires_an_actual_battery_increase():
+    env = make_env(n_agents=1, batch_interval=100)
+    env.reset(seed=4)
+    station = env.charging_stations[0]
+    env.agents[0].x, env.agents[0].y = station
+    env._recalc_grid()
+
+    _, _, _, _, info = env.step([Action.NOOP])
+    assert not any(event["type"] == "charged" for event in info["events"])
+
+    env.agents[0].battery = 0.5
+    _, _, _, _, info = env.step([Action.NOOP])
+    charged = [event for event in info["events"] if event["type"] == "charged"]
+    assert len(charged) == 1
+    assert charged[0]["battery_before"] == pytest.approx(0.5)
+    assert charged[0]["battery_after"] == pytest.approx(0.52)
+
+
+def test_charging_metrics_cover_trigger_charge_and_task_recovery():
+    env = Phase2Warehouse(
+        n_agents=1,
+        max_steps=50,
+        env_id="llm-mappo-medium-3ag-v1",
+        batch_interval=51,
+        battery_cost_scale=1.25,
+    )
+    try:
+        env.reset(seed=4)
+        agent = env.env.agents[0]
+        agent.x, agent.y = env.env.charging_stations[0]
+        agent.battery = 0.19
+        env.env._recalc_grid()
+
+        transition = env.step([Action.NOOP])
+        first_metrics = transition.metrics.as_dict()
+
+        assert first_metrics["low_battery_triggers"] == 1
+        assert first_metrics["charging_target_steps"] == 1
+        assert first_metrics["charging_exposure_rate"] == pytest.approx(1.0)
+        assert first_metrics["charged_events"] == 1
+        assert first_metrics["charging_wait_steps"] == 1
+        assert first_metrics["task_recoveries"] == 0
+        assert env._target_for_agent(1)[1] == "charging"
+
+        while agent.battery < env.charge_release_threshold:
+            transition = env.step([Action.NOOP])
+        metrics = transition.metrics.as_dict()
+        assert env._target_for_agent(1)[1] != "charging"
+        assert metrics["task_recoveries"] == 1
+        assert metrics["minimum_battery"] == pytest.approx(0.19)
+        assert metrics["energy_deaths"] == 0
+    finally:
+        env.close()
+
+
 def test_collision_penalty_is_applied_to_each_forward_initiator():
     env = make_env(batch_interval=100)
     env.reset(seed=3)

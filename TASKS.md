@@ -2,6 +2,118 @@
 
 Update this file whenever a task begins, completes, or is blocked. Major completed milestones require a Git commit.
 
+## Constitution Chapter 8 Roadmap Tracking
+
+This section mirrors the task IDs, order, and meaning in `CONSTITUTION.md`
+Chapter 8 one-for-one. Chapter 7 defines the acceptance criteria. Mark a Gate
+passed only after every Chapter 8 task is complete, its evidence is retained,
+and the corresponding Chapter 7 criteria are satisfied.
+
+### Gate G0 — Current Training Artifact Audit
+
+- [x] **G0-1** Inspect the 800-episode run's `summary.json`, `episodes.csv`,
+  `updates.csv`, `checkpoint_final.pt`, and TensorBoard event file.
+- [x] **G0-2** Confirm no NaN/Inf, abnormal exit, missing required artifact, or online
+  LLM call. The final 100 episodes reached 1.000 completion and success with
+  zero deaths and terminating deadlocks; retain 17.92 collisions per episode,
+  A* diagnostic counts, and the copied summary's stale checkpoint path as
+  findings for G2 rather than formal method evidence.
+- [x] **G0-3** Record the result only as a G0 feasibility pass, not a formal performance
+  conclusion.
+
+### Gate G1 — Load, Evaluate, And Replay Loop
+
+- [x] **G1-1** Repair Phase 4 `semantic_dim=2` checkpoint loading by inferring legacy
+  tensor shapes and persisting semantic width in new checkpoints.
+- [x] **G1-2** Pass Phase 3 single-semantic, Phase 4 dual-semantic, and incompatible
+  checkpoint regression tests.
+- [x] **G1-3** Complete a held-out seed-0 single-episode evaluation smoke and
+  deterministic replay with the real Phase 4 checkpoint; retain the evaluation
+  JSON, 447-step trace, replay summary, and machine-readable G1 audit.
+- [x] **G1-4** Verify `eval/evaluate_phase3.py` and `visualize.py` process Phase 4
+  checkpoints; nested evaluation output creation and visualization-controller
+  loading have regression coverage.
+
+### Gate G2 — Environment Risk Review
+
+- [ ] **G2-1** Analyze false no-path results and livelock caused by A* goal reservation
+  lasting for the full planning horizon. This item is intentionally postponed
+  while charging is handled first; no A* behavior changes are in the G2
+  charging patch.
+- [x] **G2-2** Review long-run charging returns, congestion, AGV deaths, and task
+  interruption using the accepted 800-episode checkpoint and targeted replays.
+  The original setting rarely exposes charging, while stronger unmatched
+  energy pressure reveals unreliable charger arrival/wait behavior.
+- [ ] **G2-3** Add a configurable battery-cost scale and charging hysteresis, then pilot
+  scales `1.00/1.25/1.50`, refined scales `1.10/1.15/1.20`, and an earlier
+  `0.30` trigger (including refined `1.05/1.10` scales). No setting is frozen
+  from this old-checkpoint diagnostic: the original-threshold `1.10` preserves
+  zero energy deaths but does not provide sufficient exposure, while every
+  higher-exposure candidate exposes energy deaths and/or deadlocks.
+  Run three matched 200-episode retraining groups before closing this task:
+  control `1.00/0.20/0.80`, early-charge candidate `1.10/0.30/0.80`, and
+  high-consumption candidate `1.20/0.20/0.80`, with all other settings, seed
+  rotation, teachers, rewards, and PPO parameters held fixed.
+- [x] **G2-4** Add pre-freeze metrics for low-battery triggers, charger arrivals,
+  charged events, waiting, task recovery, minimum battery, and energy deaths.
+- [x] **G2-5** After changing charging behavior, rerun the applicable regression suite
+  before protocol freeze (`138 passed` for the full suite on 2026-08-16).
+- [x] **G2-6** Record the charging limitation and evidence: the accepted checkpoint was
+  trained with insufficient charging exposure, so its stress-test performance
+  cannot validate learned charging. Candidate settings require matched pilot
+  retraining before G3 freeze and cannot support teacher-effect claims yet.
+
+### Gate G3 — Formal Protocol Freeze
+
+- [ ] **G3-1** Freeze the code commit, four group configurations, environment contract,
+  label-dataset hash, training seeds, equal environment-step budget, and held-out
+  `10 seeds x 20 episodes` evaluation protocol.
+- [ ] **G3-2** Freeze runtime A* waypoint and training A* KL as separate factors, with
+  the four core experiment names defined in the Constitution.
+- [ ] **G3-3** Freeze battery-cost scale, charging rate, trigger/release hysteresis
+  thresholds, task interruption/recovery semantics, and rule-layer safety
+  boundaries.
+- [ ] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
+  failure/retry policy, and formal experiment data/figure pipeline.
+
+### Gate G4 — Small-Budget Pilot
+
+- [ ] **G4-1** Run all four core groups end-to-end with the same small environment-step
+  budget and matched seeds.
+- [ ] **G4-2** Inspect losses, throughput, GPU memory, logs, checkpoints, evaluation
+  scripts, and zero-online-LLM compliance for every pilot group.
+- [ ] **G4-3** Confirm all four pilots receive sufficient matched low-battery/charging
+  exposure and pass the frozen charger-arrival, task-recovery, energy-death,
+  and charging-congestion safety checks.
+- [ ] **G4-4** Use the matched learning curves to set one formal interaction budget for
+  all four groups without group-specific post-hoc tuning.
+
+### Gate G5 — Core Multi-Seed Training
+
+- [ ] **G5-1** Complete all four core groups with at least five training seeds per group.
+- [ ] **G5-2** Verify every run follows the frozen protocol and handle failed runs only
+  through the preregistered failure/retry rule.
+- [ ] **G5-3** Confirm no group received a result-dependent hyperparameter or budget
+  change after outcomes were observed.
+
+### Gate G6 — Independent Evaluation And Statistics
+
+- [ ] **G6-1** Complete held-out main evaluation and robustness evaluation for all core
+  groups.
+- [ ] **G6-2** Generate statistical summaries, confidence intervals, effect sizes,
+  priority/task metrics, safety results, and representative failure cases.
+- [ ] **G6-3** Map every intended paper claim to supporting evidence or an explicit
+  limitation before drafting results.
+
+### Gate G7 — Paper Ready
+
+- [ ] **G7-1** Generate every reported figure and table from frozen raw logs through
+  versioned scripts.
+- [ ] **G7-2** Audit terminology and values across method text, configurations, code,
+  tables, and figures for consistency.
+- [ ] **G7-3** Complete the internal review before writing the conclusions into the
+  English paper.
+
 ## Ongoing Experiment Observability
 
 - [x] Provide deterministic visual replay, GIF capture, diagnostic traces, and
@@ -33,190 +145,22 @@ Update this file whenever a task begins, completes, or is blocked. Major complet
   remove the current low-battery safety target until a controlled local
   ablation demonstrates no energy-safety regression.
 
-## Phase 0: Repository and Development Baseline
+## Conditional Runtime Interaction Extensions
 
-- [x] Verify the upstream RWARE worktree and create a recoverable Git bundle.
-- [x] Promote the RWARE Git history and source tree to the workspace root.
-- [x] Create the root contributor guide and project task list.
-- [x] Add package extras, build metadata, experiment ignores, and module directory skeletons.
-- [x] Run packaging, lint, and baseline test checks.
-- [x] Commit the Phase 0 checkpoint.
+- [ ] After the core paper evidence chain is complete, design and evaluate an
+  event-triggered natural-language priority adjustment interface for urgent
+  cargo requests. Reuse the existing LLM parser and atomic rule layer, add an
+  execution-loop user input boundary, deterministic fallback, audit logs, and
+  explicit online-call latency/cost metrics; do not treat it as part of the
+  zero-online-LLM core method.
 
-## Phase 1: Environment and Interfaces
+## Conditional Learned-Charging Extension
 
-- [x] Implement dynamic batches, priority tasks, battery/charging, collision accounting, and picking locks.
-- [x] Freeze task, priority adjustment, engagement label, task queue, and A* planner interfaces.
-- [x] Add FIFO rule-layer validation and the `demo.py` operational view.
-- [x] Reach the Phase 1 Go/No-Go threshold: 100 headless episodes / 10,000 steps passed; 120/120 nonblank RGB frames averaged 29.4 ms with a 47 ms maximum.
-
-## Later Phases
-
-- [ ] Phase 2: Oracle-path MAPPO baseline and 10-seed Go/No-Go evaluation.
-  - [x] Implement the custom PyTorch CTDE MAPPO baseline, oracle-waypoint adapter, and artifact tracking.
-  - [ ] Run and record a local CPU 800-1000 episode feasibility test before any server-scale training.
-  - [x] Compare 500-episode local 1-AGV runs with waypoint rewards 0.01 and 0.05; neither completed a task.
-  - [ ] Validate collision classification and oracle interaction masking in a local 500-episode 1-AGV run.
-  - [x] Validate the small-map A* expert, behavior-cloning warm start, and 800-episode local MAPPO feasibility run.
-  - [x] Validate the medium-map A* expert, behavior-cloning warm start, and 800-episode local MAPPO feasibility run.
-  - [x] Add deterministic checkpoint visualization with GIF and paced human modes.
-  - [ ] If server training is needed, record whether the 4080S run uses Linux or WSL plus CUDA/PyTorch details.
-  - [x] Train the 1-AGV waypoint/charging curriculum stage.
-  - [ ] Train the 3-AGV avoidance/charging-coordination stage (first local trial No-Go: 0.82 completion, 3.94 collisions/episode, 0.385 deadlock rate).
-    - [ ] Pass the 100-episode A* multi-AGV safety/completion gate before collecting demonstrations; rolling-horizon reservations reach 99.0% completion with zero collisions, but three seeds still stall with a loaded AGV.
-  - [x] Run the 10-seed Go/No-Go evaluation and record the acceptance result.
-    - [ ] KL-protected checkpoint: 0.973 completion, 9.585 collisions/episode,
-      0.05 deadlock rate, 0.046 success-rate std; overall No-Go due to collisions.
-    - [ ] Collision diagnosis and execution-time coordination correction are
-      intentionally deferred. Preserve `medium / 3 AGV` and do not expand the
-      map or fleet while Phase 3 is being developed.
-- [ ] Phase 3: Dual-head Actor and A* distillation ablation.
-  - [x] Phase 3a implementation: rule-labelled engagement head and
-    priority-conditioned motion head on `medium / 3 AGV`, without A* KL
-    distillation.
-  - [x] Verify the Phase 3a entry point with a 2-episode CPU smoke run; this is
-    an interface check only and is not the required feasibility result.
-  - [x] Complete the Phase 3a training preflight: stabilize orientation-aware
-    A* heap ordering, persist live plotting data atomically, and report
-    priority-latency evaluation metrics.
-  - [x] Run the local CPU 800-episode Phase 3a feasibility test and 10-seed
-    evaluation. It reached 0.948 completion, 0.815 collisions/episode, 0.09
-    deadlock rate, and A<C priority latency; it is No-Go due to completion and
-    deadlock rate.
-  - [x] Phase 3b implementation: add time-reserved A* path distillation as the
-    only change from the frozen Phase 3a configuration. The A* teacher
-    completes seed 4's 20 evaluation instances with 1.0 completion, zero
-    collisions, and zero state deadlocks.
-  - [x] Supersede the original Phase 3a/3b pair with the r2 semantic ablation;
-    do not run the original Phase 3b configuration as a comparison baseline.
-  - [x] Implement the r2 semantic engagement architecture: A/B/C/idle labels
-    are 0.8/0.5/0.3/0.1, engagement has an independent encoder, and the motion
-    head consumes `e.detach()`.
-  - [x] Run Phase 3a-r2 for 1,000 local CPU episodes without A* KL, then freeze
-    its configuration as the only baseline for Phase 3b-r2. Its 10-seed x
-    20-episode result was No-Go: 0.895 completion, 2.960 collisions/episode,
-    0.180 deadlock rate, and no aggregate A<C priority latency.
-  - [x] Run Phase 3b-r2 for 1,000 local CPU episodes with only 0.05 time-reserved
-    A* KL added, then compare both r2 runs over 10 seeds x 20 episodes. It
-    improved to 0.993 completion, 2.690 collisions/episode, 0.005 deadlock
-    rate, 0.020 success-rate std, and A<C latency, but is No-Go on the
-    collision gate because seed 3 recorded 21.15 collisions/episode.
-  - [x] Run the Phase 3b-r2 multi-seed robustness feasibility experiment with
-    round-robin training seed groups 100-109 and held-out evaluation seed
-    groups 0-9. Its 10-seed x 20-episode result passes the static gate: 0.978
-    completion, 1.575 collisions/episode, 0.005 deadlock rate, 0.037 success
-    std, and A<C latency. Retain seed 2's 9.8 collisions/episode as a
-    per-seed risk to monitor during dynamic-ingress validation.
-  - [ ] Phase 3 final acceptance: enable dynamic ingress after the current
-    static r2 training is complete. Preserve the static r2 configurations as
-    architecture-ablation baselines; do not modify the active run.
-    - [x] Parameterize and pass through `batch_interval`,
-      `batch_size_range`, `initial_priority_label`, `request_queue_size`, and
-      `priority_schedule`, while preserving static defaults for reproducibility.
-    - [x] Add matched dynamic-ingress 3a-r2 and 3b-r2 configurations using
-      `max_steps: 1000`, `batch_interval: 40`,
-      `batch_size_range: [1, 3]`, `request_queue_size: 4`,
-      `task_completion_target: 9`, initial A/B batches, and no priority-label
-      wraparound. Batch arrivals continue while the completion target has not
-      been reached, even when more than nine tasks have already arrived.
-    - [x] Replace fixed A/B/C engagement targets with the confirmed
-      active-letter rank linear mapping; keep idle or inactive agents at 0.1.
-    - [ ] Pass the dynamic-ingress time-reserved A* feasibility gate before
-      collecting demonstrations or running MAPPO: completion >= 0.95,
-      collisions <= 2.0, and deadlock rate <= 0.05.
-      - [x] Add the independent `eval/evaluate_dynamic_ingress_astar.py` gate.
-        Its prior 1-episode smoke used the superseded 100-step ingress policy;
-        rerun the gate with the 40-step, initial-A/B, target-9 contract before
-        collecting demonstrations. The required 10-seed x 20-episode gate
-        remains pending.
-    - [ ] Run dynamic-ingress Phase 3a-r2 and Phase 3b-r2 with identical
-      ingress streams and seeds, then compare completion, collisions, deadlock,
-      A<C latency, and behavior-group metrics.
-      - [x] Complete matched local CPU training for both configurations:
-        3a reached 1,000 episodes / 311,834 steps and 3b reached 1,000
-        episodes / 235,500 steps. In their final 200 training-distribution
-        episodes, both reached 1.0 completion and 0 deadlocks; mean collisions
-        were 1.84 (3a) and 1.72 (3b). These are development metrics, not
-        held-out acceptance results.
-      - [ ] Archive or rerun the matched held-out dynamic-policy 10-seed
-        evaluation. No dynamic 3a/3b `evaluation_10x20.json` artifact was
-        present when results were reviewed on 2026-08-13, so completion,
-        collision, deadlock, and A<C acceptance cannot be claimed.
-    - [ ] Add dynamic-ingress behavior-group evaluation: narrow-corridor
-      yielding, high/low-priority intersection passage, and low-battery
-      charging diversion.
-      - [x] Implement and run natural-rollout behavior evaluation over held-out
-        seeds 0-9 with 5 episodes each. 3b observed 95 priority-intersection
-        decisions with 16.84% high-priority-first actions; 3a observed 466
-        with 5.15%. 3a saw one narrow-corridor opportunity and did not yield;
-        3b saw none. Neither model naturally covered low-battery loaded-AGV
-        charging diversion. Uncovered groups are reported as such, not passed.
-      - [ ] Add controlled Phase 4 scenarios for sufficiently sampled
-        narrow-corridor yielding and low-battery charging diversion. This is
-        scenario injection for evaluation/training and remains deferred from
-        Phase 3.
-- [ ] Phase 4: DeepSeek label adjustment and engagement distillation.
-  - [x] Replace the ambiguous single engagement scalar with the frozen Phase 4
-    dual-semantic contract (`task_commitment`, `local_assertiveness`) before
-    any local CPU feasibility training. The actor, offline teacher, rollout
-    buffer, losses, checkpoint, and audit path now preserve both dimensions.
-  - [x] Define an offline-only semantic-teacher contract: strict JSON schemas,
-    label-only priority adjustments, cached JSONL labels, and zero API calls in
-    MAPPO training/evaluation.
-  - [x] Add a deterministic mock teacher plus a Phase 4 configuration. Mock
-    labels are limited to interface/smoke validation and are not experimental
-    evidence for LLM distillation.
-  - [x] Freeze the Phase 4 scale as `medium / 5 AGV / batch [4,8] / N=50`.
-    It is a new scale track, not a direct Phase 3b ablation; retain a matched
-    rule-engagement + A* KL baseline before attributing effects to LLM labels.
-  - [x] Add controlled scenario injection and stratified label sampling:
-    120 normal transport (30%), 100 priority conflicts (25%), 80 narrow-corridor
-    yields (20%), 60 low-battery diversions (15%), and 40 station/exit conflicts
-    (10%). Controlled states are label-only and never replace PPO rollouts.
-  - [x] Run a 5-AGV A* safety/completion preflight before DeepSeek collection.
-    The local 3-seed x 2-episode run reached 1.0 completion, 0 collisions, and
-    0 terminating deadlocks under [4,8] ingress and N=50; it also recorded
-    344-362 path-livelock and 1-7 transient state-repeat events per seed, so
-    retain them as Phase 4 diagnostics rather than treating the gate as a
-    coordination-quality proof.
-  - [x] Generate and review the frozen 400-record DeepSeek offline label set.
-    Audit at least 10% of records for scenario type, bounded JSON, rationale,
-    priority semantics, and absence of action/assignment instructions.
-    - [x] Stabilize DeepSeek response parsing, safe empty-response diagnostics,
-      and the local tests required before a one-request smoke collection.
-    - [x] Run and inspect one real DeepSeek request before starting the full
-      400-record collection. The smoke produced one schema-valid 615-dimension
-      record with label 0.8 and removed its partial checkpoint.
-    - [x] Pass the dual-semantic pilot gate on 25 real DeepSeek records (five per
-      scenario type): all automatic direction/schema checks and the full
-      rationale review passed after isolating controlled-scene geometry.
-    - [x] Resume the user-run formal collection from its validated 79-record
-      checkpoint and complete the frozen 120/100/80/60/40 quotas. The final
-      dataset has 400 unique v2 IDs. Its SHA-256 is recorded in the formal
-      audit report.
-    - [x] Close the formal rationale audit: the deterministic 10% review and a
-      full text/state scan found 11 rationale-only anomalies, including two
-      score/reason contradictions. Two targeted repair rounds corrected all
-      affected rationales without changing any numeric training target.
-      - [x] Add a non-destructive, resumable targeted re-label utility and a
-        frozen 11-ID repair list. The audit now detects all 11 affected records
-        automatically instead of relying only on sampled manual review.
-      - [x] Re-audit the final `repaired_r2` artifact: all 400 records, fixed
-        quotas, 400 unique IDs, and the deterministic 10% sample passed; the
-        full automatic issue count is zero.
-    - [ ] Optionally run a same-scenario Flash non-thinking versus Flash-high
-      versus Pro-high label-quality pilot. This is a provider-quality study and
-      does not block the Phase 4 CPU feasibility experiment.
-  - [x] Verify the dual-semantic training interface with a one-episode local CPU
-    Mock-label smoke: both component losses were non-zero and the checkpoint
-    stored a 2-output semantic head feeding a 66-input motion head.
-  - [x] Repeat the one-episode local CPU interface smoke with the formal 400
-    records: both component losses were non-zero, the checkpoint shapes were
-    `(2, 64)` and `(5, 66)`, and training made zero API calls.
-  - [ ] Run the required local CPU 800-episode Phase 4 feasibility experiment,
-    with TensorBoard and deterministic visual replay, before any server run.
-  - [ ] Evaluate the Phase 3b versus Phase 4 comparison on 10 held-out seeds;
-    report significance, priority latency, starvation, safety, and zero online
-    LLM calls.
-- [ ] Phase 4b: Large-scale 6-AGV evaluation.
-- [ ] Phase 5: 80x120, 10-AGV target-scale evaluation and paper outputs.
-- [ ] Phase 6 (optional): Runtime LLM exception handling.
+- [ ] After the core evidence chain is complete, add a high-level
+  `continue_task/charge` policy decision while retaining an emergency forced-
+  charging safety floor; do not remove task consistency, station capacity, or
+  other hard safety checks.
+- [ ] Compare fixed-threshold charging, learned charging with an emergency
+  shield, and an unshielded diagnostic under matched energy pressure and seeds.
+  Report learning-curve AUC, time to charging-success threshold, charger
+  arrival, charged events, task recovery, congestion, throughput, and deaths.

@@ -5,6 +5,7 @@ from urllib import error
 
 import numpy as np
 import pytest
+import torch
 
 from eval.audit_phase4_semantics import _automatic_issues, audit_dataset
 from llm_mappo.llm_teacher import (
@@ -27,7 +28,7 @@ from llm_mappo.phase4 import (
     repair_offline_labels,
 )
 from llm_mappo.types import SemanticPreferenceLabel
-from visualize import _is_phase3_checkpoint
+from visualize import _is_phase3_checkpoint, _load_controller
 
 
 def test_phase4_rejects_unbounded_llm_json_schemas():
@@ -169,6 +170,53 @@ def test_phase4_config_requires_cached_dataset_and_path_teacher():
         train_phase3(missing)
 
 
+def test_g2_charging_retrains_are_matched_except_for_energy_pressure():
+    control = Phase3TrainingConfig.from_yaml(
+        "configs/g2_charging_retrain_control.yaml"
+    )
+    candidate = Phase3TrainingConfig.from_yaml(
+        "configs/g2_charging_retrain_candidate.yaml"
+    )
+    high_consumption = Phase3TrainingConfig.from_yaml(
+        "configs/g2_charging_retrain_candidate_scale120_threshold020.yaml"
+    )
+
+    assert control.episodes == candidate.episodes == high_consumption.episodes == 200
+    assert (control.battery_cost_scale, control.charge_threshold) == (1.0, 0.2)
+    assert (candidate.battery_cost_scale, candidate.charge_threshold) == (1.1, 0.3)
+    assert (high_consumption.battery_cost_scale, high_consumption.charge_threshold) == (
+        1.2,
+        0.2,
+    )
+    assert {
+        control.charge_release_threshold,
+        candidate.charge_release_threshold,
+        high_consumption.charge_release_threshold,
+    } == {0.8}
+
+    allowed_differences = {
+        "battery_cost_scale",
+        "charge_threshold",
+        "output_dir",
+    }
+    control_fixed = {
+        key: value
+        for key, value in vars(control).items()
+        if key not in allowed_differences
+    }
+    candidate_fixed = {
+        key: value
+        for key, value in vars(candidate).items()
+        if key not in allowed_differences
+    }
+    high_consumption_fixed = {
+        key: value
+        for key, value in vars(high_consumption).items()
+        if key not in allowed_differences
+    }
+    assert control_fixed == candidate_fixed == high_consumption_fixed
+
+
 def test_phase4_training_aggregates_two_environment_rollouts(tmp_path):
     dataset = tmp_path / "labels.jsonl"
     label_env = Phase2Warehouse(
@@ -241,6 +289,44 @@ def test_phase4_label_parser_rejects_task_assignment_fields():
 
 def test_phase4_checkpoint_uses_the_dual_head_visualization_loader():
     assert _is_phase3_checkpoint({"phase": "4", "model_state": {}})
+
+
+def test_phase4_visualization_controller_loads_dual_semantic_checkpoint(tmp_path):
+    source = DualHeadMAPPOPolicy(615, 5, semantic_dim=2)
+    checkpoint = tmp_path / "phase4.pt"
+    torch.save(
+        {
+            "model_state": source.state_dict(),
+            "config": {
+                "phase": "4",
+                "n_agents": 5,
+                "max_steps": 2,
+                "env_id": "llm-mappo-medium-3ag-v1",
+            },
+            "actor_observation_dim": 615,
+            "episodes": 1,
+            "steps": 1,
+            "phase": "4",
+        },
+        checkpoint,
+    )
+
+    settings, choose_actions = _load_controller("policy", checkpoint, "unused.yaml")
+    env = Phase2Warehouse(
+        n_agents=settings.n_agents,
+        max_steps=settings.max_steps,
+        env_id=settings.env_id,
+        include_priority_features=settings.include_priority_features,
+    )
+    try:
+        env.reset(seed=0)
+        actions = choose_actions(env, env.action_masks())
+    finally:
+        env.close()
+
+    assert settings.n_agents == 5
+    assert settings.include_priority_features is True
+    assert actions.shape == (5,)
 
 
 def test_phase4_stratified_collection_preserves_each_controlled_scenario(tmp_path):

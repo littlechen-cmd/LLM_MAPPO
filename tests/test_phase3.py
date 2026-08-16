@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import torch
 
+from eval.evaluate_phase3 import _write_json
 from llm_mappo.mappo import (
     DualHeadMAPPOPolicy,
     PPOHyperparameters,
@@ -13,12 +14,14 @@ from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
 from llm_mappo.phase3_training import (
     Phase3TrainingConfig,
     _append_csv,
+    _checkpoint_semantic_dim,
     _engagement_targets,
     _resolve_device,
     _training_episode_seed,
     _validate_training_seed_groups,
     _write_csv,
     evaluate_phase3,
+    load_phase3_policy,
     train_phase3,
 )
 
@@ -339,6 +342,58 @@ def test_dual_head_policy_batches_independent_environments():
     assert semantics.shape == (3, 5, 2)
 
 
+@pytest.mark.parametrize(("phase", "semantic_dim"), (("3b", 1), ("4", 2)))
+def test_phase3_policy_loader_restores_single_and_dual_semantics(
+    tmp_path, phase, semantic_dim
+):
+    source = DualHeadMAPPOPolicy(6, ACTION_COUNT, semantic_dim=semantic_dim)
+    checkpoint = tmp_path / f"phase_{phase}.pt"
+    torch.save(
+        {
+            "model_state": source.state_dict(),
+            "config": {"phase": phase},
+            "actor_observation_dim": 6,
+            "episodes": 1,
+            "steps": 1,
+            "phase": phase,
+        },
+        checkpoint,
+    )
+
+    loaded, config, payload = load_phase3_policy(checkpoint)
+
+    assert loaded.actor.semantic_dim == semantic_dim
+    assert loaded.actor.motion_head.in_features == 64 + semantic_dim
+    assert loaded.training is False
+    assert config == {"phase": phase}
+    assert payload["phase"] == phase
+    for key, expected in source.state_dict().items():
+        assert torch.equal(loaded.state_dict()[key], expected)
+
+
+def test_phase3_policy_loader_rejects_inconsistent_semantic_metadata(tmp_path):
+    source = DualHeadMAPPOPolicy(6, ACTION_COUNT, semantic_dim=2)
+    checkpoint = {
+        "model_state": source.state_dict(),
+        "config": {"phase": "4"},
+        "actor_observation_dim": 6,
+        "semantic_dim": 1,
+        "phase": "4",
+    }
+    path = tmp_path / "inconsistent.pt"
+    torch.save(checkpoint, path)
+
+    with pytest.raises(ValueError, match="semantic dimensions disagree"):
+        load_phase3_policy(path)
+
+
+def test_checkpoint_semantic_dim_rejects_unsupported_width():
+    source = DualHeadMAPPOPolicy(6, ACTION_COUNT, semantic_dim=2)
+    checkpoint = {"model_state": source.state_dict(), "semantic_dim": 3}
+    with pytest.raises(ValueError, match="invalid semantic dimension"):
+        _checkpoint_semantic_dim(checkpoint)
+
+
 def test_training_device_resolution_supports_auto_and_clear_cuda_errors(
     monkeypatch,
 ):
@@ -353,3 +408,9 @@ def test_training_device_resolution_supports_auto_and_clear_cuda_errors(
 def test_phase3_evaluation_rejects_nonpositive_engagement_sample_rate():
     with pytest.raises(ValueError, match="engagement_sample_rate"):
         evaluate_phase3(None, {}, (), engagement_sample_rate=0)
+
+
+def test_phase3_evaluation_output_creates_parent_directories(tmp_path):
+    output = tmp_path / "nested" / "evaluation.json"
+    _write_json('{"success": true}', str(output))
+    assert output.read_text(encoding="utf-8") == '{"success": true}'

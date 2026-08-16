@@ -57,7 +57,7 @@ def main() -> None:
     text = json.dumps(result, indent=2)
     print(text)
     if args.output:
-        Path(args.output).write_text(text, encoding="utf-8")
+        _write_json(text, args.output)
 
 
 def _write_engagement_csv(samples, path: str) -> None:
@@ -67,6 +67,12 @@ def _write_engagement_csv(samples, path: str) -> None:
         writer = csv.writer(stream)
         writer.writerow(["label", "engagement"])
         writer.writerows(samples)
+
+
+def _write_json(text: str, path: str) -> None:
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":
