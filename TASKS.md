@@ -50,10 +50,13 @@ and the corresponding Chapter 7 criteria are satisfied.
   from this old-checkpoint diagnostic: the original-threshold `1.10` preserves
   zero energy deaths but does not provide sufficient exposure, while every
   higher-exposure candidate exposes energy deaths and/or deadlocks.
-  Run three matched 200-episode retraining groups before closing this task:
+  Run four matched 200-episode retraining groups before closing this task:
   control `1.00/0.20/0.80`, early-charge candidate `1.10/0.30/0.80`, and
-  high-consumption candidate `1.20/0.20/0.80`, with all other settings, seed
-  rotation, teachers, rewards, and PPO parameters held fixed.
+  high-consumption candidate `1.20/0.20/0.80`, plus intermediate candidate
+  `1.10/0.25/0.80`, with all other settings, seed rotation, teachers, rewards,
+  and PPO parameters held fixed. Promote `1.10/0.25/0.80` to the core candidate
+  only if it preserves zero late-training and held-out energy deaths, retains
+  sufficient charging exposure, and improves efficiency over `1.10/0.30/0.80`.
 - [x] **G2-4** Add pre-freeze metrics for low-battery triggers, charger arrivals,
   charged events, waiting, task recovery, minimum battery, and energy deaths.
 - [x] **G2-5** After changing charging behavior, rerun the applicable regression suite

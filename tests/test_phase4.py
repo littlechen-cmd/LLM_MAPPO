@@ -180,10 +180,22 @@ def test_g2_charging_retrains_are_matched_except_for_energy_pressure():
     high_consumption = Phase3TrainingConfig.from_yaml(
         "configs/g2_charging_retrain_candidate_scale120_threshold020.yaml"
     )
+    intermediate = Phase3TrainingConfig.from_yaml(
+        "configs/g2_charging_retrain_candidate_scale110_threshold025.yaml"
+    )
 
-    assert control.episodes == candidate.episodes == high_consumption.episodes == 200
+    assert {
+        control.episodes,
+        candidate.episodes,
+        intermediate.episodes,
+        high_consumption.episodes,
+    } == {200}
     assert (control.battery_cost_scale, control.charge_threshold) == (1.0, 0.2)
     assert (candidate.battery_cost_scale, candidate.charge_threshold) == (1.1, 0.3)
+    assert (intermediate.battery_cost_scale, intermediate.charge_threshold) == (
+        1.1,
+        0.25,
+    )
     assert (high_consumption.battery_cost_scale, high_consumption.charge_threshold) == (
         1.2,
         0.2,
@@ -191,6 +203,7 @@ def test_g2_charging_retrains_are_matched_except_for_energy_pressure():
     assert {
         control.charge_release_threshold,
         candidate.charge_release_threshold,
+        intermediate.charge_release_threshold,
         high_consumption.charge_release_threshold,
     } == {0.8}
 
@@ -214,7 +227,17 @@ def test_g2_charging_retrains_are_matched_except_for_energy_pressure():
         for key, value in vars(high_consumption).items()
         if key not in allowed_differences
     }
-    assert control_fixed == candidate_fixed == high_consumption_fixed
+    intermediate_fixed = {
+        key: value
+        for key, value in vars(intermediate).items()
+        if key not in allowed_differences
+    }
+    assert (
+        control_fixed
+        == candidate_fixed
+        == intermediate_fixed
+        == high_consumption_fixed
+    )
 
 
 def test_phase4_training_aggregates_two_environment_rollouts(tmp_path):
