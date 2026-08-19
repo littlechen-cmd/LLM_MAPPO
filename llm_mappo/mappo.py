@@ -43,11 +43,13 @@ class DualHeadActor(nn.Module):
         action_dim: int,
         hidden_dim: int = 128,
         semantic_dim: int = 1,
+        semantic_features_enabled: bool = True,
     ):
         super().__init__()
         if semantic_dim not in (1, 2):
             raise ValueError("semantic_dim must be one for Phase 3 or two for Phase 4.")
         self.semantic_dim = semantic_dim
+        self.semantic_features_enabled = bool(semantic_features_enabled)
         self.motion_encoder = _mlp((observation_dim, hidden_dim, 64))
         self.engagement_encoder = _mlp((observation_dim, hidden_dim, 64))
         self.engagement_head = nn.Sequential(
@@ -62,9 +64,18 @@ class DualHeadActor(nn.Module):
     def engagement(self, observations: Tensor) -> Tensor:
         return self.semantic_preferences(observations)[..., 0]
 
+    def motion_semantics(self, observations: Tensor) -> Tensor:
+        if not self.semantic_features_enabled:
+            return torch.zeros(
+                (*observations.shape[:-1], self.semantic_dim),
+                dtype=observations.dtype,
+                device=observations.device,
+            )
+        return self.semantic_preferences(observations)
+
     def forward(self, observations: Tensor) -> Tensor:
         motion_features = self.motion_encoder(observations)
-        semantics = self.semantic_preferences(observations)
+        semantics = self.motion_semantics(observations)
         motion_input = torch.cat((motion_features, semantics.detach()), dim=-1)
         return self.motion_head(motion_input)
 
@@ -156,10 +167,14 @@ class DualHeadMAPPOPolicy(nn.Module):
         action_dim: int,
         device: str = "cpu",
         semantic_dim: int = 1,
+        semantic_features_enabled: bool = True,
     ):
         super().__init__()
         self.actor = DualHeadActor(
-            observation_dim, action_dim, semantic_dim=semantic_dim
+            observation_dim,
+            action_dim,
+            semantic_dim=semantic_dim,
+            semantic_features_enabled=semantic_features_enabled,
         )
         self.critic = CentralizedCritic(observation_dim)
         self.device = torch.device(device)
@@ -204,7 +219,7 @@ class DualHeadMAPPOPolicy(nn.Module):
         return self.actor.semantic_preferences(observations)
 
     def _semantic_output(self, observations: Tensor) -> Tensor:
-        values = self.semantic_preferences(observations)
+        values = self.actor.motion_semantics(observations)
         return values.squeeze(-1) if self.actor.semantic_dim == 1 else values
 
     def _masked_logits(self, logits: Tensor, action_masks) -> Tensor:

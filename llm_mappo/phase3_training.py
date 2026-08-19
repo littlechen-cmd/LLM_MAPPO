@@ -55,18 +55,33 @@ class Phase3TrainingConfig:
     oracle_interaction_mask: bool = True
     deadlock_steps: int = 180
     episodes: int = 800
+    environment_step_budget: int | None = None
     rollout_steps: int = 512
     checkpoint_interval: int = 200
     metrics_write_interval: int = 20
     output_dir: str = "artifacts/phase3a_dual_head"
     offline_semantic_dataset: str | None = None
     offline_semantic_neighbours: int = 3
+    use_astar_kl_teacher: bool | None = None
+    use_offline_llm_teacher: bool | None = None
     ppo: PPOHyperparameters = field(
         default_factory=lambda: PPOHyperparameters(
             reservation_kl_coefficient=0.0,
             engagement_coefficient=0.1,
         )
     )
+
+    @property
+    def astar_kl_enabled(self) -> bool:
+        if self.use_astar_kl_teacher is not None:
+            return self.use_astar_kl_teacher
+        return self.phase in {"3b", "4"}
+
+    @property
+    def offline_llm_enabled(self) -> bool:
+        if self.use_offline_llm_teacher is not None:
+            return self.use_offline_llm_teacher
+        return self.phase == "4"
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Phase3TrainingConfig":
@@ -117,6 +132,7 @@ class Phase3TrainingConfig:
             ),
             deadlock_steps=environment.get("deadlock_steps", cls.deadlock_steps),
             episodes=training.get("episodes", cls.episodes),
+            environment_step_budget=training.get("environment_step_budget"),
             rollout_steps=training.get("rollout_steps", cls.rollout_steps),
             checkpoint_interval=training.get(
                 "checkpoint_interval", cls.checkpoint_interval
@@ -134,6 +150,8 @@ class Phase3TrainingConfig:
                     "offline_engagement_neighbours", cls.offline_semantic_neighbours
                 ),
             ),
+            use_astar_kl_teacher=training.get("use_astar_kl_teacher"),
+            use_offline_llm_teacher=training.get("use_offline_llm_teacher"),
             ppo=PPOHyperparameters(**ppo_values),
         )
 
@@ -224,6 +242,16 @@ def _validate_training_seed_groups(seed_groups: tuple[int, ...]) -> None:
         raise ValueError("training_seed_groups must not contain duplicates.")
 
 
+def _training_budget_available(
+    config: Phase3TrainingConfig, episodes: int, steps: int
+) -> bool:
+    if episodes >= config.episodes:
+        return False
+    if config.environment_step_budget is not None:
+        return steps < config.environment_step_budget
+    return True
+
+
 def _writer(path: Path):
     try:
         from torch.utils.tensorboard import SummaryWriter
@@ -282,7 +310,7 @@ def _environment_worker(connection, config: Phase3TrainingConfig) -> None:
     expert = None
     try:
         env = _make_training_env(config)
-        if config.phase in {"3b", "4"}:
+        if config.astar_kl_enabled:
             expert = AStarExpert()
         env.reset(seed=config.seed)
         connection.send(
@@ -451,6 +479,7 @@ def _save_checkpoint(path: Path, policy, config, episodes: int, steps: int) -> N
             "config": asdict(config),
             "actor_observation_dim": policy.actor.motion_encoder[0].in_features,
             "semantic_dim": policy.actor.semantic_dim,
+            "semantic_features_enabled": policy.actor.semantic_features_enabled,
             "episodes": episodes,
             "steps": steps,
             "phase": config.phase,
@@ -469,7 +498,14 @@ def _write_csv(path: Path, rows: List[dict]) -> None:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    temporary_path.replace(path)
+    for attempt in range(6):
+        try:
+            temporary_path.replace(path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                raise
+            time.sleep(0.1 * 2**attempt)
 
 
 def _append_csv(path: Path, row: dict) -> None:
@@ -553,19 +589,34 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         raise ValueError("Phase must be '3a', '3b', or '4'.")
     if config.phase == "3a" and config.ppo.reservation_kl_coefficient != 0.0:
         raise ValueError("Phase 3a must not enable A* path distillation.")
-    if config.phase == "4" and not config.offline_semantic_dataset:
-        raise ValueError("Phase 4 requires an offline_semantic_dataset.")
-    if (
-        config.phase in {"3b", "4"}
-        and config.ppo.reservation_kl_coefficient <= 0.0
-    ):
-        raise ValueError("Phase 3b and Phase 4 require a positive A* KL coefficient.")
+    if config.phase == "4":
+        if config.offline_llm_enabled and not config.offline_semantic_dataset:
+            raise ValueError("LLM distillation requires an offline_semantic_dataset.")
+        if config.offline_llm_enabled != (config.ppo.engagement_coefficient > 0.0):
+            raise ValueError(
+                "Phase 4 LLM teacher and engagement coefficient must be "
+                "enabled together."
+            )
+        if config.astar_kl_enabled != (
+            config.ppo.reservation_kl_coefficient > 0.0
+        ):
+            raise ValueError(
+                "Phase 4 A* teacher and reservation KL coefficient must be "
+                "enabled together."
+            )
+    elif config.phase == "3b" and config.ppo.reservation_kl_coefficient <= 0.0:
+        raise ValueError("Phase 3b requires a positive A* KL coefficient.")
     if config.offline_semantic_neighbours < 1:
         raise ValueError("offline_semantic_neighbours must be positive.")
     if config.parallel_envs < 1:
         raise ValueError("parallel_envs must be positive.")
     if config.episodes < 1:
         raise ValueError("episodes must be positive.")
+    if (
+        config.environment_step_budget is not None
+        and config.environment_step_budget < 1
+    ):
+        raise ValueError("environment_step_budget must be positive when provided.")
     if config.checkpoint_interval < 1 or config.metrics_write_interval < 1:
         raise ValueError("Phase 3 intervals must be positive.")
     _validate_training_seed_groups(config.training_seed_groups)
@@ -585,7 +636,7 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
     )
     offline_teacher = (
         OfflineSemanticTeacher.from_jsonl(config.offline_semantic_dataset)
-        if config.phase == "4"
+        if config.offline_llm_enabled
         else None
     )
     environment_count = min(config.parallel_envs, config.episodes)
@@ -609,6 +660,9 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         ACTION_COUNT,
         str(resolved_device),
         semantic_dim=semantic_dim,
+        semantic_features_enabled=(
+            config.offline_llm_enabled if config.phase == "4" else True
+        ),
     )
     updater = MAPPOUpdater(policy, config.ppo)
     buffer = RolloutBuffer(config.n_agents, semantic_dim=semantic_dim)
@@ -667,6 +721,14 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         writer.add_scalar(
             "config/offline_engagement_teacher", int(offline_teacher is not None), 0
         )
+        writer.add_scalar(
+            "config/astar_kl_teacher", int(config.astar_kl_enabled), 0
+        )
+        writer.add_scalar(
+            "config/semantic_features_enabled",
+            int(policy.actor.semantic_features_enabled),
+            0,
+        )
         if offline_teacher is not None:
             writer.add_scalar(
                 "config/offline_engagement_records", offline_teacher.size, 0
@@ -680,8 +742,13 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         writer.add_scalar("config/engagement_detached_for_motion", 1, 0)
         writer.flush()
     try:
-        while episodes < config.episodes:
+        while _training_budget_available(config, episodes, steps):
             active_indices = [index for index, enabled in enumerate(active) if enabled]
+            if config.environment_step_budget is not None:
+                remaining_steps = config.environment_step_budget - steps
+                active_indices = active_indices[:remaining_steps]
+            if not active_indices:
+                break
             snapshots = environment_pool.snapshots(active_indices)
             masks = np.stack([snapshot[0] for snapshot in snapshots])
             observation_batch = np.stack(
@@ -694,13 +761,15 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 engagement_targets = offline_teacher.targets(
                     flat_observations, config.offline_semantic_neighbours
                 ).reshape(len(active_indices), config.n_agents, semantic_dim)
-            else:
+            elif config.phase != "4":
                 engagement_targets = np.stack(
                     [snapshot[2] for snapshot in snapshots]
                 )
+            else:
+                engagement_targets = None
             reservation_preferences = (
                 np.stack([snapshot[1] for snapshot in snapshots])
-                if config.phase in {"3b", "4"}
+                if config.astar_kl_enabled
                 else None
             )
             actions, log_probs, values, _ = policy.act(observation_batch, masks)
@@ -725,7 +794,11 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                         if reservation_preferences is not None
                         else None
                     ),
-                    engagement_targets=engagement_targets[offset],
+                    engagement_targets=(
+                        engagement_targets[offset]
+                        if engagement_targets is not None
+                        else None
+                    ),
                     stream_id=index,
                 )
                 observations[index] = transition.observations
@@ -736,6 +809,7 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 environment_seed, seed_group, seed_offset = episode_metadata[index]
                 record = {
                     "episode": episodes,
+                    "environment_steps": steps,
                     "environment_index": index,
                     "environment_seed": environment_seed,
                     "training_seed_offset": seed_offset,
@@ -756,7 +830,9 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                             writer.add_scalar(f"episode/{key}", metric, episodes)
                 if episodes % config.metrics_write_interval == 0:
                     _write_csv(run_dir / "episodes.csv", episode_records)
-                if next_episode_index < config.episodes:
+                if _training_budget_available(config, episodes, steps) and (
+                    next_episode_index < config.episodes
+                ):
                     metadata = _training_episode_seed(config, next_episode_index)
                     episode_metadata[index] = metadata
                     observations[index] = environment_pool.reset(index, metadata[0])
@@ -775,7 +851,11 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
                     print(json.dumps(message), file=sys.stderr, flush=True)
                     if writer:
                         writer.flush()
-            if len(buffer) >= config.rollout_steps or not any(active):
+            if (
+                len(buffer) >= config.rollout_steps
+                or not any(active)
+                or not _training_budget_available(config, episodes, steps)
+            ):
                 active_indices = [
                     index for index, enabled in enumerate(active) if enabled
                 ]
@@ -849,6 +929,7 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         },
         "episodes": episodes,
         "steps": steps,
+        "environment_step_budget": config.environment_step_budget,
         "training_elapsed_seconds": training_elapsed_seconds,
         "env_steps_per_second": (
             steps / training_elapsed_seconds if training_elapsed_seconds > 0 else 0.0
@@ -858,15 +939,20 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
         "checkpoint": str(final),
         "last_episode": episode_records[-1] if episode_records else None,
         "priority_mean_completion_steps": _mean_durations(priority_durations),
-        "a_star_distillation": config.phase in {"3b", "4"},
+        "a_star_distillation": config.astar_kl_enabled,
         "offline_llm_semantic_distillation": offline_teacher is not None,
         "semantic_architecture": (
-            "task_commitment_and_local_assertiveness_detached_for_motion"
-            if semantic_dim == 2
-            else "single_engagement_detached_for_motion"
+            "two_dimensional_fixed_zero_semantics_for_motion"
+            if not policy.actor.semantic_features_enabled
+            else (
+                "task_commitment_and_local_assertiveness_detached_for_motion"
+                if semantic_dim == 2
+                else "single_engagement_detached_for_motion"
+            )
         ),
-        "rule_engagement_labels": _engagement_label_definition(config),
     }
+    if config.phase != "4":
+        summary["rule_engagement_labels"] = _engagement_label_definition(config)
     if offline_teacher is not None:
         summary["offline_semantic_teacher"] = {
             "dataset": config.offline_semantic_dataset,
@@ -875,7 +961,7 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
             "neighbours": config.offline_semantic_neighbours,
             "api_calls_during_training": 0,
         }
-    if config.phase in {"3b", "4"}:
+    if config.astar_kl_enabled:
         summary["reservation_teacher"] = {
             key: sum(statistics.get(key, 0) for statistics in worker_statistics)
             for key in (
@@ -965,11 +1051,18 @@ def _checkpoint_semantic_dim(checkpoint: Mapping[str, object]) -> int:
 def load_phase3_policy(checkpoint_path: str | Path, device: str = "cpu"):
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     semantic_dim = _checkpoint_semantic_dim(checkpoint)
+    config = checkpoint.get("config", {})
+    feature_flag = checkpoint.get("semantic_features_enabled")
+    if feature_flag is None and isinstance(config, Mapping):
+        feature_flag = config.get("use_offline_llm_teacher")
+    if feature_flag is None:
+        feature_flag = True
     policy = DualHeadMAPPOPolicy(
         checkpoint["actor_observation_dim"],
         ACTION_COUNT,
         device=device,
         semantic_dim=semantic_dim,
+        semantic_features_enabled=bool(feature_flag),
     )
     policy.load_state_dict(checkpoint["model_state"])
     policy.eval()
@@ -1012,6 +1105,34 @@ def _charging_metrics_summary(records: Iterable[Dict[str, object]]) -> Dict[str,
     )
     summary["minimum_battery"] = (
         min(float(row.get("minimum_battery", 1.0)) for row in rows) if rows else 1.0
+    )
+    return summary
+
+
+def _episode_metrics_summary(records: Iterable[Dict[str, object]]) -> Dict[str, float]:
+    rows = list(records)
+    count_keys = (
+        "completed_tasks",
+        "created_tasks",
+        "steps",
+        "reward",
+        "collisions",
+        "agent_deaths",
+        "picked_tasks",
+        "blocked_forwards",
+    )
+    summary = {
+        f"mean_{key}_per_episode": float(
+            np.mean([float(row.get(key, 0.0)) for row in rows])
+        )
+        if rows
+        else 0.0
+        for key in count_keys
+    }
+    total_steps = sum(float(row.get("steps", 0.0)) for row in rows)
+    total_completed = sum(float(row.get("completed_tasks", 0.0)) for row in rows)
+    summary["completed_tasks_per_1000_steps"] = (
+        1000.0 * total_completed / total_steps if total_steps > 0.0 else 0.0
     )
     return summary
 
@@ -1126,6 +1247,7 @@ def evaluate_phase3(  # noqa: C901
                     "priority_mean_completion_steps": _mean_durations(
                         priority_durations
                     ),
+                    **_episode_metrics_summary(records),
                     **_charging_metrics_summary(records),
                 }
             )
@@ -1165,6 +1287,7 @@ def evaluate_phase3(  # noqa: C901
         "success_rate_std": float(success_rates.std()) if len(per_seed) else 0.0,
         "priority_mean_completion_steps": priority_means,
         "high_priority_faster_than_low": priority_ordering,
+        **_episode_metrics_summary(all_records),
         **_charging_metrics_summary(all_records),
     }
     if collect_engagement:

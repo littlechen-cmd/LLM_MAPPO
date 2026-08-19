@@ -69,15 +69,23 @@ and the corresponding Chapter 7 criteria are satisfied.
 ### Gate G3 — Formal Protocol Freeze
 
 - [ ] **G3-1** Freeze the code commit, four group configurations, environment contract,
-  label-dataset hash, training seeds, equal environment-step budget, and held-out
-  `10 seeds x 20 episodes` evaluation protocol.
-- [ ] **G3-2** Freeze runtime A* waypoint and training A* KL as separate factors, with
-  the four core experiment names defined in the Constitution.
+  label-dataset hash, training seeds, the matched G4 step budget, formal-budget
+  selection rule, and held-out `10 seeds x 20 episodes` evaluation protocol.
+  The provisional manifest fixes seeds, deterministic evaluation, final-checkpoint
+  selection, the dataset hash, and a `150,000`-step G4 budget; the final Git commit
+  and G2 charging decision remain open.
+- [x] **G3-2** Freeze runtime A* waypoint and training A* KL as separate factors, with
+  the four core experiment names defined in the Constitution. Phase 4 now exposes
+  independent A* KL and offline LLM teacher switches; no-LLM groups use fixed-zero
+  semantic motion inputs while preserving the same two-dimensional architecture.
 - [ ] **G3-3** Freeze battery-cost scale, charging rate, trigger/release hysteresis
   thresholds, task interruption/recovery semantics, and rule-layer safety
-  boundaries.
-- [ ] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
-  failure/retry policy, and formal experiment data/figure pipeline.
+  boundaries. `1.10/0.25/0.80` remains provisional until G2-3 evaluation finishes.
+- [x] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
+  failure/retry policy, and formal experiment data/figure pipeline. Formal episode
+  logs now include cumulative environment steps; the strict aggregation pipeline uses
+  training seeds as paired statistical units and the two initial plotting scripts emit
+  450 DPI PNG plus SVG without generating placeholder data.
 
 ### Gate G4 — Small-Budget Pilot
 
@@ -89,7 +97,8 @@ and the corresponding Chapter 7 criteria are satisfied.
   exposure and pass the frozen charger-arrival, task-recovery, energy-death,
   and charging-congestion safety checks.
 - [ ] **G4-4** Use the matched learning curves to set one formal interaction budget for
-  all four groups without group-specific post-hoc tuning.
+  all four groups, record the single pre-G5 protocol amendment, and avoid
+  group-specific post-hoc tuning.
 
 ### Gate G5 — Core Multi-Seed Training
 

@@ -19,7 +19,11 @@ from llm_mappo.llm_teacher import (
 )
 from llm_mappo.mappo import DualHeadMAPPOPolicy, PPOHyperparameters
 from llm_mappo.phase2 import Phase2Warehouse
-from llm_mappo.phase3_training import Phase3TrainingConfig, train_phase3
+from llm_mappo.phase3_training import (
+    Phase3TrainingConfig,
+    load_phase3_policy,
+    train_phase3,
+)
 from llm_mappo.phase4 import (
     OfflineSemanticTeacher,
     apply_priority_instruction,
@@ -168,6 +172,145 @@ def test_phase4_config_requires_cached_dataset_and_path_teacher():
     missing = Phase3TrainingConfig(phase="4", n_agents=5, offline_semantic_dataset=None)
     with pytest.raises(ValueError, match="offline_semantic_dataset"):
         train_phase3(missing)
+
+
+def test_phase4_formal_configs_encode_the_independent_teacher_matrix():
+    paths = {
+        (False, False): "configs/g3_core_mappo_wp.yaml",
+        (True, False): "configs/g3_core_mappo_wp_astar_kd.yaml",
+        (False, True): "configs/g3_core_mappo_wp_llm_kd.yaml",
+        (True, True): "configs/g3_core_mappo_wp_astar_llm_kd.yaml",
+    }
+    configs = {
+        factors: Phase3TrainingConfig.from_yaml(path)
+        for factors, path in paths.items()
+    }
+
+    for (astar_enabled, llm_enabled), config in configs.items():
+        assert config.astar_kl_enabled is astar_enabled
+        assert config.offline_llm_enabled is llm_enabled
+        assert (config.ppo.reservation_kl_coefficient > 0.0) is astar_enabled
+        assert (config.ppo.engagement_coefficient > 0.0) is llm_enabled
+        assert config.n_agents == 5
+        assert config.episodes == 1000
+        assert config.environment_step_budget == 150_000
+        assert (
+            config.battery_cost_scale,
+            config.charge_threshold,
+            config.charge_release_threshold,
+        ) == (1.1, 0.25, 0.8)
+
+    reference = configs[(False, False)]
+    allowed = {
+        "output_dir",
+        "use_astar_kl_teacher",
+        "use_offline_llm_teacher",
+        "ppo",
+    }
+    reference_fixed = {
+        key: value for key, value in vars(reference).items() if key not in allowed
+    }
+    for config in configs.values():
+        fixed = {
+            key: value for key, value in vars(config).items() if key not in allowed
+        }
+        assert fixed == reference_fixed
+        reference_ppo = vars(reference.ppo)
+        config_ppo = vars(config.ppo)
+        differing_ppo = {
+            key for key in reference_ppo if reference_ppo[key] != config_ppo[key]
+        }
+        assert differing_ppo <= {
+            "engagement_coefficient",
+            "reservation_kl_coefficient",
+        }
+
+
+def test_phase4_can_train_without_either_distillation_teacher(tmp_path):
+    config = Phase3TrainingConfig(
+        phase="4",
+        seed=3,
+        n_agents=5,
+        max_steps=1,
+        episodes=10,
+        environment_step_budget=3,
+        parallel_envs=2,
+        rollout_steps=10,
+        checkpoint_interval=10,
+        metrics_write_interval=1,
+        output_dir=str(tmp_path / "run"),
+        offline_semantic_dataset=None,
+        use_astar_kl_teacher=False,
+        use_offline_llm_teacher=False,
+        ppo=PPOHyperparameters(
+            update_epochs=1,
+            minibatch_steps=3,
+            engagement_coefficient=0.0,
+            reservation_kl_coefficient=0.0,
+        ),
+    )
+
+    summary = train_phase3(config)
+    policy, _, _ = load_phase3_policy(summary["checkpoint"])
+
+    assert summary["a_star_distillation"] is False
+    assert summary["offline_llm_semantic_distillation"] is False
+    assert "reservation_teacher" not in summary
+    assert "offline_semantic_teacher" not in summary
+    assert policy.actor.semantic_features_enabled is False
+    assert summary["steps"] == summary["environment_step_budget"] == 3
+    episodes_path = tmp_path / "run" / "seed_003" / "episodes.csv"
+    with episodes_path.open("r", encoding="utf-8", newline="") as stream:
+        episode_rows = list(csv.DictReader(stream))
+    assert [int(row["environment_steps"]) for row in episode_rows] == [1, 2, 3]
+
+
+def test_phase4_can_train_each_single_teacher_ablation(tmp_path):
+    dataset = tmp_path / "labels.jsonl"
+    label_env = Phase2Warehouse(
+        n_agents=5, max_steps=8, include_priority_features=True
+    )
+    try:
+        collect_offline_labels(
+            label_env,
+            MockTeacher(),
+            dataset,
+            seeds=[3],
+            scenarios_per_seed=2,
+        )
+    finally:
+        label_env.close()
+
+    for astar_enabled, llm_enabled in ((True, False), (False, True)):
+        config = Phase3TrainingConfig(
+            phase="4",
+            seed=3,
+            n_agents=5,
+            max_steps=1,
+            episodes=2,
+            environment_step_budget=2,
+            parallel_envs=2,
+            rollout_steps=2,
+            checkpoint_interval=10,
+            metrics_write_interval=2,
+            output_dir=str(tmp_path / f"run_{astar_enabled}_{llm_enabled}"),
+            offline_semantic_dataset=str(dataset),
+            use_astar_kl_teacher=astar_enabled,
+            use_offline_llm_teacher=llm_enabled,
+            ppo=PPOHyperparameters(
+                update_epochs=1,
+                minibatch_steps=2,
+                engagement_coefficient=0.1 if llm_enabled else 0.0,
+                reservation_kl_coefficient=0.05 if astar_enabled else 0.0,
+            ),
+        )
+
+        summary = train_phase3(config)
+
+        assert summary["a_star_distillation"] is astar_enabled
+        assert summary["offline_llm_semantic_distillation"] is llm_enabled
+        assert ("reservation_teacher" in summary) is astar_enabled
+        assert ("offline_semantic_teacher" in summary) is llm_enabled
 
 
 def test_g2_charging_retrains_are_matched_except_for_energy_pressure():

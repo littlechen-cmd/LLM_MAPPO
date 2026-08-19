@@ -1,0 +1,74 @@
+schema_version: 1
+status: provisional_g3
+freeze_blockers:
+  - G2-1 A* reservation risk review
+  - G2-3 charging candidate selection
+  - G4 formal environment-step budget selection
+
+code:
+  branch: feature/phase4-parallel-cuda
+  preparation_base_commit: 18d52f04865ed3629ba5f37c4f01794d3eeb0a2d
+  frozen_commit: null
+
+offline_llm_dataset:
+  path: artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl
+  records: 400
+  sha256: 9928f5756c1261589946eb3aedf8dc2c1fa6f73f037cd05c31afca0683161797
+  online_calls_during_training_and_evaluation: 0
+
+core_groups:
+  MAPPO-WP:
+    config: configs/g3_core_mappo_wp.yaml
+    artifact_slug: mappo_wp
+    astar_kl: false
+    offline_llm_kd: false
+  MAPPO-WP+A*KD:
+    config: configs/g3_core_mappo_wp_astar_kd.yaml
+    artifact_slug: mappo_wp_astar_kd
+    astar_kl: true
+    offline_llm_kd: false
+  MAPPO-WP+LLMKD:
+    config: configs/g3_core_mappo_wp_llm_kd.yaml
+    artifact_slug: mappo_wp_llm_kd
+    astar_kl: false
+    offline_llm_kd: true
+  MAPPO-WP+A*KD+LLMKD:
+    config: configs/g3_core_mappo_wp_astar_llm_kd.yaml
+    artifact_slug: mappo_wp_astar_llm_kd
+    astar_kl: true
+    offline_llm_kd: true
+
+training:
+  policy_initialization_seeds: [7, 17, 27, 37, 47]
+  environment_seed_groups: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
+  g4_pilot_environment_steps: 150000
+  formal_environment_steps: null
+  formal_budget_rule: one value selected from matched G4 curves and applied to all groups
+  checkpoint_rule: checkpoint_final.pt
+
+evaluation:
+  deterministic_actions: true
+  held_out_seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  episodes_per_seed: 20
+  aggregation_unit: training seed
+  paired_across_groups: true
+  input_contract: artifacts/formal_evaluation/<artifact_slug>/seed_<NNN>/evaluation.json
+  aggregate_output: artifacts/formal_aggregate
+
+energy:
+  core_candidate:
+    status: provisional_until_g2_3
+    battery_cost_scale: 1.1
+    charge_threshold: 0.25
+    charge_release_threshold: 0.8
+  robustness_stress:
+    role: evaluation_only
+    battery_cost_scale: 1.2
+    charge_threshold: 0.2
+    charge_release_threshold: 0.8
+
+failure_policy:
+  infrastructure_error: rerun same seed and unchanged config from scratch
+  numerical_or_safety_failure: retain and report as an outcome; do not silently retry
+  finalization_permission_error: repair artifacts only after hash/content validation
+  missing_or_corrupt_evidence: mark run invalid and report; replacement uses same preregistered seed

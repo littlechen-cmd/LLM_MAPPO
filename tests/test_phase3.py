@@ -292,6 +292,28 @@ def test_phase3_csv_writer_preserves_late_priority_columns(tmp_path):
     assert rows[0]["priority_A_mean_completion_steps"] == ""
 
 
+def test_phase3_csv_writer_retries_transient_windows_replace_error(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "episodes.csv"
+    original_replace = type(path).replace
+    attempts = 0
+
+    def transient_replace(source, target):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError("temporarily held by a reader")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(type(path), "replace", transient_replace)
+
+    _write_csv(path, [{"episode": 1, "reward": 1.0}])
+
+    assert attempts == 2
+    assert path.exists()
+
+
 def test_phase3_update_csv_appends_without_rewriting_prior_rows(tmp_path):
     path = tmp_path / "updates.csv"
     _append_csv(path, {"update": 1, "steps": 8, "loss": 0.5})
@@ -342,6 +364,27 @@ def test_dual_head_policy_batches_independent_environments():
     assert semantics.shape == (3, 5, 2)
 
 
+def test_dual_head_policy_uses_fixed_zero_semantics_when_disabled():
+    policy = DualHeadMAPPOPolicy(
+        6,
+        ACTION_COUNT,
+        semantic_dim=2,
+        semantic_features_enabled=False,
+    )
+    observations = torch.randn(5, 6)
+
+    before = policy.actor(observations).detach().clone()
+    with torch.no_grad():
+        for parameter in policy.actor.engagement_encoder.parameters():
+            parameter.add_(torch.randn_like(parameter))
+        for parameter in policy.actor.engagement_head.parameters():
+            parameter.add_(torch.randn_like(parameter))
+    after = policy.actor(observations).detach()
+
+    assert torch.equal(before, after)
+    assert torch.count_nonzero(policy.actor.motion_semantics(observations)) == 0
+
+
 @pytest.mark.parametrize(("phase", "semantic_dim"), (("3b", 1), ("4", 2)))
 def test_phase3_policy_loader_restores_single_and_dual_semantics(
     tmp_path, phase, semantic_dim
@@ -385,6 +428,31 @@ def test_phase3_policy_loader_rejects_inconsistent_semantic_metadata(tmp_path):
 
     with pytest.raises(ValueError, match="semantic dimensions disagree"):
         load_phase3_policy(path)
+
+
+def test_phase3_policy_loader_restores_disabled_semantic_features(tmp_path):
+    source = DualHeadMAPPOPolicy(
+        6,
+        ACTION_COUNT,
+        semantic_dim=2,
+        semantic_features_enabled=False,
+    )
+    checkpoint = tmp_path / "no_llm.pt"
+    torch.save(
+        {
+            "model_state": source.state_dict(),
+            "config": {"phase": "4", "use_offline_llm_teacher": False},
+            "actor_observation_dim": 6,
+            "semantic_dim": 2,
+            "semantic_features_enabled": False,
+            "phase": "4",
+        },
+        checkpoint,
+    )
+
+    loaded, _, _ = load_phase3_policy(checkpoint)
+
+    assert loaded.actor.semantic_features_enabled is False
 
 
 def test_checkpoint_semantic_dim_rejects_unsupported_width():

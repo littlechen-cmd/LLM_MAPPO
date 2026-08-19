@@ -259,3 +259,8 @@ $RECYCLE.BIN/
 .env
 .env.*
 !.env.example
+figures/
+tables/
+plan/
+order.md
+repomix-core.xml
