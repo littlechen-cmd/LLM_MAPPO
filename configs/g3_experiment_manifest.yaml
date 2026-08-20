@@ -2,7 +2,6 @@ schema_version: 1
 status: provisional_g3
 freeze_blockers:
   - G2-1 A* reservation risk review
-  - G2-3 charging candidate selection
   - G4 formal environment-step budget selection
 
 code:
@@ -48,7 +47,7 @@ training:
 
 evaluation:
   deterministic_actions: true
-  held_out_seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  held_out_seeds: [200, 201, 202, 203, 204, 205, 206, 207, 208, 209]
   episodes_per_seed: 20
   aggregation_unit: training seed
   paired_across_groups: true
@@ -57,10 +56,27 @@ evaluation:
 
 energy:
   core_candidate:
-    status: provisional_until_g2_3
+    status: selected_by_g2_3
     battery_cost_scale: 1.1
-    charge_threshold: 0.25
+    charge_threshold: 0.30
     charge_release_threshold: 0.8
+    selection_evidence:
+      training_episodes: 200
+      diagnostic_held_out_seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      episodes_per_seed: 20
+      task_completion_rate: 1.0
+      completed_tasks_per_1000_steps: 113.45981560653655
+      episodes_with_charging_rate: 0.20
+      mean_energy_deaths_per_episode: 0.0
+      boundary: fixed rule-layer charging; no autonomous-charging claim
+    rejected_intermediate:
+      battery_cost_scale: 1.1
+      charge_threshold: 0.25
+      charge_release_threshold: 0.8
+      completed_tasks_per_1000_steps: 115.46586934186071
+      episodes_with_charging_rate: 0.01
+      mean_energy_deaths_per_episode: 0.005
+      rejection_reason: insufficient held-out charging exposure and one energy death
   robustness_stress:
     role: evaluation_only
     battery_cost_scale: 1.2

@@ -1,10 +1,10 @@
-# G3 draft: energy settings remain provisional until G2-3 closes.
+# G3 draft: G2-3 selected the matched early-charge configuration.
 environment:
   id: llm-mappo-medium-3ag-v1
   n_agents: 5
   max_steps: 1000
   battery_cost_scale: 1.1
-  charge_threshold: 0.25
+  charge_threshold: 0.30
   charge_release_threshold: 0.8
   waypoint_reward: 0.01
   oracle_interaction_mask: true

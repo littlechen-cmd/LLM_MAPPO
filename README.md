@@ -1,6 +1,9 @@
 # LLM-MAPPO Dynamic Warehouse
 
-This repository combines the RWARE Gymnasium environment with the staged LLM-MAPPO dynamic-warehouse research implementation. The current baseline is the promoted RWARE source tree; Phase 1 adds the dynamic task, charging, safety, rule-layer, and A* interfaces described in `大规模动态仓储LLM-MAPPO总体方案.md`.
+This repository combines the RWARE Gymnasium environment with the staged
+LLM-MAPPO dynamic-warehouse research implementation. The current architecture
+and experiment contract are documented in `CONSTITUTION.md`, `TASKS.md`, and
+`plan/experiment-protocol.md`.
 
 ## Development Setup
 
@@ -9,7 +12,7 @@ Use Python 3.10. From the repository root, install the editable package and the 
 ```powershell
 python -m pip install -e ".[dev,train]"
 python -m pytest
-python -m flake8 rware human_play.py llm_mappo
+python -m flake8 rware llm_mappo eval train scripts figures/core
 ```
 
 Use the configured `py310` interpreter when `conda` is not available on `PATH`. Training outputs belong in `artifacts/`; keep API credentials in an untracked `.env` file.
@@ -18,11 +21,7 @@ Use the configured `py310` interpreter when `conda` is not available on `PATH`. 
 
 Import `rware`, then create `llm-mappo-medium-3ag-v1` through Gymnasium for the medium three-AGV baseline. It adds FIFO priority batches, a hard 10% task-assignment battery filter, three charging stations, collision penalties, and three-step picking locks while preserving the original `rware-*` environments.
 
-```powershell
-python demo.py --env llm-mappo-medium-3ag-v1
-```
-
-In the demo, `Tab` switches the selected AGV, arrow keys move or turn it, `Space` toggles loading, `Enter` advances with `NOOP`, `R` toggles FIFO+A* automatic execution, and `N` resets the episode. The Phase 1 reference configuration is `configs/phase1_medium_3ag.yaml`.
+The Phase 1 reference configuration is `configs/phase1_medium_3ag.yaml`.
 
 ## Phase 2 CTDE MAPPO Baseline
 

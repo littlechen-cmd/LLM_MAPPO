@@ -2,7 +2,13 @@
 
 ## Project Structure & Module Organization
 
-The Git repository is the workspace root. `requirement.md` records working constraints, and `大规模动态仓储LLM-MAPPO总体方案.md` is the architecture reference. The `rware/` package implements the Gymnasium environment; `warehouse.py` contains core dynamics, `rendering.py` visualization, and `rware/utils/` spaces and wrappers. Tests live in `tests/`, images in `docs/img/`, and `human_play.py` is the interactive runner. Keep MAPPO, LLM-teacher, A* teacher, training, and evaluation code in separate modules.
+The Git repository is the workspace root. `CONSTITUTION.md` records the
+architecture and experiment contract, while `TASKS.md` tracks gate progress.
+The `rware/` package implements the Gymnasium environment; `warehouse.py`
+contains core dynamics, `rendering.py` visualization, and `rware/utils/`
+spaces and wrappers. Tests live in `tests/`, images in `docs/img/`, and
+`visualize.py` is the deterministic replay entry point. Keep MAPPO,
+LLM-teacher, A* teacher, training, and evaluation code in separate modules.
 
 ## Build, Test, and Development Commands
 
@@ -13,12 +19,13 @@ conda activate py310
 python -m pip install -e ".[dev,train]"  # editable package and tooling
 python -m pytest                    # full test suite
 python -m pytest tests/test_env.py  # focused environment tests
-python -m flake8 rware human_play.py
-python human_play.py --env rware-tiny-2ag-v2
+python -m flake8 rware llm_mappo eval train scripts figures/core
+python visualize.py --help
 python -m build                     # package artifacts; install build first
 ```
 
-Prefer CPU development on the MateBook. Use the 4080S server only when episode count or runtime makes local training impractical.
+Prefer CPU development on the MateBook. Use the A6000 server when episode count
+or runtime makes local training impractical.
 
 ## Coding Style & Naming Conventions
 

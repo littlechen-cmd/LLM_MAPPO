@@ -1,0 +1,10 @@
+[flake8]
+ignore = E226,E302,E41,W503
+max-line-length = 89
+exclude = tests/*
+max-complexity = 10
+per-file-ignores =
+    rware/__init__.py: E501
+    rware/rendering.py: E501,F403,F405,F841,W503
+    rware/utils/__init__.py: F401
+    rware/warehouse.py: E203,E501,W503,C901

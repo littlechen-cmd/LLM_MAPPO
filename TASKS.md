@@ -44,19 +44,23 @@ and the corresponding Chapter 7 criteria are satisfied.
   interruption using the accepted 800-episode checkpoint and targeted replays.
   The original setting rarely exposes charging, while stronger unmatched
   energy pressure reveals unreliable charger arrival/wait behavior.
-- [ ] **G2-3** Add a configurable battery-cost scale and charging hysteresis, then pilot
+- [x] **G2-3** Add a configurable battery-cost scale and charging hysteresis, then pilot
   scales `1.00/1.25/1.50`, refined scales `1.10/1.15/1.20`, and an earlier
   `0.30` trigger (including refined `1.05/1.10` scales). No setting is frozen
   from this old-checkpoint diagnostic: the original-threshold `1.10` preserves
   zero energy deaths but does not provide sufficient exposure, while every
   higher-exposure candidate exposes energy deaths and/or deadlocks.
-  Run four matched 200-episode retraining groups before closing this task:
+  Four matched 200-episode retraining groups were completed:
   control `1.00/0.20/0.80`, early-charge candidate `1.10/0.30/0.80`, and
   high-consumption candidate `1.20/0.20/0.80`, plus intermediate candidate
   `1.10/0.25/0.80`, with all other settings, seed rotation, teachers, rewards,
-  and PPO parameters held fixed. Promote `1.10/0.25/0.80` to the core candidate
-  only if it preserves zero late-training and held-out energy deaths, retains
-  sufficient charging exposure, and improves efficiency over `1.10/0.30/0.80`.
+  and PPO parameters held fixed. The selected core setting is
+  `1.10/0.30/0.80`: its diagnostic held-out evaluation reached 1.000 task
+  completion, 113.46 completed tasks/1000 steps, 20% episodes with charging,
+  and zero energy deaths. `1.10/0.25/0.80` was more efficient (115.47 tasks/1000
+  steps) but was rejected because charging exposure fell to 1% and one held-out
+  energy death occurred. Seeds `0–9` are calibration evidence and are excluded
+  from formal evaluation.
 - [x] **G2-4** Add pre-freeze metrics for low-battery triggers, charger arrivals,
   charged events, waiting, task recovery, minimum battery, and energy deaths.
 - [x] **G2-5** After changing charging behavior, rerun the applicable regression suite
@@ -72,15 +76,16 @@ and the corresponding Chapter 7 criteria are satisfied.
   label-dataset hash, training seeds, the matched G4 step budget, formal-budget
   selection rule, and held-out `10 seeds x 20 episodes` evaluation protocol.
   The provisional manifest fixes seeds, deterministic evaluation, final-checkpoint
-  selection, the dataset hash, and a `150,000`-step G4 budget; the final Git commit
-  and G2 charging decision remain open.
+  selection, the dataset hash, a `150,000`-step G4 budget, and untouched formal
+  evaluation seeds `200–209`; the final Git commit and G2-1 remain open.
 - [x] **G3-2** Freeze runtime A* waypoint and training A* KL as separate factors, with
   the four core experiment names defined in the Constitution. Phase 4 now exposes
   independent A* KL and offline LLM teacher switches; no-LLM groups use fixed-zero
   semantic motion inputs while preserving the same two-dimensional architecture.
-- [ ] **G3-3** Freeze battery-cost scale, charging rate, trigger/release hysteresis
+- [x] **G3-3** Freeze battery-cost scale, charging rate, trigger/release hysteresis
   thresholds, task interruption/recovery semantics, and rule-layer safety
-  boundaries. `1.10/0.25/0.80` remains provisional until G2-3 evaluation finishes.
+  boundaries. Core groups use `1.10/0.30/0.80`; charging remains a fixed rule-layer
+  safety mechanism, and `1.20/0.20/0.80` remains evaluation-only stress.
 - [x] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
   failure/retry policy, and formal experiment data/figure pipeline. Formal episode
   logs now include cumulative environment steps; the strict aggregation pipeline uses
@@ -93,9 +98,10 @@ and the corresponding Chapter 7 criteria are satisfied.
   budget and matched seeds.
 - [ ] **G4-2** Inspect losses, throughput, GPU memory, logs, checkpoints, evaluation
   scripts, and zero-online-LLM compliance for every pilot group.
-- [ ] **G4-3** Confirm all four pilots receive sufficient matched low-battery/charging
-  exposure and pass the frozen charger-arrival, task-recovery, energy-death,
-  and charging-congestion safety checks.
+- [ ] **G4-3** Confirm all four pilots receive comparable low-battery/charging exposure
+  under the core setting and pass the frozen charger-arrival, task-recovery,
+  energy-death, and charging-congestion safety checks; use the common energy-stress
+  scenario for high-exposure behavior rather than claiming autonomous charging.
 - [ ] **G4-4** Use the matched learning curves to set one formal interaction budget for
   all four groups, record the single pre-G5 protocol amendment, and avoid
   group-specific post-hoc tuning.

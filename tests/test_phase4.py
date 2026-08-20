@@ -198,7 +198,7 @@ def test_phase4_formal_configs_encode_the_independent_teacher_matrix():
             config.battery_cost_scale,
             config.charge_threshold,
             config.charge_release_threshold,
-        ) == (1.1, 0.25, 0.8)
+        ) == (1.1, 0.30, 0.8)
 
     reference = configs[(False, False)]
     allowed = {
