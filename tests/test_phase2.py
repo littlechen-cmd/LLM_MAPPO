@@ -5,22 +5,66 @@ from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
 from llm_mappo.phase2_training import Phase2TrainingConfig, train_phase2
 from llm_mappo.phase2_expert import AStarExpert, collect_expert_episodes
 from llm_mappo.visualization import render_warehouse_frame
-from rware.warehouse import Action
+from rware.warehouse import Action, Direction
 
 
-def test_astar_expert_reuses_unchanged_state_and_target():
+def test_astar_expert_reuses_only_within_a_real_environment_step():
     env = Phase2Warehouse(n_agents=3, max_steps=8)
     expert = AStarExpert()
     try:
         env.reset(seed=4)
         masks = env.action_masks()
         expert.act(env, masks)
+        expert.act(env, masks)
         env.env._cur_steps = 1
         expert.act(env, masks)
     finally:
         env.close()
-    assert expert.cache_misses == 1
+    assert expert.cache_misses == 2
     assert expert.cache_hits == 1
+    assert expert.replans == 1
+
+
+def test_astar_conflict_fallback_waits_without_rotating():
+    env = Phase2Warehouse(n_agents=2, max_steps=8)
+    try:
+        env.reset(seed=4)
+        first, second = env.env.agents
+        first.x, first.y, first.dir = 0, 1, Direction.RIGHT
+        second.x, second.y, second.dir = 2, 1, Direction.LEFT
+        env.env._recalc_grid()
+
+        coordinated = AStarExpert._coordinate_actions(
+            env,
+            np.asarray(
+                [Action.FORWARD.value, Action.FORWARD.value], dtype=np.int64
+            ),
+        )
+    finally:
+        env.close()
+
+    assert coordinated.tolist() == [Action.FORWARD.value, Action.NOOP.value]
+
+
+def test_astar_conflict_fallback_blocks_head_on_edge_swap():
+    env = Phase2Warehouse(n_agents=2, max_steps=8)
+    try:
+        env.reset(seed=4)
+        first, second = env.env.agents
+        first.x, first.y, first.dir = 0, 1, Direction.RIGHT
+        second.x, second.y, second.dir = 1, 1, Direction.LEFT
+        env.env._recalc_grid()
+
+        coordinated = AStarExpert._coordinate_actions(
+            env,
+            np.asarray(
+                [Action.FORWARD.value, Action.FORWARD.value], dtype=np.int64
+            ),
+        )
+    finally:
+        env.close()
+
+    assert coordinated.tolist() == [Action.NOOP.value, Action.NOOP.value]
 
 
 def test_phase2_adapter_provides_oracle_features_and_single_b_priority():

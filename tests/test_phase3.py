@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import torch
 
+from eval.evaluate_dynamic_ingress_astar import evaluate_dynamic_astar
 from eval.evaluate_phase3 import _write_json
 from llm_mappo.mappo import (
     DualHeadMAPPOPolicy,
@@ -39,6 +40,29 @@ def test_phase3_priority_schedule_and_observation_features():
         assert [task.label for task in env.env.task_queue.tasks] == ["A1", "B1", "C1"]
     finally:
         env.close()
+
+
+def test_dynamic_astar_diagnostic_records_fixed_reservation_metrics():
+    config = Phase3TrainingConfig(
+        n_agents=1,
+        max_steps=2,
+        env_id="llm-mappo-small-1ag-v1",
+        priority_schedule=None,
+        batch_interval=2,
+        batch_size_range=(1, 1),
+        initial_priority_label="A",
+        request_queue_size=2,
+        task_completion_target=2,
+    )
+
+    result = evaluate_dynamic_astar(
+        config, seeds=(300,), episodes_per_seed=1
+    )
+
+    assert result["reservation_mode"] == "bounded_2_step"
+    assert result["episodes"] == 1
+    assert result["reservation_teacher"]["planning_time_count"] >= 0
+    assert "planning_time_ms_p95" in result["reservation_teacher"]
 
 
 def test_phase3_dual_head_outputs_engagement_and_motion_distribution():

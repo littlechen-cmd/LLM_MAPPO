@@ -84,3 +84,10 @@ class PathPlan:
     waypoints: Tuple[Tuple[int, int], ...]
     action_preferences: Tuple[float, float, float, float, float]
     event: Optional[PlannerEvent] = None
+    timed_positions: Tuple[Tuple[int, int], ...] = ()
+    first_action: Optional[int] = None
+    reached_goal: bool = False
+    failure_reason: Optional[str] = None
+    expanded_nodes: int = 0
+    planning_time_ms: float = 0.0
+    reservation_false_no_path: bool = False

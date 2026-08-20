@@ -2,6 +2,13 @@
 
 Update this file whenever a task begins, completes, or is blocked. Major completed milestones require a Git commit.
 
+## Execution Ownership
+
+Training, multi-seed evaluation, long replay, and other clearly time-consuming runs are
+executed by the project owner. The coding collaborator prepares implementations,
+short deterministic tests, commands, and artifact audits, and must not start a long run
+without a new explicit request from the project owner.
+
 ## Constitution Chapter 8 Roadmap Tracking
 
 This section mirrors the task IDs, order, and meaning in `CONSTITUTION.md`
@@ -36,10 +43,32 @@ and the corresponding Chapter 7 criteria are satisfied.
 
 ### Gate G2 — Environment Risk Review
 
-- [ ] **G2-1** Analyze false no-path results and livelock caused by A* goal reservation
-  lasting for the full planning horizon. This item is intentionally postponed
-  while charging is handled first; no A* behavior changes are in the G2
-  charging patch.
+- [ ] **G2-1** Remove false no-path results and rotation livelock caused by full-horizon
+  A* terminal reservations, without weakening vertex, edge-swap, or action-mask safety.
+  The implementation is limited to bounded terminal occupancy, an explicit NOOP wait,
+  truthful partial-path status, and state-dependent stationary occupancy; CBS and task
+  reassignment remain out of scope.
+  - [x] **G2-1a** Freeze deterministic reproducers for shared terminals, temporary
+    no-path fallback, explicit waiting, persistent occupancy, vertex conflicts, and
+    head-on edge swaps. Instrument reached-goal, partial-path, terminal-conflict,
+    reservation false-no-path, wait, replan, rotation-livelock, state-deadlock,
+    expanded-node, and planning-time metrics.
+  - [x] **G2-1b** Return a time-expanded internal plan with its first action and
+    `reached_goal`; add a true NOOP successor; default successful terminal occupancy
+    to two steps; reserve dead agents to the horizon, picking locks for their remaining
+    duration, and toggle/blocked fallbacks for only the next executed step.
+  - [x] **G2-1c** Pass the focused planner tests, existing vertex/edge safety tests,
+    full regression suite, and a short local smoke. Do not start training or a
+    multi-seed evaluation as part of this item. The implementation passes 158 tests,
+    Flake8, and the two-step diagnostic smoke on 2026-08-20.
+  - [ ] **G2-1d** Project owner runs paired legacy/fixed diagnostics on calibration
+    seeds `300–309`, 20 episodes per seed, using identical environment settings.
+    Formal held-out seeds `200–209` remain untouched.
+  - [ ] **G2-1e** Audit the long-run artifacts. Adopt the fix only if controlled false
+    no-path and rotation-wait cases are eliminated, reservation safety violations stay
+    at zero, completion drops by at most 1 percentage point, collisions/deadlocks/
+    energy deaths do not increase, and p95 planning time is at most 1.20× legacy.
+    Otherwise retain legacy behavior and record the risk as a paper limitation.
 - [x] **G2-2** Review long-run charging returns, congestion, AGV deaths, and task
   interruption using the accepted 800-episode checkpoint and targeted replays.
   The original setting rarely exposes charging, while stronger unmatched
@@ -77,7 +106,7 @@ and the corresponding Chapter 7 criteria are satisfied.
   selection rule, and held-out `10 seeds x 20 episodes` evaluation protocol.
   The provisional manifest fixes seeds, deterministic evaluation, final-checkpoint
   selection, the dataset hash, a `150,000`-step G4 budget, and untouched formal
-  evaluation seeds `200–209`; the final Git commit and G2-1 remain open.
+  evaluation seeds `200–209`; the final Git commit and G2-1d/e remain open.
 - [x] **G3-2** Freeze runtime A* waypoint and training A* KL as separate factors, with
   the four core experiment names defined in the Constitution. Phase 4 now exposes
   independent A* KL and offline LLM teacher switches; no-LLM groups use fixed-zero

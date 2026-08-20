@@ -362,12 +362,7 @@ def _handle_environment_command(env, expert, command: str, payload):
 def _expert_statistics(expert: AStarExpert | None) -> dict:
     if expert is None:
         return {}
-    return {
-        "path_livelocks": expert.path_livelocks,
-        "state_deadlocks": expert.state_deadlocks,
-        "cache_hits": expert.cache_hits,
-        "cache_misses": expert.cache_misses,
-    }
+    return expert.statistics()
 
 
 class _EnvironmentPool:
@@ -962,15 +957,38 @@ def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C9
             "api_calls_during_training": 0,
         }
     if config.astar_kl_enabled:
-        summary["reservation_teacher"] = {
+        reservation_teacher = {
             key: sum(statistics.get(key, 0) for statistics in worker_statistics)
             for key in (
                 "path_livelocks",
                 "state_deadlocks",
                 "cache_hits",
                 "cache_misses",
+                "reached_goal_plans",
+                "partial_paths",
+                "terminal_conflicts",
+                "reservation_false_no_paths",
+                "explicit_waits",
+                "replans",
+                "expanded_nodes",
+                "planning_time_count",
+                "planning_time_ms_total",
             )
         }
+        planning_count = reservation_teacher["planning_time_count"]
+        reservation_teacher["planning_time_ms_mean"] = (
+            reservation_teacher["planning_time_ms_total"] / planning_count
+            if planning_count
+            else 0.0
+        )
+        reservation_teacher["planning_time_ms_p95_worker_max"] = max(
+            (
+                statistics.get("planning_time_ms_p95", 0.0)
+                for statistics in worker_statistics
+            ),
+            default=0.0,
+        )
+        summary["reservation_teacher"] = reservation_teacher
     (run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )

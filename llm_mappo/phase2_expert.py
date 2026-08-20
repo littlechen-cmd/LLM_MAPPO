@@ -40,13 +40,30 @@ class ExpertDataset:
 class AStarExpert:
     """Deterministic task controller using the Phase 2 A* waypoint teacher."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        terminal_hold_steps: int = 2,
+        legacy_terminal_reservation: bool = False,
+    ):
+        if terminal_hold_steps < 0:
+            raise ValueError("terminal hold steps cannot be negative.")
+        self.terminal_hold_steps = terminal_hold_steps
+        self.legacy_terminal_reservation = legacy_terminal_reservation
         self._last_state = {}
         self._stalled_steps = {}
+        self._last_env_step = None
         self.path_livelocks = 0
         self.state_deadlocks = 0
         self.cache_hits = 0
         self.cache_misses = 0
+        self.reached_goal_plans = 0
+        self.partial_paths = 0
+        self.terminal_conflicts = 0
+        self.reservation_false_no_paths = 0
+        self.explicit_waits = 0
+        self.replans = 0
+        self.expanded_nodes = 0
+        self.planning_times_ms = []
         self._cached_signature = None
         self._cached_preferences = None
 
@@ -59,6 +76,8 @@ class AStarExpert:
         if signature == self._cached_signature:
             self.cache_hits += 1
             return self._cached_preferences.copy()
+        if self._cached_signature is not None:
+            self.replans += 1
         self.cache_misses += 1
         if env.n_agents > 1:
             preferences = self._reserved_action_preferences(env, targets)
@@ -90,28 +109,62 @@ class AStarExpert:
         )
         for index in priorities:
             agent = env.env.agents[index]
-            if agent.dead or agent.picking_lock_steps:
+            if agent.dead:
                 preferences[index, Action.NOOP.value] = 1.0
-                reservations.reserve([(agent.x, agent.y)])
+                reservations.reserve([(agent.x, agent.y)], persistent=True)
+                continue
+            if agent.picking_lock_steps:
+                preferences[index, Action.NOOP.value] = 1.0
+                reservations.reserve(
+                    [(agent.x, agent.y)],
+                    terminal_hold_steps=agent.picking_lock_steps,
+                )
                 continue
             if env._requires_pickup(agent.id):
                 preferences[index, Action.TOGGLE_LOAD.value] = 1.0
-                reservations.reserve([(agent.x, agent.y)])
+                reservations.reserve(
+                    [(agent.x, agent.y)], terminal_hold_steps=1
+                )
                 continue
             target = targets[index]
             plan = env._planner.plan_with_reservations(
                 env.env, agent.id, target, reservations
             )
+            self.reached_goal_plans += int(plan.reached_goal)
+            self.partial_paths += int(
+                not plan.reached_goal and bool(plan.timed_positions)
+            )
+            self.reservation_false_no_paths += int(
+                plan.reservation_false_no_path
+            )
+            self.expanded_nodes += plan.expanded_nodes
+            self.planning_times_ms.append(plan.planning_time_ms)
+            first_action = Action(plan.first_action)
+            if (
+                first_action == Action.NOOP
+                and not plan.reached_goal
+                and plan.timed_positions
+            ):
+                self.explicit_waits += 1
             if not plan.waypoints:
                 preferences[index, Action.NOOP.value] = 1.0
-                reservations.reserve([(agent.x, agent.y)])
+                reservations.reserve(
+                    [(agent.x, agent.y)], terminal_hold_steps=1
+                )
                 continue
-            timed_path = env._planner.expand_for_orientation(agent.dir, plan.waypoints)
             preferences[index] = np.asarray(
-                env._planner._preferences_for_timed_path(agent.dir, plan.waypoints),
-                dtype=np.float32,
+                plan.action_preferences, dtype=np.float32
             )
-            reservations.reserve(timed_path)
+            reservations.reserve(
+                plan.timed_positions,
+                terminal_hold_steps=(
+                    self.terminal_hold_steps if plan.reached_goal else 1
+                ),
+                persistent=(
+                    self.legacy_terminal_reservation and plan.reached_goal
+                ),
+            )
+        self.terminal_conflicts += reservations.terminal_conflicts
         return preferences
 
     @staticmethod
@@ -128,7 +181,7 @@ class AStarExpert:
                 targets[index],
             )
             for index, agent in enumerate(env.env.agents)
-        )
+        ) + (int(env.env._cur_steps),)
 
     def _target_for_agent(self, env: Phase2Warehouse, agent_id: int):
         if agent_id in self._yielding_agents(env):
@@ -168,11 +221,17 @@ class AStarExpert:
         return min(64, escape)
 
     def _update_progress(self, env: Phase2Warehouse) -> None:
-        if not self._last_state or env.env._cur_steps == 0:
+        current_step = int(env.env._cur_steps)
+        new_episode = (
+            self._last_env_step is not None
+            and current_step < self._last_env_step
+        )
+        if not self._last_state or new_episode:
             self._last_state = {}
             self._stalled_steps = {}
             self._cached_signature = None
             self._cached_preferences = None
+        self._last_env_step = current_step
         for agent in env.env.agents:
             target, _ = self._target_for_agent(env, agent.id)
             distance = abs(agent.x - target[0]) + abs(agent.y - target[1])
@@ -198,6 +257,27 @@ class AStarExpert:
             self._last_state[agent.id] = state
             if previous == state and agent.carrying_shelf is not None:
                 self.state_deadlocks += 1
+
+    def statistics(self) -> Dict[str, float | int]:
+        timings = np.asarray(self.planning_times_ms, dtype=np.float64)
+        return {
+            "path_livelocks": self.path_livelocks,
+            "state_deadlocks": self.state_deadlocks,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "reached_goal_plans": self.reached_goal_plans,
+            "partial_paths": self.partial_paths,
+            "terminal_conflicts": self.terminal_conflicts,
+            "reservation_false_no_paths": self.reservation_false_no_paths,
+            "explicit_waits": self.explicit_waits,
+            "replans": self.replans,
+            "expanded_nodes": self.expanded_nodes,
+            "planning_time_count": int(timings.size),
+            "planning_time_ms_total": float(timings.sum()),
+            "planning_time_ms_p95": (
+                float(np.percentile(timings, 95)) if timings.size else 0.0
+            ),
+        }
 
     @staticmethod
     def _priority_key(env: Phase2Warehouse, index: int) -> tuple[int, int]:
@@ -240,7 +320,7 @@ class AStarExpert:
             if not yielding:
                 return safe_actions
             for index in yielding:
-                safe_actions[index] = Action.RIGHT.value
+                safe_actions[index] = Action.NOOP.value
 
 
 def _forward_indices(actions: np.ndarray) -> list[int]:
@@ -341,6 +421,11 @@ def collect_expert_episodes(
         "mean_blocked_forwards": float(blocked.mean()),
         "path_livelocks": livelock_count,
         "state_deadlocks": state_deadlock_count,
+        **{
+            key: value
+            for key, value in expert.statistics().items()
+            if key not in {"path_livelocks", "state_deadlocks"}
+        },
     }
 
 

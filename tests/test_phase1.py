@@ -325,3 +325,110 @@ def test_reservation_table_blocks_shared_cells_and_head_on_edge_swaps():
     assert reservations.is_available((0, 1), 1)
     assert not reservations.permits_edge((1, 0), (0, 0), 1)
     assert reservations.permits_edge((1, 0), (1, 1), 1)
+
+
+def test_reservation_terminal_hold_is_bounded_and_persistent_is_explicit():
+    bounded = ReservationTable(horizon=6)
+    bounded.reserve([(0, 0), (1, 0)], terminal_hold_steps=2)
+
+    assert not bounded.is_available((1, 0), 3)
+    assert bounded.is_available((1, 0), 4)
+
+    persistent = ReservationTable(horizon=6)
+    persistent.reserve([(1, 0)], persistent=True)
+
+    assert not persistent.is_available((1, 0), 6)
+
+
+def test_temporal_astar_waits_then_enters_a_released_terminal():
+    env = make_env(n_agents=1, batch_interval=100)
+    env.reset(seed=1)
+    env.agents[0].x, env.agents[0].y, env.agents[0].dir = (
+        0,
+        0,
+        Direction.RIGHT,
+    )
+    env._recalc_grid()
+    reservations = ReservationTable(horizon=5)
+    reservations.reserve([(1, 0)], terminal_hold_steps=2)
+
+    plan = AStarPlanner().plan_with_reservations(
+        env, agent_id=1, goal=(1, 0), reservations=reservations
+    )
+
+    assert plan.reached_goal
+    assert plan.event is None
+    assert plan.timed_positions == ((0, 0), (0, 0), (0, 0), (1, 0))
+    assert plan.first_action == Action.NOOP.value
+    assert plan.action_preferences[Action.NOOP.value] == pytest.approx(0.80)
+    assert reservations.terminal_conflicts > 0
+
+
+def test_temporal_astar_marks_horizon_partial_path_for_replanning():
+    env = make_env(n_agents=1, batch_interval=100)
+    env.reset(seed=1)
+    env.agents[0].x, env.agents[0].y, env.agents[0].dir = (
+        0,
+        0,
+        Direction.RIGHT,
+    )
+    env._recalc_grid()
+
+    plan = AStarPlanner().plan_with_reservations(
+        env,
+        agent_id=1,
+        goal=(2, 0),
+        reservations=ReservationTable(horizon=1),
+    )
+
+    assert not plan.reached_goal
+    assert plan.event == PlannerEvent.REPLAN_REQUIRED
+    assert plan.failure_reason == "horizon_exhausted"
+    assert plan.reservation_false_no_path
+    assert plan.timed_positions == ((0, 0), (1, 0))
+    assert plan.first_action == Action.FORWARD.value
+
+
+def test_temporal_astar_preserves_turn_timing_and_first_action():
+    env = make_env(n_agents=1, batch_interval=100)
+    env.reset(seed=1)
+    env.agents[0].x, env.agents[0].y, env.agents[0].dir = (
+        0,
+        0,
+        Direction.UP,
+    )
+    env._recalc_grid()
+
+    plan = AStarPlanner().plan_with_reservations(
+        env,
+        agent_id=1,
+        goal=(1, 0),
+        reservations=ReservationTable(horizon=3),
+    )
+
+    assert plan.reached_goal
+    assert plan.timed_positions == ((0, 0), (0, 0), (1, 0))
+    assert plan.first_action == Action.RIGHT.value
+    assert plan.action_preferences[Action.RIGHT.value] == pytest.approx(0.82)
+
+
+def test_temporal_astar_uses_noop_instead_of_rotation_for_persistent_blocker():
+    env = make_env(n_agents=1, batch_interval=100)
+    env.reset(seed=1)
+    env.agents[0].x, env.agents[0].y, env.agents[0].dir = (
+        0,
+        0,
+        Direction.RIGHT,
+    )
+    env._recalc_grid()
+    reservations = ReservationTable(horizon=4)
+    reservations.reserve([(1, 0)], persistent=True)
+
+    plan = AStarPlanner().plan_with_reservations(
+        env, agent_id=1, goal=(1, 0), reservations=reservations
+    )
+
+    assert not plan.reached_goal
+    assert plan.event == PlannerEvent.REPLAN_REQUIRED
+    assert plan.timed_positions == ((0, 0), (0, 0))
+    assert plan.first_action == Action.NOOP.value
