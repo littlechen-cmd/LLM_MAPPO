@@ -136,3 +136,30 @@
   manifest/config YAML 解析通过；两个 CLI `--help` 通过；`git diff --check` 通过。
 - **Remaining risk**：QMIX 的 150,000-step smoke、控制数据集实物生成、所有组端到端日志/评估
   兼容性仍须由 G4-5 验证；G2-1d/e 和 G3-6 仍阻塞最终协议冻结。
+
+## 2026-08-20 — G3 architecture task package
+
+- 阶段：S3 实验规划与 S5 规格/质量审查。
+- 建立 `plan/g3-architecture-task-package.md`，统一 G3-1～G3-7 的责任、状态、依赖、
+  验收证据和禁止事项，并提供工程师启动指令与固定交接格式。
+- 将 G3 明确为 G4 前 `G3-P` 预冻结和 G4-4 后 `G3-F` 最终冻结，最终预算之外的字段
+  不得借 G4 结果修改。
+- 为 G3-6 冻结两张 24×20 evaluation-only 地图的共同条件、拓扑指标、防泄漏规则、
+  manifest schema、测试与允许主张；本次未实现地图、未加载 checkpoint、未运行实验。
+
+### Capability-use audit
+
+- **Required skills**：using-research-writing、paper-orchestration、
+  experiment-results-planning、verification。
+- **Skills actually used**：以上四项均已使用。
+- **Inputs consumed**：AGENTS、Constitution 第 6–8 章、TASKS G3 状态、G3 manifest v2、
+  实验协议、既有 G3 审计/任务包、24×20 训练地图生成规则、自定义 ASCII 布局接口、充电站
+  与 Phase2Warehouse 接口。
+- **Inputs not used and why**：未使用任何 checkpoint 或训练/评估结果，因为任务只授权架构
+  设计，且 G3-6 地图禁止按策略结果选择。
+- **Artifacts produced**：G3 架构总任务包、本次任务包、规格/质量审查、CHANGELOG 条目和
+  本进度记录。
+- **Verification run**：G3-1～G3-7 权威小节、G3-6 必需合同、当前 TASKS 状态、禁止主张和
+  工程师交接字段的静态检查；Markdown/diff 检查。
+- **Remaining risk**：G3-6 的精确地图尚未由工程师证明同时满足 156 货架、距离匹配和拓扑
+  覆盖约束；G2-1d/e 与 G4-4 仍阻塞 G3-F。

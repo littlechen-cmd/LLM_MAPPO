@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-20
 
+- Added: A complete G3 architecture task package now fixes ownership, evidence,
+  the provisional/final freeze sequence, and the implementable G3-6 unseen-layout
+  contract without starting experiments.
 - Added: G3-5 external MARL, semantic-control, NoWP, and heuristic baseline
   configurations and their reproducible implementation boundaries.
 - Added: Eight-seed formal analysis, normalized learning-curve AUC, frozen
