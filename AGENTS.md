@@ -39,6 +39,31 @@ Tests use pytest and follow `test_*.py` with `test_*` functions. Add determinist
 
 Treat rule-layer safety checks as hard constraints. LLM output may adjust priority semantics, not assign agents or emit per-step actions. A* supplies training preferences and execution-time waypoint observations; MAPPO remains the action policy. Maintain a root `TASKS.md` checklist as work progresses. Ask before resolving ambiguous requirements, and report permission or network blockers instead of bypassing them.
 
+### Project Roles And Authority
+
+- The project owner approves major architecture and experiment decisions, runs
+  long training, multi-seed evaluation, and long replay jobs, and publishes Git
+  changes.
+- The core architect maintains project direction, `CONSTITUTION.md`, and
+  `TASKS.md`; decomposes work; checks consistency across code, experiments, and
+  paper claims; reviews evidence; and provides recommendations. The architect
+  may make small documentation, planning, and configuration corrections but
+  delegates substantial code implementation to the project engineer.
+- The project engineer implements architect-approved task packets, adds tests,
+  runs short validations, prepares owner-run commands, and creates focused local
+  commits. The engineer must not modify `CONSTITUTION.md`, mark `TASKS.md` items
+  complete, change frozen experimental decisions, push, or merge without explicit
+  owner or architect authorization.
+- Completion of an engineering implementation does not by itself pass a Gate.
+  The architect updates `TASKS.md` only after reviewing the required evidence and
+  the corresponding Constitution acceptance criteria.
+- Every completed `TASKS.md` subtask must update root `CHANGELOG.md` in the same
+  commit. Use the standard filename `CHANGELOG.md`, newest date first, with one
+  concise entry per meaningful change.
+- Engineer handoffs must state the task ID, implementation scope, changed files,
+  validation commands and results, unfinished checks, owner-run long commands,
+  known risks, prohibited claims, commit ID, and worktree status.
+
 ## Commit & Pull Request Guidelines
 
 Recent history uses short imperative subjects such as `update render function for gymnasium compatibility` and `fix minor code issues`. Keep commits focused; create a Git checkpoint after substantial changes. Pull requests should describe behavior, list validation commands and results, link the relevant phase or issue, and include screenshots/GIFs for rendering changes plus metrics/configuration for training changes.
