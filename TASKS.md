@@ -126,12 +126,15 @@ and the corresponding Chapter 7 criteria are satisfied.
   data. Manifest v2, the strict aggregator, table schema, figure contract, and tests
   now require the eight-seed core matrix and emit per-seed/Aggregated normalized
   throughput AUC artifacts.
-- [ ] **G3-5** Implement and freeze the fair-comparison boundary, configuration,
+- [x] **G3-5** Implement and freeze the fair-comparison boundary, configuration,
   budget, and allowed claims for `QMIX-WP`, `MAPPO-WP+A*KD+RuleKD`,
   `MAPPO-WP+A*KD+ShuffleKD`, `MAPPO-NoWP`, and `Heuristic-Dispatcher+A*`.
   If QMIX cannot
   share the frozen observation/action/safety contract, preregister `IPPO-WP` or
   `VDN-WP` before G5; do not omit the external MARL baseline.
+  The implementation freezes QMIX-WP's shared environment interface, deterministic
+  RuleKD/ShuffleKD derivation, zeroed-width-preserving NoWP, and a named heuristic
+  dispatcher+A* entry point. G4-5 remains the required end-to-end smoke gate.
 - [ ] **G3-6** Implement and freeze two evaluation-only unseen layouts: one
   narrow-aisle layout and one central-bottleneck/cross-aisle layout. Record their
   map files or generators, hashes, environment IDs, and unified observation/action

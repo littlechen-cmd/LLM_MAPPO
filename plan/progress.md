@@ -113,3 +113,26 @@
   `161 passed`；完整规定范围flake8通过；`git diff --check`通过。
 - **Remaining risk**：G3-5/G3-6、G4-5和G2-1d/e仍未完成；正式训练必须使用新的日志路径
   契约，并在最终冻结commit中记录哈希与预算。
+
+## 2026-08-20 — G3-5 required comparison implementation
+
+- 阶段：S3 实验规划与 S5 规格/质量审查。
+- 已冻结 QMIX-WP、RuleKD、ShuffleKD、NoWP 与 Heuristic-Dispatcher+A* 的实现边界、
+  同环境交互预算和可主张范围；G4-5 前不替换 QMIX，也不启动任何正式训练。
+- RuleKD/ShuffleKD 从同一离线缓存确定性派生；NoWP 保持观测宽度但不调用 A* 生成 waypoint；
+  QMIX 使用共享 actor 观测、动作 mask、奖励与规则安全层。
+
+### Capability-use audit
+
+- **Required skills**：using-research-writing、paper-orchestration、
+  experiment-results-planning、statistical-analysis、verification。
+- **Skills actually used**：以上五项均已使用。
+- **Inputs consumed**：Constitution、TASKS、G3 manifest、实验协议、Phase 2/3/4 训练接口、
+  A* 基线实现及标签数据契约。
+- **Inputs not used and why**：未读取或产生正式训练/评估结果；G4/G5 长任务仅由项目负责人执行。
+- **Artifacts produced**：五组机器可读清单、四个学习配置、标签控制派生器、NoWP 开关、
+  QMIX-WP 训练入口、启发式基线入口、测试、任务包与审查记录。
+- **Verification run**：比较测试与既有 Phase 2/4 测试 `39 passed`；规定范围 Flake8 通过；
+  manifest/config YAML 解析通过；两个 CLI `--help` 通过；`git diff --check` 通过。
+- **Remaining risk**：QMIX 的 150,000-step smoke、控制数据集实物生成、所有组端到端日志/评估
+  兼容性仍须由 G4-5 验证；G2-1d/e 和 G3-6 仍阻塞最终协议冻结。

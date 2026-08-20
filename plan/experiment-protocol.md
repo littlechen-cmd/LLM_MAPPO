@@ -35,11 +35,26 @@
 核心能源配置固定为 `battery_cost_scale=1.10`、进入充电阈值 `0.30`、释放阈值 `0.80`。
 该配置由四组共同使用；充电时机仍由规则层决定，不属于 MAPPO 或 LLMKD 的方法贡献。
 
-G3-5 完成前，外部 MARL、RuleKD、ShuffleKD、NoWP 和端到端启发式规划基线均处于
-`pending_implementation`，不得以缺失实现替代或减少核心比较。QMIX-WP 必须共享
-waypoint、环境、奖励、动作 mask、安全层、训练步数和调参预算；若其公平实现失败，只能在
-G4 前切换为预注册的 IPPO-WP 或 VDN-WP。RuleKD 与 ShuffleKD 均保持 A*KD 开启；前者
-使用冻结规则生成的双语义标签，后者只打乱状态—标签配对而保持标签边际分布。
+G3-5 已冻结以下比较边界，机器可读定义见 manifest 的 `required_comparisons`。所有学习组
+共享环境、动作 mask、规则安全层、奖励、能源配置、训练 seed 轮换、G4/正式环境交互预算和
+预算后调参禁令；QMIX-WP 也共享 runtime waypoint 输入，但不使用 A*KL 或任何语义标签。
+
+| 组别 | 角色 | 训练 seed | 可支持的主张 |
+|---|---|---|---|
+| QMIX-WP | 外部 MARL | 8 | 与完整方法的确认性外部基线比较 |
+| MAPPO-WP+A*KD+RuleKD | 规则语义控制 | 8 | LLM 标签价值的确认性比较 |
+| MAPPO-WP+A*KD+ShuffleKD | 标签配对诊断 | 3 | 仅机制方向、方差和失败模式 |
+| MAPPO-NoWP | waypoint 消融 | 3 | 仅 runtime waypoint 机制诊断 |
+| Heuristic-Dispatcher+A* | 非学习规划器 | 无训练 | 与学习系统的端到端规划参照 |
+
+RuleKD 由同一 400 状态缓存用 `frozen-rule-kd-v1` 确定性映射为双语义标签；ShuffleKD 使用
+seed `20260820` 对完整二元标签实施无固定点置换，保持标签边际分布而破坏状态—标签配对。
+两者均保持 A*KD 开启。NoWP 不改变 actor observation 宽度，而是把 waypoint 特征槽固定为零、
+关闭 waypoint reward 和 A*KL，以隔离执行期 waypoint 信息。Heuristic-Dispatcher+A* 复用
+同一任务分派、动作 mask 和安全层，以 `AStarExpert` 输出动作。
+
+若 G4-5 的短时 smoke 证明 QMIX 不能共享上述环境接口，才可在查看任何正式结果前替换为
+预注册的 IPPO-WP 或 VDN-WP，并记录失败证据；不得删除外部 MARL 比较。
 
 ## 4. 预算与 checkpoint
 

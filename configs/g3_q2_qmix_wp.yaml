@@ -1,0 +1,36 @@
+# G3-5 external MARL baseline: same environment contract; no teacher losses.
+environment:
+  id: llm-mappo-medium-3ag-v1
+  n_agents: 5
+  max_steps: 1000
+  battery_cost_scale: 1.1
+  charge_threshold: 0.30
+  charge_release_threshold: 0.8
+  waypoint_reward: 0.01
+  include_waypoint_features: true
+  oracle_interaction_mask: true
+  deadlock_steps: 180
+  batch_interval: 40
+  batch_size_range: [4, 8]
+  initial_priority_label: A
+  priority_schedule: null
+  request_queue_size: 8
+  task_completion_target: 50
+training:
+  seed: 7
+  training_seed_groups: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
+  device: auto
+  torch_num_threads: 1
+  episodes: 1000
+  environment_step_budget: 150000
+  output_dir: artifacts/g4_qmix_wp
+qmix:
+  gamma: 0.99
+  learning_rate: 0.0003
+  batch_size: 64
+  replay_capacity: 50000
+  learning_starts: 1000
+  target_update_interval: 1000
+  epsilon_start: 1.0
+  epsilon_final: 0.05
+  epsilon_decay_steps: 100000

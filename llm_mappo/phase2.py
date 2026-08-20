@@ -115,6 +115,7 @@ class Phase2Warehouse:
     battery_cost_scale: float = 1.0
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
+    include_waypoint_features: bool = True
     oracle_interaction_mask: bool = True
     priority_schedule: Optional[Sequence[str]] = None
     batch_interval: Optional[int] = None
@@ -309,14 +310,19 @@ class Phase2Warehouse:
         rows = []
         for index, agent in enumerate(warehouse.agents):
             target, target_kind = self._target_for_agent(agent.id)
-            waypoint = self._planner.plan(warehouse, agent.id, target).waypoints
+            waypoint = ()
+            if self.include_waypoint_features:
+                waypoint = self._planner.plan(warehouse, agent.id, target).waypoints
             if len(waypoint) > 1:
                 next_point = waypoint[1]
                 desired_direction = self._planner._direction_between(
                     waypoint[0], next_point
                 )
-            else:
+            elif self.include_waypoint_features:
                 next_point = target
+                desired_direction = None
+            else:
+                next_point = (agent.x, agent.y)
                 desired_direction = None
             dx = (next_point[0] - agent.x) / max(width - 1, 1)
             dy = (next_point[1] - agent.y) / max(height - 1, 1)

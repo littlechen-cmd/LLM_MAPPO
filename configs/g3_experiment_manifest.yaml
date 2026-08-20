@@ -39,6 +39,66 @@ core_groups:
     astar_kl: true
     offline_llm_kd: true
 
+required_comparisons:
+  QMIX-WP:
+    config: configs/g3_q2_qmix_wp.yaml
+    artifact_slug: qmix_wp
+    role: external_marl_baseline
+    training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
+    runtime_waypoint: true
+    astar_kl: false
+    offline_llm_kd: false
+  MAPPO-WP+A*KD+RuleKD:
+    config: configs/g3_q2_rule_kd.yaml
+    artifact_slug: mappo_wp_astar_rule_kd
+    role: semantic_control
+    training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
+    runtime_waypoint: true
+    astar_kl: true
+    offline_llm_kd: rule_v1
+  MAPPO-WP+A*KD+ShuffleKD:
+    config: configs/g3_q2_shuffle_kd.yaml
+    artifact_slug: mappo_wp_astar_shuffle_kd
+    role: diagnostic_semantic_control
+    training_seeds: [7, 17, 27]
+    runtime_waypoint: true
+    astar_kl: true
+    offline_llm_kd: shuffled_seed_20260820
+    confirmatory: false
+  MAPPO-NoWP:
+    config: configs/g3_q2_mappo_no_wp.yaml
+    artifact_slug: mappo_no_wp
+    role: diagnostic_waypoint_ablation
+    training_seeds: [7, 17, 27]
+    runtime_waypoint: false
+    astar_kl: false
+    offline_llm_kd: false
+    confirmatory: false
+  Heuristic-Dispatcher+A*:
+    config: configs/g3_core_mappo_wp.yaml
+    artifact_slug: heuristic_dispatcher_astar
+    role: nonlearning_planning_baseline
+    training_seeds: []
+    runtime_waypoint: true
+    action_source: AStarExpert
+
+semantic_controls:
+  source_dataset: artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl
+  rule_dataset: artifacts/phase4_labels/g3_rule_kd_v1.jsonl
+  shuffle_dataset: artifacts/phase4_labels/g3_shuffle_kd_seed20260820_v1.jsonl
+  shuffle_seed: 20260820
+  derivation_command: >-
+    python train/derive_phase4_control_labels.py --source <source_dataset>
+    --rule-output <rule_dataset> --shuffle-output <shuffle_dataset> --shuffle-seed 20260820
+
+comparison_fairness:
+  shared_environment_contract: true
+  shared_action_masks_and_rule_safety: true
+  shared_reward_and_energy_configuration: true
+  shared_environment_step_budget_rule: true
+  group_specific_tuning_after_g4: prohibited
+  qmix_fallback: IPPO-WP or VDN-WP only if a G4 smoke proves QMIX cannot share the contract
+
 training:
   policy_initialization_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
   diagnostic_policy_initialization_seeds: [7, 17, 27]

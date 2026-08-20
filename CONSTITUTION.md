@@ -239,6 +239,11 @@ seed `200–209`。修复版本相对 legacy horizon 版本必须满足：受控
 | MAPPO-NoWP | 3 个诊断 seed | 关闭两类 KD 并移除 waypoint，与 MAPPO-WP 比较以量化执行期 A* 依赖 |
 | Heuristic-Dispatcher+A* | 无训练 | 规则优先级调度与优先级时空 A* 组成的端到端非学习基线 |
 
+RuleKD 必须从同一冻结的 400 状态缓存以版本化确定性映射生成，ShuffleKD 必须使用固定 seed
+对完整二元语义标签实施无固定点置换；二者都不得调用在线模型。NoWP 保持 actor 观测宽度，
+但将 waypoint 特征槽固定为零，并同时关闭 waypoint shaping reward 与 A*KL。启发式基线
+复用同一动态任务分派、动作 mask 与规则安全层。上述实现与数据路径必须写入唯一运行清单。
+
 QMIX-WP 如在 G4 前被证实无法在相同观测、动作和安全边界下形成公平实现，必须在 G3
 协议增补中预注册 `IPPO-WP` 或 `VDN-WP` 之一作为替代；不得在观察正式结果后选择更弱
 或更有利的基线，也不得完全省略外部 MARL 比较。传统 A* 只作为路径规划参考，不得冒充

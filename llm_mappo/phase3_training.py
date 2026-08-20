@@ -52,6 +52,7 @@ class Phase3TrainingConfig:
     charge_release_threshold: float = 0.8
     battery_cost_scale: float = 1.0
     waypoint_reward: float = 0.01
+    include_waypoint_features: bool = True
     oracle_interaction_mask: bool = True
     deadlock_steps: int = 180
     episodes: int = 800
@@ -127,6 +128,9 @@ class Phase3TrainingConfig:
                 "battery_cost_scale", cls.battery_cost_scale
             ),
             waypoint_reward=environment.get("waypoint_reward", cls.waypoint_reward),
+            include_waypoint_features=environment.get(
+                "include_waypoint_features", cls.include_waypoint_features
+            ),
             oracle_interaction_mask=environment.get(
                 "oracle_interaction_mask", cls.oracle_interaction_mask
             ),
@@ -270,6 +274,7 @@ def _make_training_env(config: Phase3TrainingConfig) -> Phase2Warehouse:
         charge_release_threshold=config.charge_release_threshold,
         battery_cost_scale=config.battery_cost_scale,
         waypoint_reward=config.waypoint_reward,
+        include_waypoint_features=config.include_waypoint_features,
         oracle_interaction_mask=config.oracle_interaction_mask,
         deadlock_steps=config.deadlock_steps,
         priority_schedule=config.priority_schedule,
@@ -1184,6 +1189,7 @@ def evaluate_phase3(  # noqa: C901
         charge_release_threshold=config.get("charge_release_threshold", 0.8),
         battery_cost_scale=config.get("battery_cost_scale", 1.0),
         waypoint_reward=config.get("waypoint_reward", 0.01),
+        include_waypoint_features=config.get("include_waypoint_features", True),
         oracle_interaction_mask=config.get("oracle_interaction_mask", True),
         deadlock_steps=config.get("deadlock_steps", 180),
         priority_schedule=(

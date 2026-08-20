@@ -33,6 +33,7 @@ def evaluate_dynamic_astar(
         charge_release_threshold=config.charge_release_threshold,
         battery_cost_scale=config.battery_cost_scale,
         waypoint_reward=config.waypoint_reward,
+        include_waypoint_features=config.include_waypoint_features,
         oracle_interaction_mask=config.oracle_interaction_mask,
         deadlock_steps=config.deadlock_steps,
         priority_schedule=config.priority_schedule,
