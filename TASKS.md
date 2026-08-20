@@ -101,12 +101,17 @@ and the corresponding Chapter 7 criteria are satisfied.
 
 ### Gate G3 — Formal Protocol Freeze
 
-- [ ] **G3-1** Freeze the code commit, four group configurations, environment contract,
-  label-dataset hash, training seeds, the matched G4 step budget, formal-budget
-  selection rule, and held-out `10 seeds x 20 episodes` evaluation protocol.
+- [ ] **G3-1** Freeze the code commit, four core group configurations, environment
+  contract, label-dataset hash, formal training seeds
+  `7/17/27/37/47/57/67/77`, diagnostic seeds `7/17/27`, the matched G4 step
+  budget, formal-budget selection rule, and held-out `10 seeds x 20 episodes`
+  evaluation protocol.
   The provisional manifest fixes seeds, deterministic evaluation, final-checkpoint
   selection, the dataset hash, a `150,000`-step G4 budget, and untouched formal
-  evaluation seeds `200–209`; the final Git commit and G2-1d/e remain open.
+  evaluation seeds `200–209`; the final Git commit and G2-1d/e remain open. The
+  2026-08-20 pre-freeze audit is recorded in `plan/review/g3-pre-freeze-audit.md`;
+  it verifies the former five-seed static inputs but does not remove the listed
+  blockers or satisfy the new eight-seed Q2 protocol.
 - [x] **G3-2** Freeze runtime A* waypoint and training A* KL as separate factors, with
   the four core experiment names defined in the Constitution. Phase 4 now exposes
   independent A* KL and offline LLM teacher switches; no-LLM groups use fixed-zero
@@ -115,11 +120,26 @@ and the corresponding Chapter 7 criteria are satisfied.
   thresholds, task interruption/recovery semantics, and rule-layer safety
   boundaries. Core groups use `1.10/0.30/0.80`; charging remains a fixed rule-layer
   safety mechanism, and `1.20/0.20/0.80` remains evaluation-only stress.
-- [x] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
+- [ ] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
   failure/retry policy, and formal experiment data/figure pipeline. Formal episode
-  logs now include cumulative environment steps; the strict aggregation pipeline uses
-  training seeds as paired statistical units and the two initial plotting scripts emit
-  450 DPI PNG plus SVG without generating placeholder data.
+  logs already include cumulative environment steps and the plotting scripts do not
+  fabricate data; update the manifest, strict aggregator, table schema, and figure
+  contract from a five-training-seed matrix to the frozen eight-training-seed matrix.
+- [ ] **G3-5** Implement and freeze the fair-comparison boundary, configuration,
+  budget, and allowed claims for `QMIX-WP`, `MAPPO-WP+A*KD+RuleKD`,
+  `MAPPO-WP+A*KD+ShuffleKD`, `MAPPO-NoWP`, and `Heuristic-Dispatcher+A*`.
+  If QMIX cannot
+  share the frozen observation/action/safety contract, preregister `IPPO-WP` or
+  `VDN-WP` before G5; do not omit the external MARL baseline.
+- [ ] **G3-6** Implement and freeze two evaluation-only unseen layouts: one
+  narrow-aisle layout and one central-bottleneck/cross-aisle layout. Record their
+  map files or generators, hashes, environment IDs, and unified observation/action
+  compatibility before viewing formal outcomes.
+- [ ] **G3-7** Freeze completed tasks per 1000 environment steps as the primary
+  utility metric, environment-step learning-curve AUC as the primary sample-
+  efficiency metric, collision and energy-death rates as safety constraints, the
+  confirmatory hypothesis family, and a blinded label-audit protocol with at least
+  100 held-out states and two independent raters.
 
 ### Gate G4 — Small-Budget Pilot
 
@@ -131,26 +151,39 @@ and the corresponding Chapter 7 criteria are satisfied.
   under the core setting and pass the frozen charger-arrival, task-recovery,
   energy-death, and charging-congestion safety checks; use the common energy-stress
   scenario for high-exposure behavior rather than claiming autonomous charging.
-- [ ] **G4-4** Use the matched learning curves to set one formal interaction budget for
-  all four groups, record the single pre-G5 protocol amendment, and avoid
-  group-specific post-hoc tuning.
+- [ ] **G4-4** Use the four core matched learning curves to set one formal interaction
+  budget for every formal learning group, record the single pre-G5 protocol
+  amendment, and avoid group-specific post-hoc tuning.
+- [ ] **G4-5** Smoke-test the required external/planning baselines, semantic controls,
+  NoWP diagnostic, both unseen layouts, eight-seed aggregation contract, and label-
+  audit data entry end to end. Use only a G3-preregistered fallback if a smoke fails.
 
-### Gate G5 — Core Multi-Seed Training
+### Gate G5 — Formal Multi-Seed Training
 
-- [ ] **G5-1** Complete all four core groups with at least five training seeds per group.
+- [ ] **G5-1** Project owner completes the four core groups, `QMIX-WP`, and
+  `MAPPO-WP+A*KD+RuleKD` with the eight matched formal training seeds per group.
 - [ ] **G5-2** Verify every run follows the frozen protocol and handle failed runs only
   through the preregistered failure/retry rule.
-- [ ] **G5-3** Confirm no group received a result-dependent hyperparameter or budget
-  change after outcomes were observed.
+- [ ] **G5-3** Confirm no group received a result-dependent hyperparameter, baseline
+  selection, or budget change after outcomes were observed.
+- [ ] **G5-4** Project owner completes `MAPPO-WP+A*KD+ShuffleKD` and
+  `MAPPO-NoWP` with the
+  three fixed diagnostic seeds each; restrict these runs to mechanism direction,
+  variance, and failure-mode analysis rather than significance claims.
 
 ### Gate G6 — Independent Evaluation And Statistics
 
-- [ ] **G6-1** Complete held-out main evaluation and robustness evaluation for all core
-  groups.
+- [ ] **G6-1** Complete held-out main evaluation for the core groups, `QMIX-WP`,
+  `MAPPO-WP+A*KD+RuleKD`, and `Heuristic-Dispatcher+A*`, plus the frozen two-layout
+  zero-shot and load/fleet/energy robustness evaluations for every required group.
 - [ ] **G6-2** Generate statistical summaries, confidence intervals, effect sizes,
   priority/task metrics, safety results, and representative failure cases.
 - [ ] **G6-3** Map every intended paper claim to supporting evidence or an explicit
   limitation before drafting results.
+- [ ] **G6-4** Complete the two-rater blind audit of at least 100 frozen states,
+  analyze LLM/rule/shuffled semantic labels, and report A* calls, replans, failures,
+  partial paths, expanded nodes, cache hits, and planning/control-loop P50/P95/P99
+  latency.
 
 ### Gate G7 — Paper Ready
 

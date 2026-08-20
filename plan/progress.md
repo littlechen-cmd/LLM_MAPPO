@@ -59,3 +59,33 @@
   seeds `0–9`; no formal result is inferred from the calibration comparison.
 - Charging remains a fixed rule-layer safety mechanism, not an autonomous MAPPO
   decision or an LLMKD contribution.
+
+## 2026-08-20 — Q2 experiment-evidence upgrade
+
+- 阶段：S3 实验规划与 S5 一致性审查。
+- 将现实投稿目标明确为中科院二区英文方法论文，一区仅作为结果与创新性明显超预期时的
+  上探方向。
+- 将正式学习组从五训练 seed 提升到八个匹配 seed，并把外部 MARL、规则语义对照、
+  端到端启发式基线、两个未见布局、NoWP/扰乱标签诊断、标签盲审和 A* 运行时审计提升为
+  二区证据链的必需项。
+- 保留 CBS、自适应教师加权、在线自然语言加急、学习式充电和 Linux 迁移为条件性扩展。
+- 重新打开 G3-4，并新增 G3-5–G3-7、G4-5、G5-4、G6-4；长训练和长评估继续由项目
+  负责人运行。
+
+### Capability-use audit
+
+- **Required skills**：using-research-writing、paper-orchestration、
+  experiment-results-planning、verification。
+- **Skills actually used**：以上四项均已使用。
+- **Inputs consumed**：`CONSTITUTION.md`、`TASKS.md`、现有实验协议、方法—实验追溯矩阵、
+  表格 schema、图数据清单、G3 预冻结审计及用户确认的二区现实目标。
+- **Inputs not used and why**：未使用或生成训练结果；本任务仅调整实验治理与任务范围，
+  且长任务仍由项目负责人执行。
+- **Artifacts produced**：`CONSTITUTION.md` v0.2、更新后的 `TASKS.md`、
+  `plan/task-packets/q2-experiment-evidence-sync.md`、
+  `plan/review/q2-experiment-evidence-sync-review.md` 和本进度记录。
+- **Verification run**：Chapter 8/TASKS 共 41 个任务 ID 双向一致；关键投稿证据条款检查；
+  `git diff --check` 通过；完成 Git 差异和工作区状态审查。
+- **Remaining risk**：`plan/experiment-protocol.md`、实验 manifest、五-seed 聚合脚本、
+  表格/图数据契约及新增基线/布局尚未按 v0.2 实现，已由重新打开的 G3-4 和新增
+  G3-5–G3-7 明确跟踪；G2-1d/e 仍是 G3 冻结前置阻塞项。
