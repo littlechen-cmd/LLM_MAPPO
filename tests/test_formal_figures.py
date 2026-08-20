@@ -38,7 +38,7 @@ def test_learning_curves_write_png_and_svg(tmp_path):
     curves = {}
     for group_index, group in enumerate(GROUP_ORDER):
         runs = []
-        for seed_index in range(3):
+        for seed_index in range(8):
             metrics = {
                 metric: np.linspace(
                     group_index + seed_index / 10,

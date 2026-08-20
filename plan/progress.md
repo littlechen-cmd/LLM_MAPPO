@@ -89,3 +89,27 @@
 - **Remaining risk**：`plan/experiment-protocol.md`、实验 manifest、五-seed 聚合脚本、
   表格/图数据契约及新增基线/布局尚未按 v0.2 实现，已由重新打开的 G3-4 和新增
   G3-5–G3-7 明确跟踪；G2-1d/e 仍是 G3 冻结前置阻塞项。
+
+## 2026-08-20 — G3-4/G3-7 eight-seed evidence pipeline
+
+- 阶段：S3 实验规划与 S5 规格/质量审查。
+- 已将正式核心训练矩阵升级为八个匹配seed；新聚合器从冻结训练日志读取每个训练seed的
+  标准化吞吐AUC，并与独立评估汇总分开输出。
+- 已冻结主要效用、主要样本效率、安全约束、五项确认性比较和100状态双人盲审协议。
+- 未启动训练、长评估或人工盲审；manifest保持`provisional_g3`。
+
+### Capability-use audit
+
+- **Required skills**：using-research-writing、paper-orchestration、
+  experiment-results-planning、statistical-analysis、verification。
+- **Skills actually used**：以上五项均已使用。
+- **Inputs consumed**：Constitution v0.2、TASKS、G3 manifest、训练日志schema、现有正式
+  聚合器、实验协议、追溯矩阵、表格schema和图数据清单。
+- **Inputs not used and why**：未使用正式训练结果或人工评分，因为它们尚不存在，且本任务
+  不授权启动长任务。
+- **Artifacts produced**：manifest v2、AUC聚合逻辑、更新后的协议/追溯/表格/图数据契约、
+  双人盲审协议、回归测试、任务包和审查记录。
+- **Verification run**：焦点pytest `32 passed`、其余测试 `129 passed`，完整套件合计
+  `161 passed`；完整规定范围flake8通过；`git diff --check`通过。
+- **Remaining risk**：G3-5/G3-6、G4-5和G2-1d/e仍未完成；正式训练必须使用新的日志路径
+  契约，并在最终冻结commit中记录哈希与预算。

@@ -23,6 +23,14 @@ METRICS: Mapping[str, str] = {
     "mean_energy_deaths_per_episode": "lower",
 }
 
+PRIMARY_EVALUATION_METRICS: tuple[str, ...] = (
+    "completed_tasks_per_1000_steps",
+)
+
+LEARNING_CURVE_METRICS: Mapping[str, str] = {
+    "completed_tasks_per_1000_steps_auc": "higher",
+}
+
 FACTORIAL_CONTRASTS: Mapping[str, Mapping[str, float]] = {
     "full_vs_baseline": {
         "MAPPO-WP": -1.0,
@@ -65,11 +73,14 @@ def evaluation_path(root: Path, group: Mapping[str, object], seed: int) -> Path:
 
 
 def collect_seed_rows(
-    manifest: Mapping[str, object], evaluation_root: str | Path
+    manifest: Mapping[str, object],
+    evaluation_root: str | Path,
+    *,
+    group_section: str = "core_groups",
 ) -> List[Dict[str, object]]:
     """Validate and flatten all group-by-training-seed evaluation results."""
     root = Path(evaluation_root)
-    groups = _mapping(manifest, "core_groups")
+    groups = _mapping(manifest, group_section)
     training = _mapping(manifest, "training")
     evaluation = _mapping(manifest, "evaluation")
     policy_seeds = _integer_list(training, "policy_initialization_seeds")
@@ -79,7 +90,7 @@ def collect_seed_rows(
     missing: List[str] = []
 
     for group_name, group_value in groups.items():
-        group = _as_mapping(group_value, f"core_groups.{group_name}")
+        group = _as_mapping(group_value, f"{group_section}.{group_name}")
         for policy_seed in policy_seeds:
             source = evaluation_path(root, group, policy_seed)
             if not source.is_file():
@@ -114,6 +125,98 @@ def collect_seed_rows(
             "Formal evaluation matrix is incomplete:\n" + preview + suffix
         )
     return rows
+
+
+def collect_learning_curve_auc_rows(
+    manifest: Mapping[str, object],
+    training_root: str | Path,
+    *,
+    group_section: str = "core_groups",
+) -> List[Dict[str, object]]:
+    """Collect normalized throughput AUC values with training seed as the unit."""
+    root = Path(training_root)
+    groups = _mapping(manifest, group_section)
+    training = _mapping(manifest, "training")
+    policy_seeds = _integer_list(training, "policy_initialization_seeds")
+    rows: List[Dict[str, object]] = []
+    missing: List[str] = []
+
+    for group_name, group_value in groups.items():
+        group = _as_mapping(group_value, f"{group_section}.{group_name}")
+        for policy_seed in policy_seeds:
+            source = learning_curve_path(root, group, policy_seed)
+            if not source.is_file():
+                missing.append(str(source))
+                continue
+            rows.append(
+                {
+                    "group": group_name,
+                    "artifact_slug": group["artifact_slug"],
+                    "training_seed": policy_seed,
+                    "metric": "completed_tasks_per_1000_steps_auc",
+                    "direction": "higher",
+                    "value": learning_curve_auc(source),
+                    "training_path": str(source),
+                }
+            )
+    if missing:
+        preview = "\n".join(missing[:8])
+        remainder = len(missing) - min(len(missing), 8)
+        suffix = f"\n... and {remainder} more" if remainder else ""
+        raise FileNotFoundError(
+            "Formal training matrix is incomplete:\n" + preview + suffix
+        )
+    return rows
+
+
+def learning_curve_path(root: Path, group: Mapping[str, object], seed: int) -> Path:
+    """Return the preregistered training-log path for one policy seed."""
+    slug = str(group["artifact_slug"])
+    return root / slug / f"seed_{seed:03d}" / "episodes.csv"
+
+
+def learning_curve_auc(path: str | Path) -> float:
+    """Return step-normalized AUC of cumulative episode throughput samples.
+
+    Episode records that share an environment-step value are pooled before the
+    throughput is calculated, which avoids treating simultaneous vectorized
+    environment completions as a sequence of independent observations.
+    """
+    source = Path(path)
+    with source.open("r", encoding="utf-8", newline="") as stream:
+        records = list(csv.DictReader(stream))
+    required = {"environment_steps", "completed_tasks", "steps"}
+    observed = set(records[0]) if records else set()
+    missing = sorted(required.difference(observed))
+    if missing:
+        raise ValueError(f"{source}: missing learning-curve columns {missing}")
+
+    pooled: Dict[float, List[float]] = {}
+    for record in records:
+        step = float(record["environment_steps"])
+        completed = float(record["completed_tasks"])
+        episode_steps = float(record["steps"])
+        if step <= 0.0 or episode_steps <= 0.0:
+            raise ValueError(f"{source}: environment and episode steps must be positive")
+        totals = pooled.setdefault(step, [0.0, 0.0])
+        totals[0] += completed
+        totals[1] += episode_steps
+    if not pooled:
+        raise ValueError(f"{source}: episodes.csv contains no completed episodes")
+
+    points = [(0.0, 0.0)]
+    for step, (completed, episode_steps) in sorted(pooled.items()):
+        points.append((step, 1000.0 * completed / episode_steps))
+    if len(points) < 2 or points[-1][0] <= 0.0:
+        raise ValueError(f"{source}: no positive environment-step range for AUC")
+
+    area = sum(
+        (right_step - left_step) * (left_value + right_value) / 2.0
+        for (left_step, left_value), (right_step, right_value) in zip(
+            points, points[1:]
+        )
+    )
+    return area / points[-1][0]
 
 
 def summarize_groups(

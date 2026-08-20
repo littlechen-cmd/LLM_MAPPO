@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from llm_mappo.formal_results import (
+    collect_learning_curve_auc_rows,
     collect_seed_rows,
     compare_factorial_effects,
     compare_full_to_baseline,
@@ -29,6 +30,11 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         default="artifacts/formal_aggregate",
     )
+    parser.add_argument(
+        "--training-root",
+        default="artifacts/formal_training",
+        help="Root containing <artifact_slug>/seed_<NNN>/episodes.csv logs.",
+    )
     parser.add_argument("--bootstrap-samples", type=int, default=10000)
     return parser.parse_args()
 
@@ -37,8 +43,16 @@ def main() -> None:
     args = parse_args()
     manifest = load_manifest(args.manifest)
     rows = collect_seed_rows(manifest, args.evaluation_root)
+    learning_curve_rows = collect_learning_curve_auc_rows(
+        manifest,
+        args.training_root,
+    )
     summaries = summarize_groups(
         rows,
+        bootstrap_samples=args.bootstrap_samples,
+    )
+    learning_curve_summaries = summarize_groups(
+        learning_curve_rows,
         bootstrap_samples=args.bootstrap_samples,
     )
     comparisons = compare_full_to_baseline(
@@ -54,8 +68,18 @@ def main() -> None:
     write_csv(output / "group_summary.csv", summaries)
     write_csv(output / "paired_full_vs_baseline.csv", comparisons)
     write_csv(output / "paired_factorial_effects.csv", factorial_effects)
+    write_csv(
+        output / "learning_curve_auc_per_training_seed.csv",
+        learning_curve_rows,
+    )
+    write_csv(
+        output / "learning_curve_auc_summary.csv",
+        learning_curve_summaries,
+    )
     print(
-        f"Validated {len(rows)} metric rows and wrote formal tables to {output}"
+        "Validated "
+        f"{len(rows)} evaluation rows and {len(learning_curve_rows)} AUC rows; "
+        f"wrote formal tables to {output}"
     )
 
 

@@ -120,11 +120,12 @@ and the corresponding Chapter 7 criteria are satisfied.
   thresholds, task interruption/recovery semantics, and rule-layer safety
   boundaries. Core groups use `1.10/0.30/0.80`; charging remains a fixed rule-layer
   safety mechanism, and `1.20/0.20/0.80` remains evaluation-only stress.
-- [ ] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
+- [x] **G3-4** Freeze the shared log schema, run manifest, checkpoint-selection rule,
   failure/retry policy, and formal experiment data/figure pipeline. Formal episode
-  logs already include cumulative environment steps and the plotting scripts do not
-  fabricate data; update the manifest, strict aggregator, table schema, and figure
-  contract from a five-training-seed matrix to the frozen eight-training-seed matrix.
+  logs include cumulative environment steps and the plotting scripts do not fabricate
+  data. Manifest v2, the strict aggregator, table schema, figure contract, and tests
+  now require the eight-seed core matrix and emit per-seed/Aggregated normalized
+  throughput AUC artifacts.
 - [ ] **G3-5** Implement and freeze the fair-comparison boundary, configuration,
   budget, and allowed claims for `QMIX-WP`, `MAPPO-WP+A*KD+RuleKD`,
   `MAPPO-WP+A*KD+ShuffleKD`, `MAPPO-NoWP`, and `Heuristic-Dispatcher+A*`.
@@ -135,11 +136,13 @@ and the corresponding Chapter 7 criteria are satisfied.
   narrow-aisle layout and one central-bottleneck/cross-aisle layout. Record their
   map files or generators, hashes, environment IDs, and unified observation/action
   compatibility before viewing formal outcomes.
-- [ ] **G3-7** Freeze completed tasks per 1000 environment steps as the primary
+- [x] **G3-7** Freeze completed tasks per 1000 environment steps as the primary
   utility metric, environment-step learning-curve AUC as the primary sample-
   efficiency metric, collision and energy-death rates as safety constraints, the
-  confirmatory hypothesis family, and a blinded label-audit protocol with at least
-  100 held-out states and two independent raters.
+  five-comparison confirmatory hypothesis family, and a blinded label-audit protocol
+  with 100 held-out states and two independent raters. The protocol, fixed quotas,
+  sampling seed, scoring scale, and reporting rules are recorded in
+  `plan/label-audit-protocol.md` and manifest v2.
 
 ### Gate G4 — Small-Budget Pilot
 

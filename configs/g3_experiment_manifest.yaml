@@ -1,8 +1,10 @@
-schema_version: 1
+schema_version: 2
 status: provisional_g3
 freeze_blockers:
   - G2-1 A* reservation risk review
   - G4 formal environment-step budget selection
+  - G3-5 required baseline and semantic-control implementation
+  - G3-6 unseen-layout implementation and interface audit
 
 code:
   branch: feature/phase4-parallel-cuda
@@ -38,11 +40,13 @@ core_groups:
     offline_llm_kd: true
 
 training:
-  policy_initialization_seeds: [7, 17, 27, 37, 47]
+  policy_initialization_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
+  diagnostic_policy_initialization_seeds: [7, 17, 27]
   environment_seed_groups: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
   g4_pilot_environment_steps: 150000
   formal_environment_steps: null
-  formal_budget_rule: one value selected from matched G4 curves and applied to all groups
+  formal_budget_rule: >-
+    One value selected from matched G4 curves and applied to every formal learning group.
   checkpoint_rule: checkpoint_final.pt
 
 evaluation:
@@ -53,6 +57,41 @@ evaluation:
   paired_across_groups: true
   input_contract: artifacts/formal_evaluation/<artifact_slug>/seed_<NNN>/evaluation.json
   aggregate_output: artifacts/formal_aggregate
+
+training_logs:
+  input_contract: artifacts/formal_training/<artifact_slug>/seed_<NNN>/episodes.csv
+  auc_metric: completed_tasks_per_1000_steps_auc
+  auc_definition: >-
+    Step-normalized trapezoidal AUC of pooled completed-tasks-per-1000-episode-steps
+    samples, with the training seed as the independent statistical unit.
+
+analysis:
+  primary_utility_metric: completed_tasks_per_1000_steps
+  primary_sample_efficiency_metric: completed_tasks_per_1000_steps_auc
+  safety_constraints:
+    - mean_collisions_per_episode
+    - mean_energy_deaths_per_episode
+  confirmatory_comparisons:
+    - full_method_vs_mappo_wp
+    - astar_kd_main_effect
+    - llm_kd_main_effect
+    - full_method_vs_qmix_wp
+    - full_method_vs_rule_kd
+  multiple_testing: Holm within the frozen five-comparison family
+  diagnostic_groups_do_not_support_significance_claims: true
+
+label_audit:
+  held_out_state_count: 100
+  sampling_seed: 20260820
+  scenario_quota:
+    normal_transport: 20
+    priority_conflict: 20
+    narrow_corridor_yield: 20
+    low_battery_diversion: 20
+    station_exit_congestion: 20
+  independent_raters: 2
+  scoring_increment: 0.1
+  protocol: plan/label-audit-protocol.md
 
 energy:
   core_candidate:
