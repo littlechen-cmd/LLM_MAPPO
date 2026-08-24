@@ -47,12 +47,14 @@
 |---|---|---|---|---|
 | D1 | 协调器 yield 动作 | `Action.RIGHT`（让行时原地右转） | 默认 `Action.NOOP`（让行时等待） | 有：`coordinator_yield_action="right"` |
 | D2 | 终点预约 | 终点格整 horizon 持续预约 | 默认 `terminal_hold_steps=2` 有界预约 | 有：`legacy_terminal_reservation=True` |
-| D3 | 缓存签名 | 只含 agent 状态 + 目标 | 追加 `_cur_steps`，跨步缓存失效 | 无（需代码） |
-| D4 | dead/picking-lock 预约 | 一律整 horizon 预约 | dead→`persistent=True`；picking→`terminal_hold_steps=picking_lock_steps` | 无（需代码） |
-| D5 | 偏好路径 | `expand_for_orientation` + `_preferences_for_timed_path` | `plan.action_preferences` + `plan.timed_positions`（`TemporalSearchResult`） | 无（疑似等价重构，需回归验证） |
+| D3 | 缓存签名 | 只含 agent 状态 + 目标 | 追加 `_cur_steps`，跨步缓存失效 | 无开关；**输出中性**（miss 即重算），smoke 实证 `cache_hits=0` |
+| D4 | dead/pickup/picking 预约 | 一律整 horizon 预约 | dead→`persistent=True`（等价整 horizon）；pickup→`terminal_hold_steps=1`；picking→`picking_lock_steps` | 无开关；**残余小差异**（静止期预约时长），smoke 显示可忽略 |
+| D5 | 偏好路径 | `_preferences_for_timed_path(dir, waypoints)` | `_preferences_for_action(result.first_action)` | **代码比对已验证等价**（`_preferences_for_action` 对 NOOP 走 `_noop_preferences`，与旧 `_preferences_for_timed_path` 的 NOOP 分支一致） |
 
 补充：`_edge_swap_yields` 是 `ddf96d9` 从旧 `_occupied_target_yields` 的 `elif` 分支拆出的
-独立函数，二者 yield 集合等价，目的是区分停滞原因码，判定为行为中性（需回归验证）。
+独立函数，二者 yield 集合等价（yield 对象相同，仅用于区分停滞原因码），判定为行为中性。
+综上：D1/D2 有开关可恢复且为**主要行为差异**；D3 输出中性、D4 为静止期预约时长的小差异、
+D5 已验证等价。即「第一步纯开关」可恢复全部主要行为，D3–D5 无需代码改动。
 
 ## 3. 恢复范围对七个子系统的影响
 
