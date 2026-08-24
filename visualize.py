@@ -131,7 +131,53 @@ def parse_args():
     parser.add_argument("--no-live", action="store_true")
     parser.add_argument("--window-width", type=int, default=1400)
     parser.add_argument("--window-height", type=int, default=900)
+    parser.add_argument(
+        "--layout-preview",
+        help=(
+            "Render an ASCII X/./G layout to a PNG without creating an environment, "
+            "loading a checkpoint, or running a policy."
+        ),
+    )
+    parser.add_argument(
+        "--layout-preview-output",
+        help="PNG output path for --layout-preview (defaults beside the layout file).",
+    )
     return parser.parse_args()
+
+
+def render_layout_preview(
+    layout_path: str | Path, output_path: str | Path | None = None, cell_size: int = 28
+) -> Path:
+    """Render a static ASCII layout for review without instantiating a policy."""
+    if cell_size < 8:
+        raise ValueError("cell_size must be at least 8 pixels.")
+    source = Path(layout_path)
+    rows = source.read_text(encoding="utf-8").splitlines()
+    if not rows or not rows[0] or any(len(row) != len(rows[0]) for row in rows):
+        raise ValueError("Layout preview requires a non-empty rectangular text map.")
+    if any(character not in "X.G" for row in rows for character in row):
+        raise ValueError("Layout preview only supports X, ., and G characters.")
+    colors = {".": (244, 247, 250), "X": (74, 91, 110), "G": (42, 157, 143)}
+    height, width = len(rows), len(rows[0])
+    frame = np.zeros((height * cell_size, width * cell_size, 3), dtype=np.uint8)
+    for y, row in enumerate(rows):
+        for x, character in enumerate(row):
+            top, left = y * cell_size, x * cell_size
+            frame[top:top + cell_size, left:left + cell_size] = colors[character]
+            frame[top:top + 1, left:left + cell_size] = (180, 190, 200)
+            frame[top:top + cell_size, left:left + 1] = (180, 190, 200)
+    destination = (
+        Path(output_path)
+        if output_path is not None
+        else source.with_suffix(".png")
+    )
+    try:
+        from PIL import Image
+    except ImportError as error:
+        raise RuntimeError("Static layout previews require Pillow.") from error
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(frame).save(destination)
+    return destination
 
 
 def run_visualization(
@@ -463,6 +509,12 @@ def _json_default(value):
 
 def main():
     args = parse_args()
+    if args.layout_preview:
+        preview = render_layout_preview(
+            args.layout_preview, args.layout_preview_output, args.cell_size
+        )
+        print(json.dumps({"layout_preview": str(preview)}, indent=2))
+        return
     summary = run_visualization(
         controller_kind=args.controller,
         checkpoint_path=args.checkpoint,

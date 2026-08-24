@@ -41,13 +41,13 @@
 
 ## Task group P0-D：共享静态布局预览与废弃内容清理
 
-- [ ] 审查 `visualize.py --layout-preview`，补齐矩形、字符集、最小 cell size、默认/指定输出、
+- [x] 审查 `visualize.py --layout-preview`，补齐矩形、字符集、最小 cell size、默认/指定输出、
   Pillow 缺失和 CLI 早退出测试；
-- [ ] 确认静态预览不创建环境、不加载 checkpoint、不运行策略；
-- [ ] 删除两个未提交的 `configs/layouts/candidates/*rejected_draft.txt`，不归档、不提交替代文件；
-- [ ] 删除或归档其余仅服务旧 8-AGV 合同的非活动内容，确保活动配置和任务无 8-AGV 引用；
-- [ ] 运行焦点 pytest、完整 pytest、规定范围 Flake8 和 `git diff --check`；
-- [ ] 更新 CHANGELOG，创建聚焦静态工具与清理 commit。
+- [x] 确认静态预览不创建环境、不加载 checkpoint、不运行策略；
+- [x] 删除两个未提交的 `configs/layouts/candidates/*rejected_draft.txt`，不归档、不提交替代文件；
+- [x] 删除或归档其余仅服务旧 8-AGV 合同的非活动内容，确保活动配置和任务无 8-AGV 引用；
+- [x] 运行焦点 pytest、完整 pytest、规定范围 Flake8 和 `git diff --check`；
+- [x] 更新 CHANGELOG，创建聚焦静态工具与清理 commit（随本状态同步提交）。
 
 ## Task group P0-E：干净检出与集成候选验证
 

@@ -12,6 +12,10 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 - Added: Behavior-neutral A* diagnostics now preserve the planner-to-execution action
   pipeline, distinct conflict reasons, explicit legacy-schema availability, and count
   conservation while retaining the default NOOP coordinator behavior.
+- Added: Static ASCII layout preview validates geometry, symbols, cell size and Pillow,
+  writes deterministic PNG output, and exits before environment or policy setup.
+- Removed: Two untracked rejected-layout drafts and the obsolete active 8-AGV planning
+  contract; O3 will design unseen topologies from scratch.
 
 ## 2026-08-20
 
