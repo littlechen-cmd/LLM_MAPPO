@@ -14,7 +14,7 @@ P0 ──> O0 ──> O1 ──> O2 ──> O3 ──┐
 
 ## Phase P0：基线整理与双分支建立
 
-- [ ] pending
+- [~] in progress
 - 目标：盘点当前脏工作区，将有效修改拆成聚焦 commit，完成适用验证并合入 `master`；从同一
   已验证 commit 创建 `codex/optimization` 与 `codex/stable`。
 - 文档迁移：审计根 `CONSTITUTION.md` 的有效条款是否已进入 `specs/`，随后删除根宪章；保留并
