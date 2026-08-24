@@ -86,13 +86,17 @@ root-action-conditioned short-horizon planning cost `C_A*^K(s,a)` 构造。每�
 `c_A_search`。Reward Calibration 只能评价已经独立生成的标签，不得反向影响标签生成过程。
 search entropy、path-length confidence、Student disagreement 或任何其他量都不得成为额外权重。
 Motion cost 只决定标签内部动作偏好，整体蒸馏权重仍唯一为
-`w_A,i(t)=lambda_A(t)m_A,i^valid c_A^reward`。论文必须称其为
+O0-C 第 3.3 节的 `lambda_A(t) * m_A,i^valid * m_calib(t)`，RC-KD 再唯一乘
+`c_A_reward(t)`。论文必须称其为
 “root-action-conditioned short-horizon planning cost”，不得表述为学习得到的 RL Q-value。
 
 ### 3.3 Paired Shadow Reward Calibration
 
-正式 horizon 唯一固定为 `H=12`。每次 calibration 从同一完整状态快照和同一外部随机状态
-派生两个隔离 shadow：
+正式 horizon 唯一固定为 `H_reward=12`。每次 calibration 从版本化 canonical state snapshot 和
+同一外部随机状态派生两个预构造、隔离的 shadow。snapshot 必须覆盖实体、任务队列内部状态、
+动态入库、计步、能量/规则、adapter metrics、wrapper、环境及递归 space RNG；导入分支不得调用
+`reset` 或实体构造器。真实 planner/Teacher cache 只读，shadow 使用各自临时 cache 并在结束后
+丢弃。导入前后 canonical hash 必须相等，shadow 完成后真实 state/RNG hash 必须保持不变。
 
 - Student shadow：每步使用当前 MAPPO 的 deterministic argmax；
 - A* shadow：有效机器人使用 Pure Motion Teacher argmax；无效机器人使用 A* shadow 当前状态
@@ -100,32 +104,55 @@ Motion cost 只决定标签内部动作偏好，整体蒸馏权重仍唯一为
 - 两个 shadow 使用完全相同的 hard-mask 生成函数与规则；初始 mask 必须相同，状态分歧后的
   mask 按各自 shadow 当前状态计算，禁止把一个分支的 mask 强加到另一个物理状态；A* 可按
   A* shadow 状态滚动重规划；
-- 外部随机事件使用从共同快照派生、按 episode/step/event key 寻址的 common-random-number
-  stream，不能依赖两个分支碰巧以相同顺序消费可变长度 RNG；
+- 外部随机事件使用 `crn-v1`，按
+  `(episode_seed, real_step, shadow_offset, event_type, event_slot)` 寻址；候选集合按事件 key 与
+  canonical candidate ID 确定性哈希排序，不能依赖两个分支碰巧以相同顺序消费可变长度 RNG；
 - shadow 不得修改真实环境、真实 worker RNG、教师 cache、rollout buffer 或实际训练轨迹。
 
 团队级配对优势定义为：
 
 $$
-\Delta G = \left(\sum_{k=0}^{H-1}\gamma^k r^A_k +
-\gamma^H V_\phi(S^A_{t+H})\right)
-- \left(\sum_{k=0}^{H-1}\gamma^k r^\pi_k +
-\gamma^H V_\phi(S^\pi_{t+H})\right).
+\Delta G = \left(\sum_{k=0}^{H_{reward}-1}\gamma^k r^A_k +
+\gamma^{H_{reward}} V_\phi(S^A_{t+H_{reward}})\right)
+- \left(\sum_{k=0}^{H_{reward}-1}\gamma^k r^\pi_k +
+\gamma^{H_{reward}} V_\phi(S^\pi_{t+H_{reward}})\right).
 $$
 
-每个 shadow 独立处理 terminal：终止分支从其终止时刻停止累计且不 bootstrap，另一分支继续到
-自身 terminal 或 H=12。Critic 只估计未终止分支在 H 步干预后重新交还 Student policy 的
-continuation value，必须 detach，不能接收 calibration 梯度或教师监督。
+每个 shadow 独立处理 `terminated/truncated/deadlock`：终止分支从其终止时刻停止累计且不
+bootstrap，另一分支继续到自身 terminal 或 H=12。Critic 只估计未终止分支在 H 步干预后重新
+交还 Student policy 的 continuation value，使用相同 policy snapshot、`eval/inference_mode`，必须
+detach，不能接收 calibration 梯度或教师监督。`gamma` 绑定同一 PPO 配置字段，不允许独立值。
 
-团队级 `c_A_reward` 可共享，但逐机器人 `valid_mask` 必须保留。有效权重为：
+统一 calibration selection mask `m_calib(t)` 由 `calibration-sampler-v1` 产生：对包含 run/episode/
+environment/step 身份的 canonical key 取 SHA-256 前 8 字节大端无符号整数，仅余数模 16 为 0 的
+状态被选择。选择不读取 reward、Teacher cost、Student、训练性能或 `c_A_reward`。未选择状态
+不运行 shadow，Fixed-KD 与 RC-KD 的 A* KD 权重均为 0。选择状态只有在至少一台机器人
+`valid_mask=1` 时运行 paired shadow。两组运行完全相同的 shadow、日志、EMA 与 sampling density。
+
+团队级 `c_A_reward` 可共享，但逐机器人 `valid_mask` 必须保留。Fixed-KD 与 RC-KD 权重分别为：
 
 $$
-w_{A,i}(t)=\lambda_A(t)m^{valid}_{A,i}c_A^{reward}.
+w_{A,Fixed,i}(t)=\lambda_A(t)m^{valid}_{A,i}m_{calib}(t),
 $$
 
-`c_A_reward` 使用 detached `ΔG` EMA 标准差归一化和正优势门控。O0 必须冻结 EMA decay、
-minimum scale、initialization sample count、更新时机、数值截断和 checkpoint 恢复语义。初始化
-样本数未达到前 `c_A_reward=0`，禁止 Fixed-KD warm start。非正优势不得产生 A* 蒸馏权重。
+$$
+w_{A,RC,i}(t)=\lambda_A(t)m^{valid}_{A,i}m_{calib}(t)c_A^{reward}(t).
+$$
+
+唯一优化差异必须是 `c_A_reward`。`c_A_reward` 使用 detached `ΔG`：前 64 个有限样本以
+Welford population variance 初始化，期间及第 64 个样本均为 0；从第 65 个样本开始，先用此前
+统计计算 `clip(max(ΔG,0)/max(sigma_EMA,1e-3),0,1)`，再以 decay `0.99` 更新 exponential
+mean/variance。多环境按 `(real_step, env_index)` 更新，禁止按 worker 返回顺序。非有限样本权重
+为 0、不计入初始化、不更新 EMA，并作为 O1 No-Go 故障。checkpoint 必须严格保存并恢复 schema、
+count/mean/variance/initialized、sampler、H、decay、minimum scale 和 clipping；禁止缺失时重置。
+
+O1 overhead gate 固定在 A600、12 workers：baseline/H4/H12 各用 16 vector-step warm-up、128 个
+measured vector steps、5 个 fresh-process repeats，计入完整 collection/update、snapshot、shadow、
+Teacher、Critic、EMA 与内存日志，排除进程启动和磁盘 flush；CUDA 计时边界必须同步。
+`median(H12)/median(baseline)<=3.0`。memory gate 在 2 个 warm-up window 后记录 10 个同长度
+window；CPU RSS 或 CUDA allocated 的末三次中位数较首三次增长超过 `max(64 MiB,5%)` 且
+Spearman `rho>=0.80` 即为持续增长。任一 gate 失败必须返回 O0；H4 只作诊断，不得替代 H12，
+也不得静默修改 1/16 sampler。
 
 ### 3.4 三维离线 LLM Semantic Teacher
 
@@ -181,15 +208,17 @@ Student–Teacher Disagreement 完全移出优化权重，只保留诊断日志�
 Fixed-KD 与 Reward-Calibrated KD 除 reward calibration 外必须完全一致：
 
 $$
-w_{A,fixed,i}(t)=\lambda_A(t)m^{valid}_{A,i},
+w_{A,fixed,i}(t)=\lambda_A(t)m^{valid}_{A,i}m_{calib}(t),
 $$
 
 $$
-w_{A,RC,i}(t)=\lambda_A(t)m^{valid}_{A,i}c_A^{reward}.
+w_{A,RC,i}(t)=\lambda_A(t)m^{valid}_{A,i}m_{calib}(t)c_A^{reward}(t).
 $$
 
-Fixed-KD 不得改变 LLM reliability、network、data、schedule、reward、mask、seed、预算或其他
-训练合同。O2 使用 3 个预注册诊断 seed；这不自动改变 E1 的 8-seed 正式预算。
+Fixed-KD 不得改变 calibration sampler、shadow rollout、EMA/logging、LLM reliability、network、
+data、schedule、reward、mask、seed、预算或其他训练合同。未被 sampler 选择的状态两组 A* KD
+均为 0；唯一优化差异是 RC 公式的 `c_A_reward`。O2 使用 3 个预注册诊断 seed；这不自动改变
+E1 的 8-seed 正式预算。
 
 ### 3.6 执行期依赖与 checkpoint
 
@@ -215,7 +244,7 @@ fallback。O0 必须冻结 A600 短基准的步数、并行度、重复次数、
 基线命令。
 
 若 H=12 的每真实环境步 runtime 超过预注册无 shadow 基线的 `3×`，或满足 O0 冻结定义的
-持续 memory growth，O1 判定 No-Go 并返回 O0；禁止静默降低 horizon。
+持续 memory growth，O1 判定 No-Go 并返回 O0；禁止静默降低 horizon 或调整 1/16 sampler。
 
 ## 4. 不在范围内
 

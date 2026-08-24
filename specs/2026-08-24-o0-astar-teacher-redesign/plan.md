@@ -37,18 +37,18 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
 
 ## Task group O0-C：状态分叉、paired rollout 与 Reward Calibration
 
-- [ ] 冻结完整 fork state schema，覆盖仓库实体、任务队列、动态入库、计步、充电/规则状态、
+- [x] 冻结完整 fork state schema，覆盖仓库实体、任务队列、动态入库、计步、充电/规则状态、
   adapter metrics、环境/空间 RNG、外部随机状态、planner/cache 隔离和恢复后哈希等价；
-- [ ] 冻结 Student/A* 两个 H=12 shadow 的逐步动作、分支局部 hard mask、A* shadow 当前状态的
+- [x] 冻结 Student/A* 两个 H=12 shadow 的逐步动作、分支局部 hard mask、A* shadow 当前状态的
   Student fallback、common-random-number stream、滚动重规划、分支独立 terminal、异常和绝不
   污染真实 rollout 的时序；
-- [ ] 冻结 paired discounted team return、detached Critic bootstrap、handoff-to-Student 解释和团队
+- [x] 冻结 paired discounted team return、detached Critic bootstrap、handoff-to-Student 解释和团队
   权重×逐机器人有效掩码公式；
-- [ ] 冻结正优势门控、`ΔG` EMA decay、minimum scale、initialization sample count、更新时机、
+- [x] 冻结正优势门控、`ΔG` EMA decay、minimum scale、initialization sample count、更新时机、
   截断、非有限降级、checkpoint 状态和初始化前零权重；参数不得依据训练性能选择；
-- [ ] 冻结 calibration 采样时机/频率、日志计数守恒与 Fixed-KD 对照开关，证明开关不改变标签、
+- [x] 冻结 calibration 采样时机/频率、日志计数守恒与 Fixed-KD 对照开关，证明开关不改变标签、
   reward、real rollout 或 LLM 分支；
-- [ ] 冻结 H=12/H=4 短基准、3× runtime gate 和持续 memory growth 的可执行测量定义；H=12 不
+- [x] 冻结 H=12/H=4 短基准、3× runtime gate 和持续 memory growth 的可执行测量定义；H=12 不
   通过时 O1 必须 No-Go。
 
 ## Task group O0-D：三维 LLM 数据、可靠性与语义边界

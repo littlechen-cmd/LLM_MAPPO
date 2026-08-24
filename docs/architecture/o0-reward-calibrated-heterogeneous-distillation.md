@@ -565,9 +565,8 @@ Reward Calibration 的时序边界固定为：Pure Motion Teacher 先独立生�
 `motion_preferences/valid_mask`，随后 calibration 才能评价该标签。Motion cost 只决定标签内部
 动作偏好；Reward Calibration 只决定该标签整体是否值得蒸馏：
 
-$$
-w_{A,i}(t)=\lambda_A(t)m_{A,i}^{valid}c_A^{reward}.
-$$
+具体权重由第 10.3 节统一 sampler 合同定义：Fixed 与 RC 都先乘
+`m_calib(t)`，RC 再唯一乘 `c_A_reward(t)`；未选择状态两组权重均为 0。
 
 Calibration 不能重试搜索、修改 root cost/preference、把 invalid 变 valid 或把 reward 写入 cache
 key。Student disagreement 同理只在 label 生成后计算和记录，且不进入权重。
@@ -616,3 +615,348 @@ reward、Student、LLM 或 calibration 不改变结果；改变匿名占用、�
   `python eval/evaluate_dynamic_ingress_astar.py --help`：退出码均为 0；
 - `git diff --check`：退出码 0；相对 P0 `6fcb7d3` 的 Python/YAML/JSON 差异为 0；
 - 两份研究输入继续保持未跟踪，未提前执行 O0-C 或 O0-F。
+
+## 10. O0-C 状态分叉、Paired Shadow 与 Reward Calibration 冻结合同
+
+### 10.1 当前能力审计与唯一分叉方案
+
+当前 `phase3_training.py::_handle_environment_command("snapshot")` 只返回 action mask、历史
+`AStarExpert` preference 与 engagement target，不是环境状态快照。`Phase2Warehouse` 还持有 raw
+observation、`EpisodeMetrics`、deadlock/progress 计数和充电集合；`DynamicWarehouse` 持有任务队列、
+动态入库、能量和累计事件；底层 `Warehouse` 持有实体、grid、request queue、计步和
+`np_random`。因此现状既不能从同一状态派生两个等价分支，也不能证明 shadow 不污染真实 rollout。
+
+O1 唯一允许方案是显式、版本化 canonical snapshot/restore。拒绝以下替代：
+
+- 对整个 Gym/adapter 对象直接 `deepcopy`：renderer、wrapper、space RNG、cache 与对象引用的复制
+  语义不稳定，无法形成跨版本 schema；
+- 从 episode 起点 replay 到分叉点：运行开销高，且任何 RNG 消费或实现变更都会破坏等价性；
+- 共享一个环境反复 restore：异常中断可能把 shadow 状态留在真实 rollout 对象中。
+
+两个 shadow 必须是按同一冻结配置预构造的 branch-local adapter/environment；snapshot import
+不得调用 `reset`、实体构造器或会推进 `Agent.counter/Shelf.counter` 的路径。训练真实环境、Student
+shadow 和 A* shadow 是三个不同对象。
+
+### 10.2 `o0-shadow-state-v1` snapshot schema
+
+snapshot 顶层固定包含 `schema_version=o0-shadow-state-v1`、代码 commit、environment config hash、
+layout hash、run seed、episode index、episode seed、environment index、real global step、episode
+step 和下列 mutable state：
+
+| 区域 | 必须保存的字段 |
+|---|---|
+| Wrapper/clock | wrapper chain class/version 与全部 step-relevant mutable flag：当前 `OrderEnforcing._has_reset`，以及存在时的 `_elapsed_steps/_has_reset`；warehouse `_cur_steps/_cur_inactive_steps` |
+| Agent | `id/x/y/prev_x/prev_y/direction/message/req_action/carrying_shelf_id/canceled_action/has_delivered/battery/dead/picking_lock_steps/task_id/collision_count/blocked_forward_count`；`Agent.counter` 作为真实全局 guard |
+| Shelf | `id/x/y/prev_x/prev_y`；agent 与 shelf 关系只以 ID 恢复，禁止复制跨分支对象引用；`Shelf.counter` 作为真实全局 guard |
+| Base queue/grid | `request_queue` shelf ID 顺序；grid 从实体重建，并与 snapshot grid hash 比较 |
+| TaskQueue | 每个 Task 全字段、`_next_task_index`、按 key 排序的 `_next_label_number` |
+| Dynamic ingress | `_batch_index`、`_shelf_home`、当前 active/completed task 状态及 arrival/completed step |
+| Energy/rules | charging reservations、picking locks、task assignments，以及所有影响 hard mask/target 的 mutable rule state |
+| Environment metrics | `total_collisions`、`total_blocked_forwards`、按原顺序保存的 `last_events` |
+| Adapter | `_raw_observations` 深拷贝、`EpisodeMetrics` 全字段、`_last_progress_step/_last_completed/_last_picked`、排序后的 `_low_battery_active/_charged_pending_recovery/_charging_active` |
+| RNG | environment `_np_random_seed` 与 `np_random.bit_generator.state`；action/observation space 及递归子 space 的 `_np_random` absent sentinel 或完整 state/path；Python、NumPy global、Torch CPU 与全部 CUDA RNG 的完整 state 及 guard digest |
+
+静态 layout、goals、charging/picking stations、reward/energy/dynamic-ingress 参数、动作/观测 schema、
+wrapper 配置和 task completion target 不作为可变 payload 重复写入，但必须进入 environment config
+hash；import 时任一 hash/version 不一致立即拒绝。`grid` 由实体重建并比对 hash；`global_image` 是
+derived cache，branch import 后统一清空并按需重建，不得成为行为状态。
+
+canonical serialization 固定为 UTF-8 JSON、key 排序、无多余空白、显式 dtype/shape、有限浮点；
+NumPy/Torch array 以 dtype、shape、C-order bytes 的 base64 和 SHA-256 同时保存并由 branch-owned
+copy 恢复。snapshot hash 是完整 canonical payload 的 SHA-256。`None` 使用 JSON null，禁止
+NaN/Inf。global RNG state 只用于零污染 guard，不得导入 shadow；shadow 外部事件只用 CRN。
+
+restore 必须满足：
+
+1. 同一 snapshot 导入两个 branch 后，其 canonical state hash 与 snapshot hash 完全相等；
+2. 两分支执行相同 action 与相同 CRN 时，逐步 observation/reward/terminal/info/mask/state hash 相同；
+3. shadow 前后真实环境 state hash、environment/space RNG state、global RNG guard、rollout buffer
+   长度与内容完全不变；
+4. training renderer 必须为 null；非 null 时 calibration fail-closed 并阻塞 O1；
+5. 真实 waypoint planner/Pure Teacher cache 不复制、不写入；每个 shadow 使用独立空临时 cache，
+   结束后整体丢弃。cache 命中只影响耗时，不能影响动作或 return。
+
+### 10.3 统一 deterministic calibration selection mask
+
+Fixed-KD 与 Reward-Calibrated KD 共用唯一 mask `m_calib(t) in {0,1}`。sampler version 固定为
+`calibration-sampler-v1`，canonical key 固定为：
+
+```text
+[sampler_version, run_seed, episode_index, episode_seed,
+ environment_index, real_global_step, episode_step]
+```
+
+取该 JSON 的 SHA-256 digest 前 8 字节，按 big-endian unsigned uint64 解释；仅
+`value mod 16 == 0` 时 `m_calib(t)=1`，否则为 0。该选择器无 RNG 状态，不读取 reward、A* cost、
+validity 数量、Student action/disagreement、LLM、`Delta G`、EMA 或训练性能。预期密度为 1/16，
+不承诺每个短窗口恰好 1/16。
+
+`m_calib=0` 时不创建 snapshot、不运行 shadow，Fixed-KD 与 RC-KD 的 A* KD 权重都严格为 0。
+`m_calib=1` 但 `sum(m_A_valid)=0` 时记录 `selected_no_valid`，不运行 shadow，两个权重仍为 0，
+也不产生 EMA 样本。Fixed/RC 必须使用相同 key、sampler、selected states、shadow engine、日志、
+EMA 更新与 sampling density。
+
+权重合同唯一为：
+
+$$
+w_{A,Fixed,i}(t)=\lambda_A(t)m_{A,i}^{valid}m_{calib}(t),
+$$
+
+$$
+w_{A,RC,i}(t)=\lambda_A(t)m_{A,i}^{valid}m_{calib}(t)c_A^{reward}(t).
+$$
+
+未被 sampler 选择的状态，两组所有机器人 A* KD 权重均为 0。唯一优化差异是
+`c_A_reward(t)`；Fixed 组也必须计算并记录 `Delta G/c_A_reward/EMA`，但权重公式不得读取它。
+
+### 10.4 H=12 paired shadow 逐步时序
+
+`H_reward=12` 是唯一正式 horizon，与 `K_motion=12` 分属不同字段。对每个 selected 且至少一台
+机器人 A* valid 的真实状态，先冻结 policy/Critic 参数引用与 snapshot，再导入两个 shadow：
+
+1. 每个 shadow 根据自身当前状态构建 observation 与同一 production hard-mask 函数；初始 mask
+   必须 bitwise 相同，分歧后禁止跨分支复用 mask；
+2. Student shadow 在 `eval + inference_mode` 下对 masked logits 作 deterministic argmax；相同最大
+   logit 按项目 action index 较小者胜出；
+3. A* shadow 每步按其当前状态滚动查询 Pure Motion Teacher；`valid_mask[i]=1` 时执行
+   `motion_preferences[i]` argmax，概率并列按 O0-B root rank；无效机器人在 **A* shadow 当前状态**
+   重新计算 Student masked argmax，禁止复制 Student shadow action；
+4. Teacher argmax 必须通过该 A* branch 当前 production hard mask；不通过说明 purity/mask 合同
+   破裂，记 `teacher_mask_mismatch` 并使本 calibration 样本失败，禁止改成 NOOP 或静默 fallback；
+5. 两个 joint action 分别 step，各自记录 scalar team reward、terminal、mask、Teacher coverage、
+   Student fallback 和 state hash；
+6. 某分支出现 `terminated`、`truncated` 或 adapter `deadlocked` 即在该步后独立停止；另一分支继续
+   到自身 terminal 或 12 步；停止分支不再生成动作、事件或 reward；
+7. 两个 shadow 和临时 cache 在结果提取后销毁，随后验证真实 state/RNG/buffer guard。
+
+Student 与 Critic 使用配对开始时相同的参数 snapshot；shadow 内不得 optimizer step、dropout、
+BatchNorm 更新、gradient accumulation 或训练 buffer 写入。A* label 在每一步先独立生成，Reward
+Calibration 永远不能修改 query、cost、preference 或 validity。
+
+### 10.5 `crn-v1` 外部随机事件
+
+shadow step 中所有外生随机事件必须通过无状态 `crn-v1` 寻址：
+
+```text
+[crn_version, episode_seed, real_global_step,
+ shadow_offset, event_type, event_slot]
+```
+
+两个分支对相同 key 获得相同 digest；不得从 mutable generator 顺序消费。`event_type` 使用冻结
+字符串枚举，`event_slot` 是该 step 内同类事件从 0 开始的稳定索引。动态入库数量由 key 映射至
+闭区间；无放回候选选择把 canonical candidate ID 与 event key 联合 SHA-256 后排序，取前 N 个。
+即使分支候选集合因动作而不同，也使用同一 key/ranking rule，而不是强迫选择同一实体。当前
+`DynamicWarehouse._spawn_scheduled_batch` 的 `np_random.integers/choice` 必须在 O1 shadow 路径
+改接此接口；真实 rollout 继续使用其真实 RNG，且不能被 shadow 推进。
+
+### 10.6 Return、terminal 与 handoff-to-Student
+
+设分支 `b in {A,pi}` 实际执行长度为 `L_b<=H_reward`，`z_b=1` 表示在 12 步内未发生
+terminated/truncated/deadlock。其团队 return 固定为：
+
+$$
+G_b=\sum_{k=0}^{L_b-1}\gamma^k r_k^b
++z_b\gamma^{H_{reward}}\operatorname{stopgrad}
+\left[V_\phi(S^b_{t+H_{reward}})\right].
+$$
+
+`r_k` 是 production adapter 产生的 scalar `team_reward`，不重新组合环境 per-agent reward；
+`gamma` 直接引用同一 PPO hyperparameter/checkpoint 字段，禁止 calibration 独立 gamma。到达完整
+12 步且未终止才 bootstrap；任何 terminal 分支 `z_b=0`，不 bootstrap，另一分支不受影响。
+
+Critic 在相同冻结 policy snapshot、`eval + inference_mode` 下读取 branch 自身 12 步末 centralized
+state。其语义是：经过 H 步 Student 或 A* 干预后，立刻把控制交回当前 Student policy 的
+continuation value；不是 A* 长期 value，也不训练新的 calibration critic。Critic output 必须
+detach，calibration 不向 Critic、Actor、A* 或 reward 反传。配对优势固定为：
+
+$$
+\Delta G=G_A-G_\pi.
+$$
+
+### 10.7 `c_A_reward` 与 EMA 状态机
+
+EMA scope 是每个训练 run 一份团队级状态，不按 agent、worker 或 Teacher validity 分裂。只有
+`m_calib=1`、至少一台机器人有效、paired rollout 成功且 `Delta G` 有限的样本进入状态机。向量
+环境同一 real step 的结果按 `environment_index` 升序处理；跨步按 `real_global_step`，禁止按
+worker 完成/IPC 返回时间更新。
+
+冻结常数：
+
+```text
+ema_schema = reward-calibration-ema-v1
+initialization_sample_count = 64
+ema_decay = 0.99
+minimum_scale = 1e-3
+weight_clip = [0.0, 1.0]
+```
+
+初始化前 64 个有限 `Delta G` 使用确定性 Welford `count/mean/M2`；population variance 为
+`M2/count`。第 1 至第 64 个样本的 `c_A_reward=0`，第 64 个样本完成后把
+`ema_mean=mean`、`ema_variance=max(M2/64,0)`、`initialized=true`。不允许 RC 分支用 Fixed 权重
+预热；Fixed 对照始终只按第 10.3 节自己的公式。
+
+从第 65 个有限样本开始，必须先使用更新前状态：
+
+$$
+\sigma_{pre}=\max\left(\sqrt{\max(v_{pre},0)},10^{-3}\right),
+$$
+
+$$
+c_A^{reward}=\operatorname{clip}
+\left(\frac{\max(\Delta G,0)}{\sigma_{pre}},0,1\right).
+$$
+
+随后更新：
+
+$$
+\delta=\Delta G-\mu_{pre},\qquad
+\mu_{post}=0.99\mu_{pre}+0.01\Delta G,
+$$
+
+$$
+v_{post}=0.99\left(v_{pre}+0.01\delta^2\right).
+$$
+
+因此 `Delta G<=0` 严格得到 0，正优势才可能蒸馏。`Delta G`、return、bootstrap、EMA 中间量或
+最终权重出现 NaN/Inf 时，该样本 `c_A_reward=0`、不增加 count、不更新 EMA，并记录唯一失败
+原因；O1 视任何此类事件为 No-Go，禁止把它当作普通无优势样本继续验收。
+
+### 10.8 Checkpoint 与恢复
+
+每个 optimization-route checkpoint 必须原子保存：`ema_schema/count/mean/M2/variance/
+initialized`、sampler/crn version、sampler divisor 16、`H_reward=12`、`gamma` 绑定字段、decay、
+minimum scale、clip、last processed `(real_global_step,environment_index)` 及 calibration counters。
+Fixed 与 RC 都保存相同字段和实际 EMA 状态。
+
+resume 时字段缺失、非有限、count/initialized 矛盾、常数或 version 不符、训练 step 倒退均严格
+拒绝加载。禁止重置 EMA、重放已处理样本、从第 64 个样本重新初始化或把历史一/二维 checkpoint
+迁移到该 schema。checkpoint 在某 canonical sample 完整完成并更新 EMA 后写入；恢复从下一个
+sample key 开始，保证恰好一次更新。
+
+### 10.9 日志与计数守恒
+
+每个 real state 至少记录：sampler key/hash、`m_calib`、`any_astar_valid`、shadow attempted/success、
+两分支实际长度/terminal reason/discounted reward/bootstrap/return、`Delta G`、`c_A_reward`、EMA
+pre/post、逐机器人 valid mask、Fixed/RC eligibility weight、fallback 数、snapshot/real/RNG guard
+hash、耗时、CPU RSS、CUDA allocated/reserved 和失败原因。Student disagreement 仍仅为诊断。
+
+每个统计窗口必须满足：
+
+```text
+real_states = sampler_selected + sampler_not_selected
+sampler_selected = selected_no_valid + shadow_attempted
+shadow_attempted = shadow_success + shadow_failure
+finite_delta_g = ema_updates + initialization_updates
+rc_positive_agent_weights <= fixed_eligible_agent_weights
+```
+
+`finite_delta_g` 只统计成功且有限样本；初始化 update 与 EMA update 互斥。Fixed/RC 必须使用同一
+sampler 算法、1/16 密度和条件分支；由于两组 policy 学习后可访问不同状态，不要求 shadow
+success、validity 或 `Delta G` 数值相等，但所有计数都必须各自满足上式。切换 Fixed/RC 公式本身
+不得改变同一 real state 的 Teacher label、reward、real action、real state hash、LLM retrieval 或
+PPO schedule；唯一允许直接改变优化 loss 的字段是乘子 `c_A_reward`。
+
+以下属于 calibration engine failure：snapshot/config/hash 不符、branch import/step exception、CRN
+key/schema 错误、`teacher_mask_mismatch`、Critic/return/EMA 非有限、真实 state/RNG/buffer guard 改变，
+以及 branch/cache 活对象未释放。它们与普通 A* per-agent invalid、单边 terminal 或非正优势不同。
+engine failure 必须在任何 optimizer step 前中止本次更新、写出原始诊断并使 O1 No-Go；不得让
+Fixed 继续 KD、把 RC 置零后继续训练或重试到成功。
+
+### 10.10 H=12 runtime 与 memory No-Go gate
+
+O1 在研究所有者的 A600、冻结 12-worker smoke config 上运行三个 fresh-process 条件：baseline
+（selection/log schema 保留但 shadow engine disabled）、H=4 diagnostic、H=12 formal。每个条件：
+
+- 16 个 vector step warm-up，不计时；
+- 随后 128 个 vector step measured window，包含正常 real collection、相同 PPO update、snapshot/
+  restore、Pure Teacher replan、两个 shadow、Critic bootstrap、EMA 和内存日志；
+- 排除进程创建、warm-up 和最终磁盘 flush；计时前后 `torch.cuda.synchronize()`；
+- 以同一 seed trace 运行 5 个独立 fresh process，报告全部原始秒数和中位数。
+
+正式 runtime gate 为：
+
+$$
+\frac{\operatorname{median}(T_{H12,1:5})}
+{\operatorname{median}(T_{baseline,1:5})}\le 3.0.
+$$
+
+memory gate 对 H=12 使用相同 128-vector-step window：先运行 2 个不计入判定的 warm-up window，
+再连续记录 10 个 window。每个边界执行 Python GC 与 CUDA synchronize，但不得调用
+`empty_cache`；记录 post-window CPU RSS、CUDA allocated 和 reserved。CPU RSS 与 CUDA allocated
+分别计算：
+
+```text
+growth = median(last 3 windows) - median(first 3 windows)
+threshold = max(64 MiB, 0.05 * median(first 3 windows))
+persistent = growth > threshold and Spearman rho(window_index, memory) >= 0.80
+```
+
+任一内存序列 persistent，或 H=12 runtime ratio 超过 3.0，或出现持续 branch/cache 对象计数增长，
+O1 必须 No-Go 并返回 O0。不得把 H=4 提升为正式 horizon，不得静默改变 1/16 sampler、workers、
+measured window 或排除耗时组件。H=4 只用于定位成本来自 snapshot、Teacher、environment step 还是
+Critic。
+
+O1 必须实现并由研究所有者运行以下唯一入口；参数默认值也必须与显式值一致：
+
+```powershell
+python scripts/benchmark_reward_calibration.py `
+  --config configs/optimization/o1_reward_calibration_smoke.yaml `
+  --modes baseline h4 h12 --workers 12 --repeats 5 `
+  --warmup-vector-steps 16 --measure-vector-steps 128 `
+  --memory-warmup-windows 2 --memory-measure-windows 10 `
+  --output artifacts/optimization/o1_reward_calibration_gate
+```
+
+入口必须 fail-closed 校验 CUDA A600、commit/config hash、workers、sampler/crn/EMA version 和所有
+数字参数，并原子写出每次 raw timing/memory/counter JSONL、环境 manifest 与唯一 `summary.json`。
+Codex/工程 AI 只能准备入口与分析结果，不代替研究所有者运行该 A600 基准。
+
+### 10.11 固定边界示例
+
+设 `lambda_A(t)=0.2`、三台机器人 `m_A_valid=[1,0,1]`：
+
+| 条件 | Fixed 权重 | RC 权重 |
+|---|---|---|
+| `m_calib=0` | `[0,0,0]` | `[0,0,0]` |
+| `m_calib=1, c_A_reward=0.4` | `[0.2,0,0.2]` | `[0.08,0,0.08]` |
+| `m_calib=1, c_A_reward=0` | `[0.2,0,0.2]` | `[0,0,0]` |
+
+RC 初始化的第 1–64 个有限样本均为 0；第 65 个样本若 prior `sigma_EMA=0.5`，则
+`Delta G=-0.1/0.1/1.0` 分别得到 `c_A_reward=0/0.2/1.0`。Fixed 权重不读取这些数值，但运行同一
+shadow 和 EMA 更新。
+
+若 A* shadow 在执行两步后 terminal，reward 为 `1,2`，其 return 为 `1+gamma*2`，不含 Critic；
+Student shadow 仍可独立运行至 H=12 并在未终止时 bootstrap。若两分支在初始状态采用完全相同
+joint action，则 CRN 与 restore 等价性要求其逐步 transition hash 相同。
+
+### 10.12 O0-C 允许主张与 O1 验收边界
+
+O0-C 完成后只允许主张：paired calibration 的状态、随机性、时序、数学、对照和失败合同已经
+预注册。不得声称 snapshot 已实现、H=12 已通过 3x gate、EMA 改善训练、A* label 有正优势或
+RC-KD 优于 Fixed-KD。
+
+O1 必须以测试证明 snapshot round-trip、相同行为等价、真实状态/RNG/buffer 零污染、单边
+terminal、全 invalid、mask mismatch、非有限、初始化 64/65 边界、checkpoint resume 恰好一次、
+sampler determinism/density、Fixed/RC 同 mask 与计数守恒。A600 runtime/memory 命令只由研究
+所有者运行；Codex 准备命令并分析结果。
+
+### 10.13 O0-C 验证证据
+
+验证日期为 2026-08-25，运行环境为项目 `py310`（Python 3.10.19）。
+
+- O0-C 六项 plan checklist 全部完成；O0-D checked item 为 0；
+- 只读代码审计确认现有 worker `snapshot` 不包含状态，mutable state 分布在
+  `Warehouse/DynamicWarehouse/Phase2Warehouse/OrderEnforcing/TaskQueue`，并确认 step-time 随机
+  动态入库仍使用 environment `np_random`，因此 O1 必须实现本章 snapshot 与 CRN 边界；
+- 合同断言确认 `o0-shadow-state-v1/calibration-sampler-v1/crn-v1`、Fixed/RC 共同 `m_calib`、
+  `0.99/1e-3/64` EMA、H=12、严格恢复和 A600 gate 均有唯一无占位定义；
+- 对 65,536 个 canonical sampler key 的确定性公式检查选中 4,073 个，观测密度
+  `0.062149`，与期望 `1/16=0.0625` 一致；这只验证 hash sampler，不是训练证据；
+- 固定权重示例、正/负优势截断与第 64/65 个 EMA 样本边界检查通过；
+- `python -m pytest`：退出码 0，184 tests passed；
+- `python -m flake8 rware llm_mappo eval train scripts figures/core`：退出码 0；
+- `python visualize.py --help` 与
+  `python eval/evaluate_dynamic_ingress_astar.py --help`：退出码均为 0；
+- `git diff --check`：退出码 0；相对 P0 `6fcb7d3` 的 Python/YAML/JSON 差异为 0；
+- 未实现/运行 snapshot、paired shadow、EMA、训练或 A600 runtime/memory gate，未提前执行
+  O0-D；两份根目录研究输入继续保持未跟踪。

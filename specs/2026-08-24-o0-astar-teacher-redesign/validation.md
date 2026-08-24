@@ -31,16 +31,21 @@
 
 ### 1.3 Reward Calibration
 
-- [ ] 完整 fork schema 覆盖真实状态、动态入库、全部 RNG、adapter 状态、metrics 和 cache 隔离；
+- [ ] 完整 fork schema 覆盖真实状态、动态入库、全部 RNG、adapter 状态、metrics、wrapper、
+  cache 隔离、canonical hash round-trip 和真实 rollout 零污染；
 - [ ] paired shadows 从相同状态/外部随机状态开始，使用 deterministic Student、Pure Teacher
   argmax、A* 分支当前状态的 Student fallback、相同 mask 规则、分支局部 mask 和按事件寻址的
   common-random-number stream；
 - [ ] H=12、return、terminal、detached bootstrap、handoff-to-Student 和团队权重×逐机器人 mask
   的数学合同唯一且量纲一致；单边 terminal 后另一分支继续且只有未终止 H-step 末态 bootstrap；
-- [ ] EMA decay、minimum scale、initialization sample count、更新/截断/恢复和初始化前零权重均为
-  精确常数/算法；
+- [ ] `calibration-sampler-v1` 精确实现 1/16 deterministic selection；Fixed/RC 共用
+  `m_calib(t)`、shadow、日志、EMA 与 sampling density，未选择状态两组 A* KD 均为 0，唯一优化
+  差异为 `c_A_reward`；
+- [ ] EMA `0.99/1e-3/64`、Welford 初始化、exponential mean/variance、先计算后更新、顺序、
+  `[0,1]` 截断、非有限 No-Go、严格恢复和 RC 初始化前零权重均精确冻结；
 - [ ] disagreement 不参与权重，calibration 不反传 Critic/A*，shadow 不污染 real rollout；
-- [ ] H=12 runtime `3×` gate 和持续 memory growth 具有可执行命令、计时边界、样本数与判定式；
+- [ ] H=12 runtime `3×` gate 和持续 memory growth 具有 A600/12-worker、16/128 vector-step、5-repeat、
+  2+10-window、`max(64 MiB,5%)` 与 `rho>=0.80` 的可执行判定式；
   H=4 只作诊断，不能通过降 horizon 通过 O1。
 
 ### 1.4 三维 LLM 教师
@@ -60,7 +65,8 @@
 - [ ] 新三维网络的 shape、梯度边界、late fusion、semantic detach、Motion Prior loss 与 PPO
   所有权精确冻结；
 - [ ] `λ_A(t)`/`λ_L(t)` schedule 为所有相关组共同的预注册确定算法；
-- [ ] Fixed-KD 和 RC-KD 只在 `c_A_reward` 上有差异，O2 三诊断 seed 已登记但未运行；
+- [ ] Fixed-KD 和 RC-KD 共用 `m_calib`、shadow/EMA/logging 且只在 `c_A_reward` 上有优化差异，
+  O2 三诊断 seed 已登记但未运行；
 - [ ] 三维 checkpoint 从新初始化并与历史一维/二维严格隔离，loader/metadata/EMA 恢复无歧义；
 - [ ] 无 Teacher 派生物理观测和 waypoint 兼容边界完整；执行期无需 A* 仍是后续证据条件主张；
 - [ ] 每项 O0 后允许主张均有合同依据，所有性能/泛化/收敛/部署主张保持禁止。

@@ -5,6 +5,10 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O0-C freezes a canonical branch-state snapshot, H=12 paired Student/A*
+  shadows, event-addressed common random numbers, detached return calibration, a
+  deterministic shared 1/16 calibration mask for Fixed/RC-KD, EMA state, and the
+  A600 3x runtime/persistent-memory No-Go gate.
 - Added: O0-B freezes `pure-motion-astar-v1` as an independent, anonymous-occupancy
   bounded A* teacher with a 12-step motion window, 512-expansion budget, motion-only
   support, deterministic tie-break, binary per-agent validity, and fail-closed output.
