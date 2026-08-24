@@ -5,15 +5,15 @@
 
 ## Task group P0-A：盘点、保护与迁移矩阵
 
-- [ ] 记录当前分支、HEAD、`master`、远端引用、ahead/behind、tracked diff、删除项和未跟踪文件；
-- [ ] 在 `artifacts/p0_safety_backup/` 保存不进入 Git 的 dirty diff、未跟踪文件清单与哈希，
+- [x] 记录当前分支、HEAD、`master`、远端引用、ahead/behind、tracked diff、删除项和未跟踪文件；
+- [x] 在 `artifacts/p0_safety_backup/` 保存不进入 Git 的 dirty diff、未跟踪文件清单与哈希，
   并验证备份可读；
-- [ ] 备份除 rejected layout 草案外的全部未跟踪文件内容并记录 SHA-256；两个 rejected layout
+- [x] 备份除 rejected layout 草案外的全部未跟踪文件内容并记录 SHA-256；两个 rejected layout
   不复制到安全备份；
-- [ ] 创建 `docs/p0-migration-audit.md`，逐文件记录来源、处置、目标位置、责任任务组和理由；
-- [ ] 将所有文件唯一分类为共享保留、历史归档、替代后删除、路线延后或 rejected layout 删除；
-- [ ] 对任何无法唯一分类的内容暂停并取得研究所有者决定；
-- [ ] 仅提交迁移审计与对应 CHANGELOG，不提交安全备份。
+- [x] 创建 `docs/p0-migration-audit.md`，逐文件记录来源、处置、目标位置、责任任务组和理由；
+- [x] 将所有文件唯一分类为共享保留、历史归档、替代后删除、路线延后或 rejected layout 删除；
+- [x] 对任何无法唯一分类的内容暂停并取得研究所有者决定（本次不存在无法唯一分类项）；
+- [x] 仅提交迁移审计、对应 CHANGELOG 和本计划的状态同步，不提交安全备份。
 
 ## Task group P0-B：宪章、任务与历史文档迁移
 

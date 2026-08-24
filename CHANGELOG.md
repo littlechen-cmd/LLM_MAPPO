@@ -3,6 +3,11 @@
 This file records meaningful project engineering and experiment-governance
 changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
+## 2026-08-24
+
+- Added: P0 migration audit and ignored safety backup uniquely classify and protect
+  every pre-existing workspace change before baseline integration.
+
 ## 2026-08-20
 
 - Added: A complete G3 architecture task package now fixes ownership, evidence,
