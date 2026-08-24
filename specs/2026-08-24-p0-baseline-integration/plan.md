@@ -17,17 +17,17 @@
 
 ## Task group P0-B：宪章、任务与历史文档迁移
 
-- [ ] 核对根 `CONSTITUTION.md` 中仍有效的条款均已进入 `specs/mission.md`、
+- [x] 核对根 `CONSTITUTION.md` 中仍有效的条款均已进入 `specs/mission.md`、
   `specs/tech-stack.md` 或 `specs/roadmap.md`；
-- [ ] 将能支撑旧 Phase 3/4 artifact、配置或复现口径的历史文档迁入 `docs/archive/`，保持内容
+- [x] 将能支撑旧 Phase 3/4 artifact、配置或复现口径的历史文档迁入 `docs/archive/`，保持内容
   不被改写并记录原路径；
-- [ ] 创建 `docs/archive/README.md`，记录原路径、新路径及对应 artifact/配置；
-- [ ] 删除根 `CONSTITUTION.md`、已被 specs 替代的旧 Constitution/TASKS 交接包和重复任务包；
-- [ ] 重写根 `TASKS.md`，与 P0、O0–O3、S1–S2、D1、E1–E3 一一对应，保留已完成工作作为
+- [x] 创建 `docs/archive/README.md`，记录原路径、新路径及对应 artifact/配置；
+- [x] 删除根 `CONSTITUTION.md`、已被 specs 替代的旧 Constitution/TASKS 交接包和重复任务包；
+- [x] 重写根 `TASKS.md`，与 P0、O0–O3、S1–S2、D1、E1–E3 一一对应，保留已完成工作作为
   “历史基线证据”而不是旧活动 Gate；
-- [ ] 更新活动协议、manifest 和追溯文档，移除 8-AGV 压力合同，且不提前写入 O3 新布局设计；
-- [ ] 更新 CHANGELOG，运行文档引用、阶段 ID、重复任务入口和 Markdown 静态检查；
-- [ ] 创建聚焦文档迁移 commit。
+- [x] 更新活动协议、manifest 和追溯文档，移除 8-AGV 压力合同，且不提前写入 O3 新布局设计；
+- [x] 更新 CHANGELOG，运行文档引用、阶段 ID、重复任务入口和 Markdown 静态检查；
+- [x] 创建聚焦文档迁移 commit（随本状态同步提交）。
 
 ## Task group P0-C：共享 A* 诊断基础设施
 

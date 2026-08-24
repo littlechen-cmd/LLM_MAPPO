@@ -2,7 +2,8 @@
 
 This repository combines the RWARE Gymnasium environment with the staged
 LLM-MAPPO dynamic-warehouse research implementation. The current architecture
-and experiment contract are documented in `CONSTITUTION.md`, `TASKS.md`, and
+and experiment contract are documented in `specs/mission.md`,
+`specs/tech-stack.md`, `specs/roadmap.md`, `TASKS.md`, and
 `plan/experiment-protocol.md`.
 
 ## Development Setup

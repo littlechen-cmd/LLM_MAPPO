@@ -2,8 +2,9 @@
 
 ## Project Structure & Module Organization
 
-The Git repository is the workspace root. `CONSTITUTION.md` records the
-architecture and experiment contract, while `TASKS.md` tracks gate progress.
+The Git repository is the workspace root. `specs/mission.md`,
+`specs/tech-stack.md`, and `specs/roadmap.md` record the architecture and
+experiment contract, while `TASKS.md` tracks phase progress.
 The `rware/` package implements the Gymnasium environment; `warehouse.py`
 contains core dynamics, `rendering.py` visualization, and `rware/utils/`
 spaces and wrappers. Tests live in `tests/`, images in `docs/img/`, and
@@ -44,19 +45,19 @@ Treat rule-layer safety checks as hard constraints. LLM output may adjust priori
 - The project owner approves major architecture and experiment decisions, runs
   long training, multi-seed evaluation, and long replay jobs, and publishes Git
   changes.
-- The core architect maintains project direction, `CONSTITUTION.md`, and
-  `TASKS.md`; decomposes work; checks consistency across code, experiments, and
+- The core architect maintains project direction, the three constitution files
+  under `specs/`, and `TASKS.md`; decomposes work; checks consistency across code, experiments, and
   paper claims; reviews evidence; and provides recommendations. The architect
   may make small documentation, planning, and configuration corrections but
   delegates substantial code implementation to the project engineer.
 - The project engineer implements architect-approved task packets, adds tests,
   runs short validations, prepares owner-run commands, and creates focused local
-  commits. The engineer must not modify `CONSTITUTION.md`, mark `TASKS.md` items
+  commits. The engineer must not modify the constitution files under `specs/`, mark `TASKS.md` items
   complete, change frozen experimental decisions, push, or merge without explicit
   owner or architect authorization.
 - Completion of an engineering implementation does not by itself pass a Gate.
   The architect updates `TASKS.md` only after reviewing the required evidence and
-  the corresponding Constitution acceptance criteria.
+  the corresponding feature-spec and Roadmap acceptance criteria.
 - Every completed `TASKS.md` subtask must update root `CHANGELOG.md` in the same
   commit. Use the standard filename `CHANGELOG.md`, newest date first, with one
   concise entry per meaningful change.

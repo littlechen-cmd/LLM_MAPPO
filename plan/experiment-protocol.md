@@ -1,120 +1,54 @@
-# G3 正式实验协议（预冻结版）
+# 双路线决策前实验协议（P0）
 
-## 1. 状态与适用范围
+## 1. 状态与权威来源
 
-本协议用于 G3 准备和 G4 pilot。当前状态为 **PROVISIONAL**：核心充电参数已由 G2-3
-选定，正式环境交互预算等待 G4。除此之外的组别定义、seed、评估、checkpoint 和失败处理规则
-不得根据结果按组修改。唯一机器可读入口为 `configs/g3_experiment_manifest.yaml`。
+当前状态为 `PREDECISION`，不授权正式训练或正式 seed 评估。项目方向、技术边界和阶段顺序
+分别以 `specs/mission.md`、`specs/tech-stack.md`、`specs/roadmap.md` 为准；机器可读入口为
+`configs/g3_experiment_manifest.yaml`。旧 G3/G2A 文档仅位于 `docs/archive/`，不构成活动合同。
 
-## 2. 数据与划分
+## 2. 共同冻结边界
 
-- 环境数据由动态仓库在线生成，不使用固定轨迹训练集。
-- 正式学习组的策略初始化 seed 固定为
-  `7/17/27/37/47/57/67/77`；`MAPPO-NoWP` 与 ShuffleKD 诊断各使用固定 seed
-  `7/17/27`，不得被用于显著性主张。
-- 每个训练 seed 内使用环境 seed-group `100–109` 轮换。
-- G2 配置校准已使用 seed `0–9`；它们不得再次作为正式泛化证据。
-- 主评估改用未见 seed `200–209`，每个 seed 20 episodes，动作采用确定性 argmax。
-- 离线 LLM 数据固定为 400 条 DeepSeek-V4-Flash 标签，SHA-256 为
-  `9928f5756c1261589946eb3aedf8dc2c1fa6f73f037cd05c31afca0683161797`。
-- 非 LLM 组不读取标签；LLM 组只在训练期读取缓存，评估和执行在线 API 调用为 0。
+- MAPPO 输出最终离散动作；规则层管理任务队列、合法目标、固定阈值充电安全与硬约束；
+- 离线 LLM 只提供 `task_commitment`、`local_assertiveness`，训练、评估和执行在线调用为 0；
+- A* 提供 waypoint 与训练期路径/运动监督，具体教师语义分别由 O0 或 S1 冻结；
+- 当前方法仍依赖执行期 A* waypoint；`MAPPO-NoWP` 只用于量化该依赖；
+- 核心效用指标为完成任务数/1000 environment steps，样本效率指标为对应训练曲线标准化 AUC；
+- team reward、完成率、成功率、步数、碰撞、死锁、能量死亡和充电暴露作为次要/安全指标；
+- 统计单位是训练 seed，禁止把同一 checkpoint 的 episode 当成独立训练样本；
+- checkpoint 统一使用 `checkpoint_final.pt`，不得按结果挑选最佳 checkpoint；
+- 基础设施失败按同 seed/同配置重跑并留痕；算法、数值和安全失败作为结果保留。
 
-## 3. 核心 2×2 对照与公平性
+## 3. 路线隔离
 
-| 组别 | 执行期 waypoint | A* KL | 离线 LLMKD |
-|---|---:|---:|---:|
-| MAPPO-WP | 是 | 否 | 否 |
-| MAPPO-WP+A*KD | 是 | 是 | 否 |
-| MAPPO-WP+LLMKD | 是 | 否 | 是 |
-| MAPPO-WP+A*KD+LLMKD | 是 | 是 | 是 |
+| 合同 | 优化路线 | 稳定路线 |
+|---|---|---|
+| 分支 | `codex/optimization` | `codex/stable` |
+| artifact | `artifacts/optimization/` | `artifacts/stable/` |
+| A* 前置 | O0 人工设计批准、O1/O2 通过 | S1 恢复旧 Phase 3 行为并验收 |
+| 环境 | O3 冻结的核心环境与两个真正未见拓扑 | 3 AGV、目标 9、动态入库 |
+| 能源 | 后续规格冻结，当前不得借 P0 调参 | `1.10/0.30/0.80` 直接冻结 |
+| 泛化边界 | 仅在 O3 与正式结果支持时主张跨拓扑 | 禁止跨拓扑和规模泛化主张 |
 
-四组保持相同网络宽度、环境、观测、动作、奖励、seed、优化器和环境交互预算。无 LLM
-组保留双语义分支参数，但 motion head 的语义输入固定为零且语义损失为零；这避免随机
-未训练语义进入动作，同时保持模型结构一致。关闭 A* KL 不移除执行期 waypoint。
+共享环境、评估和日志修复只能以明确、已测试 commit 合并；禁止跨分支复制覆盖文件或混用
+artifact。稳定路线预备训练只能写入 `artifacts/stable/predecision/`，不得参与 D1 或最终统计。
 
-核心能源配置固定为 `battery_cost_scale=1.10`、进入充电阈值 `0.30`、释放阈值 `0.80`。
-该配置由四组共同使用；充电时机仍由规则层决定，不属于 MAPPO 或 LLMKD 的方法贡献。
+## 4. D1 前允许工作
 
-G3-5 已冻结以下比较边界，机器可读定义见 manifest 的 `required_comparisons`。所有学习组
-共享环境、动作 mask、规则安全层、奖励、能源配置、训练 seed 轮换、G4/正式环境交互预算和
-预算后调参禁令；QMIX-WP 也共享 runtime waypoint 输入，但不使用 A*KL 或任何语义标签。
+- 优化路线：O0 架构设计、O1 实现与短验证、O2 owner-run 校准及结果审查、O3 未见拓扑冻结；
+- 稳定路线：S1 实现与 owner-run 验收；满足 Roadmap 条件时可执行隔离的 S2；
+- 不使用正式评估 seed `200–209`；不把旧 5-AGV A* 吞吐诊断直接当成稳定环境证据；
+- 不执行同图 8-AGV 压力实验，也不在 P0 预先设计 O3 地图内容。
 
-| 组别 | 角色 | 训练 seed | 可支持的主张 |
-|---|---|---|---|
-| QMIX-WP | 外部 MARL | 8 | 与完整方法的确认性外部基线比较 |
-| MAPPO-WP+A*KD+RuleKD | 规则语义控制 | 8 | LLM 标签价值的确认性比较 |
-| MAPPO-WP+A*KD+ShuffleKD | 标签配对诊断 | 3 | 仅机制方向、方差和失败模式 |
-| MAPPO-NoWP | waypoint 消融 | 3 | 仅 runtime waypoint 机制诊断 |
-| Heuristic-Dispatcher+A* | 非学习规划器 | 无训练 | 与学习系统的端到端规划参照 |
+## 5. D1 与正式实验
 
-RuleKD 由同一 400 状态缓存用 `frozen-rule-kd-v1` 确定性映射为双语义标签；ShuffleKD 使用
-seed `20260820` 对完整二元标签实施无固定点置换，保持标签边际分布而破坏状态—标签配对。
-两者均保持 A*KD 开启。NoWP 不改变 actor observation 宽度，而是把 waypoint 特征槽固定为零、
-关闭 waypoint reward 和 A*KL，以隔离执行期 waypoint 信息。Heuristic-Dispatcher+A* 复用
-同一任务分派、动作 mask 和安全层，以 `AStarExpert` 输出动作。
+D1 只依据预注册前置门选择一条路线。若优化路线完成 O0–O3 则选择优化路线，否则选择已通过
+S1 的稳定路线；两者均未通过时停止。正式评估固定 `200–209 × 20 episodes`、确定性动作与
+final checkpoint，且只能在 D1 后由 E1 冻结完整组别、交互预算、统计假设和命令。
 
-若 G4-5 的短时 smoke 证明 QMIX 不能共享上述环境接口，才可在查看任何正式结果前替换为
-预注册的 IPPO-WP 或 VDN-WP，并记录失败证据；不得删除外部 MARL 比较。
+优化路线的证据预算为核心 2×2、QMIX-WP、RuleKD 各 8 seed，ShuffleKD/NoWP 各 3 诊断
+seed；稳定路线为核心 2×2、RuleKD 各 5 seed、NoWP 3 seed。启发式 A* 均不训练。
 
-## 4. 预算与 checkpoint
+## 6. 长任务权限
 
-- G4 pilot：每组每 seed 精确使用 150,000 个 team-environment steps；`episodes=1000`
-  只是安全上限，不是比较预算。
-- G5 正式预算：G4 后按同一平台期规则选择一个数值，全部正式学习组共同使用。
-- checkpoint：统一使用 `checkpoint_final.pt`，不得按结果挑选最佳 checkpoint。
-- 同时报告实际完成 episodes、环境步数和墙钟时间。
-
-## 5. 核心指标与不平衡处理
-
-唯一主要效用指标：完成任务数/1000 environment steps。主要样本效率指标：每个训练 seed
-的`completed_tasks_per_1000_steps_auc`，即按环境步数对完成任务吞吐曲线的标准化梯形 AUC。
-安全约束：碰撞率和能量死亡率不得因完整方法的效用收益而显著恶化。任务完成率、成功率、
-平均 episode steps、team reward、阻塞、死锁、最低电量和充电拥堵均为次要指标。优先级
-指标按任务标签分别报告完成时延，并同时报告宏平均，避免高频标签支配结论。累计 reward
-不替代任务数。
-
-统计单位是训练 seed，而不是把同一 checkpoint 的 200 个评估 episode 当作独立样本。
-每个训练 seed 先在相同评估 seed 上聚合，再进行四组配对比较。
-
-## 6. 主比较、消融与统计
-
-- 确认性比较族固定为五项：完整双教师方法对 MAPPO-WP、A*KD 主效应、LLMKD 主效应、
-  完整方法对 QMIX-WP、完整方法对 MAPPO-WP+A*KD+RuleKD。
-- 2×2 交互效应和其余指标属于探索性分析；不以单个组的最好数值替代互补性结论。
-- 每项比较以训练 seed 配对。报告 mean ± SD、95% bootstrap CI、配对效应量和双侧精确
-  符号翻转检验；五项确认性比较使用同一 Holm 校正族。诊断组三 seed只报告方向、方差和
-  失败模式，不报告显著性。
-
-## 7. 效率评价
-
-- 样本效率：标准化吞吐 AUC、达到预注册完成率阈值所需环境步数。
-- 训练效率：环境步/秒、墙钟时间、显存和内存；并发训练吞吐不解释为算法收益。
-- 执行效率：确定性单步推理时间、A* 调用/缓存/搜索诊断、在线 LLM 调用数（目标 0）。
-
-## 8. 泛化与鲁棒性
-
-主评估之外，统一测试两个未见布局（窄通道、中心瓶颈/交叉通道）、AGV 数量、任务强度、
-拥堵和能源压力。两个布局必须不参与训练及 G2/G4 调参，并首先仅作 zero-shot
-evaluation-only 证据。`1.20/0.20/0.80` 只作为所有组共同的 evaluation-only 能源压力
-场景；若 LLMKD 组退化更小，可支持“能源受限协调鲁棒性”主张，但不能声称 LLM 自主决定
-充电时机。
-
-## 9. 可解释性边界
-
-XAI 不是论文独立贡献。语义输出按优先级/场景的分布仅作机制诊断，不作为因果解释。
-无 LLM 组的语义输出固定为零，不与 LLM 组进行伪对称语义质量比较。标签质量必须额外
-通过至少100个冻结状态的双人盲审比较LLM与规则标签，记录一致率、评价者间一致性和分歧。
-
-## 10. 失败、缺失与异常规则
-
-- 基础设施故障：相同 seed、相同配置从头重跑并保留故障记录。
-- NaN、能量死亡、死锁或性能失败：作为结果保留，不静默重跑。
-- Windows 收尾 PermissionError：仅在 CSV/tmp/checkpoint 内容核验后修复产物，不改模型。
-- 证据不可恢复：标记无效并用同一预注册 seed 替换；不得换成更有利 seed。
-- 不删除异常值；必要时同时报告含/不含敏感性分析并说明原因。
-
-## 11. 冻结条件
-
-G2-1 完成，G3-5/G3-6 的必需实现与 G4-5 smoke 通过，G4 确定正式步数，正式学习组
-配置测试通过，Git commit、数据哈希、运行清单、评估命令和产物 schema 全部记录后，
-才能把本协议从 PROVISIONAL 改为 FROZEN。
+全部长训练、长评估和长回放由研究所有者在 A600 手动启动。Codex 与项目工程师仅准备命令、
+执行短验证并分析产物；任何文档或工程实现都不得把“命令已准备”写成“实验已完成”。

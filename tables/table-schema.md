@@ -1,21 +1,20 @@
 # 正式结果表格 Schema
 
-所有数值必须来自冻结日志。重复训练以训练 seed 为统计单位，报告 mean ± SD 与 95% CI。
+所有数值必须来自 D1 后冻结日志。重复训练以训练 seed 为统计单位，报告 mean ± SD 与 95% CI。
 同一 checkpoint 的 `10 × 20` 评估回合先按 checkpoint 聚合，不能作为独立统计样本。
 
 | Table | Purpose | Rows | Metrics | Data source | Replacement owner |
 |---|---|---|---|---|---|
-| T1 Core 2×2 | 主比较、两教师主效应与交互 | 四核心组 × 8 seed | 主要任务吞吐、完成率、steps、reward、碰撞、死亡 | held-out evaluation JSON | `eval/aggregate_formal_results.py` |
-| T2 Required baselines | 外部MARL、规则语义与规划比较 | 完整方法、QMIX-WP、RuleKD、启发式A* | 主要任务吞吐、安全、效应量 | held-out evaluation JSON | G3-5/G6 聚合脚本 |
-| T3 Efficiency | 样本与计算效率 | 正式学习组 × 8 seed | 标准化吞吐AUC、达阈值步数、env steps/s、墙钟、显存、A*时延、在线调用 | episodes/updates/runtime/summary | `eval/aggregate_formal_results.py` + G6 |
-| T4 Robustness and priority | 泛化、能源压力与优先级 | 组别 × 未见布局/场景/优先级 | 性能退化、优先级时延、充电暴露、恢复、死亡、拥堵 | robustness and task-level JSON | G6 聚合脚本 |
-| T5 Teacher quality | 标签质量、规则对照与成本 | LLM、规则、扰乱标签、双人盲审 | 合法率、一致率、稳定性、时延、成本、评价者间一致性 | label audit logs | G3-5/G6 |
+| T1 Core 2×2 | 主比较、两教师主效应与交互 | 优化：四组 × 8 seed；稳定：四组 × 5 seed | 主要任务吞吐、完成率、steps、reward、碰撞、死亡 | selected-route held-out JSON | E1 适配后的聚合器 |
+| T2 Required baselines | 规则语义、规划及可选外部 MARL | 优化：QMIX-WP、RuleKD、启发式A*；稳定：RuleKD、启发式A* | 主要任务吞吐、安全、效应量 | selected-route held-out JSON | E1/E3 聚合脚本 |
+| T3 Efficiency | 样本与计算效率 | 所选路线正式学习组 | 标准化吞吐AUC、达阈值步数、env steps/s、墙钟、显存、A*时延、在线调用 | episodes/updates/runtime/summary | E3 |
+| T4 Robustness and priority | 优先级；优化路线另含跨拓扑 | 所选组 × 场景/优先级 | 性能退化、优先级时延、充电暴露、恢复、死亡、拥堵 | robustness and task-level JSON | E3 |
+| T5 Teacher quality | 标签质量、规则对照与成本 | 优化：LLM/规则/扰乱/盲审；稳定：LLM/规则 | 合法率、一致率、稳定性、时延、成本、评价者间一致性 | label audit logs | E1/E3 |
 
 不得创建不能支持方法主张的表；规划阶段不填充模拟数值。
 
-T1–T3 的独立统计单位为训练 seed。G3 冻结的确认性比较族为：完整方法对 MAPPO-WP、
-A*KD 主效应、LLMKD 主效应、完整方法对 QMIX-WP、完整方法对 RuleKD；五项比较使用
-同一 Holm 校正族。交互效应、其余指标、NoWP 和ShuffleKD均为探索性或诊断性分析。
+T1–T3 的独立统计单位为训练 seed。确认性比较族和多重校正规则在 D1 后由 E1 按所选路线
+冻结；不得把优化路线五项比较直接套到缺少 QMIX/ShuffleKD 的稳定路线。NoWP 始终为诊断性。
 
 当前核心流水线输出：
 
@@ -28,5 +27,5 @@ A*KD 主效应、LLMKD 主效应、完整方法对 QMIX-WP、完整方法对 Rul
 - `learning_curve_auc_per_training_seed.csv`：每个核心组、每个训练 seed 的标准化吞吐 AUC；
 - `learning_curve_auc_summary.csv`：AUC 的 mean、SD 与训练 seed bootstrap 95% CI。
 
-QMIX-WP、RuleKD、启发式A*、未见布局和盲审的正式输出路径在 G3-5/G3-6 实现后补入，
-不得用占位或模拟数值替代真实冻结日志。
+QMIX-WP、RuleKD、启发式 A*、O3 未见拓扑和盲审的正式输出路径在 E1 按所选路线补入，
+不得用同图 8-AGV、占位或模拟数值替代真实冻结日志。

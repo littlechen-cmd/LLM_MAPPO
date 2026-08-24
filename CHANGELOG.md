@@ -7,6 +7,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 - Added: P0 migration audit and ignored safety backup uniquely classify and protect
   every pre-existing workspace change before baseline integration.
+- Changed: Replaced the root Constitution and legacy G2/G3 task entrances with the
+  dual-route specs, route-aware protocol/manifest/TASKS, and indexed historical archive.
 
 ## 2026-08-20
 

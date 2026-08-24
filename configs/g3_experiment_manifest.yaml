@@ -1,15 +1,50 @@
-schema_version: 2
-status: provisional_g3
+schema_version: 3
+status: p0_dual_route_predecision
 freeze_blockers:
-  - G2-1 A* reservation risk review
-  - G4 formal environment-step budget selection
-  - G3-5 required baseline and semantic-control implementation
-  - G3-6 unseen-layout implementation and interface audit
+  - P0 baseline integration and dual branch creation
+  - O0 optimization A-star teacher design approval or S1 stable restoration acceptance
+  - D1 single-route decision
+  - E1 selected-route protocol freeze
 
 code:
   branch: feature/phase4-parallel-cuda
   preparation_base_commit: 18d52f04865ed3629ba5f37c4f01794d3eeb0a2d
   frozen_commit: null
+
+route_profiles:
+  optimization:
+    branch: codex/optimization
+    artifact_root: artifacts/optimization
+    prerequisites: [O0, O1, O2, O3]
+    formal_training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
+    diagnostic_training_seeds: [7, 17, 27]
+    unseen_topologies: pending_o3_design_from_scratch
+    same_map_eight_agv_stress: prohibited
+  stable:
+    branch: codex/stable
+    artifact_root: artifacts/stable
+    predecision_artifact_root: artifacts/stable/predecision
+    prerequisite: S1
+    environment:
+      n_agents: 3
+      task_completion_target: 9
+      dynamic_ingress: true
+    energy:
+      battery_cost_scale: 1.1
+      charge_threshold: 0.30
+      charge_release_threshold: 0.8
+    formal_training_seeds: [7, 17, 27, 37, 47]
+    diagnostic_training_seeds: [7, 17, 27]
+    unseen_topologies: prohibited
+    same_map_eight_agv_stress: prohibited
+
+astar_teacher_contract:
+  status: route_specific_not_frozen
+  optimization_contract: pending_o0_human_approval
+  stable_contract: pending_s1_historical_behavior_restoration
+  runtime_waypoint_dependency: retained
+  high_level_task_priority_or_charging_decisions: prohibited
+  heuristic_baseline_action_source: AStarExpert.act
 
 offline_llm_dataset:
   path: artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl
@@ -18,6 +53,7 @@ offline_llm_dataset:
   online_calls_during_training_and_evaluation: 0
 
 core_groups:
+  # Compatibility matrix only. E1 must bind each selected-route group to a frozen config.
   MAPPO-WP:
     config: configs/g3_core_mappo_wp.yaml
     artifact_slug: mappo_wp
@@ -115,11 +151,12 @@ evaluation:
   episodes_per_seed: 20
   aggregation_unit: training seed
   paired_across_groups: true
-  input_contract: artifacts/formal_evaluation/<artifact_slug>/seed_<NNN>/evaluation.json
-  aggregate_output: artifacts/formal_aggregate
+  input_contract: artifacts/<selected_route>/formal_evaluation/<artifact_slug>/seed_<NNN>/evaluation.json
+  aggregate_output: artifacts/<selected_route>/formal_aggregate
+  same_map_eight_agv_stress: prohibited
 
 training_logs:
-  input_contract: artifacts/formal_training/<artifact_slug>/seed_<NNN>/episodes.csv
+  input_contract: artifacts/<selected_route>/formal_training/<artifact_slug>/seed_<NNN>/episodes.csv
   auc_metric: completed_tasks_per_1000_steps_auc
   auc_definition: >-
     Step-normalized trapezoidal AUC of pooled completed-tasks-per-1000-episode-steps
@@ -176,8 +213,8 @@ energy:
       episodes_with_charging_rate: 0.01
       mean_energy_deaths_per_episode: 0.005
       rejection_reason: insufficient held-out charging exposure and one energy death
-  robustness_stress:
-    role: evaluation_only
+  historical_diagnostic_stress:
+    role: nonformal_until_e1_explicitly_selected
     battery_cost_scale: 1.2
     charge_threshold: 0.2
     charge_release_threshold: 0.8

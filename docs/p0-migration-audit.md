@@ -71,7 +71,22 @@
 | `plan/task-package/g3-6-fleet-load-stress.md` | ?? | 替代后删除 | 删除；安全备份保留原副本 | P0-B | 已放弃的活动 8-AGV 任务包 |
 | `plan/task-package/g3-architecture-task-package.md` | ?? | 替代后删除 | 删除；安全备份保留原副本 | P0-B | 与已删除 tracked G3 包重复且被 specs 替代 |
 
-## 4. 实施边界
+## 4. 根 Constitution 有效条款覆盖
+
+| 旧章节 | 仍有效内容 | 新权威位置 | 迁移结论 |
+|---|---|---|---|
+| 1–3 Mission、科学问题与主张 | 方法优先、双教师 MAPPO、零在线 LLM、执行期仍依赖 A*、禁止单 seed/旧环境直接对照 | `specs/mission.md` | 已覆盖；补入英文论文定位与暂定题目 |
+| 4 方法边界 | MAPPO 最终动作、规则层硬约束、A*/LLM 职责、NoWP 边界 | `specs/mission.md`、`specs/tech-stack.md` | 已覆盖；旧 G2A 具体实现未升级为批准方案 |
+| 5 Tech Stack | Python 3.10、PyTorch/Gymnasium、py310、本地短验、A600 长任务、Git/数据隔离 | `specs/tech-stack.md` | 已覆盖 |
+| 6 正式实验宪章 | 2×2、RuleKD/ShuffleKD/NoWP/QMIX、seed 级统计、final checkpoint、失败规则 | `specs/tech-stack.md`、`specs/roadmap.md`、活动协议 | 已按优化/稳定路线分别覆盖 |
+| 7–8 Gate/Roadmap | 阶段验收与实施顺序 | `specs/roadmap.md`、根 `TASKS.md` | 已由 P0/O/S/D/E 阶段替代旧 G0–G7 |
+| 9–11 复现、风险与优先级 | 配置/commit/日志冻结、异常保留、安全和证据优先 | `specs/mission.md`、`specs/tech-stack.md`、活动协议 | 已覆盖 |
+
+旧文档中“同图 8-AGV 为必需证据”、已冻结 G2A 局部教师实现和旧 G3/G4 时序已被研究所有者
+后续决策明确替代，不属于仍有效条款。在线自然语言加急、CBS、自适应教师权重、学习式充电和
+Linux 迁移仍是非阻塞未来方向，不进入当前 Roadmap。
+
+## 5. 实施边界
 
 - P0-B 只能执行上表已经冻结的文档处置，不引入 O0/O3/S1 的算法或环境实现；
 - P0-C、P0-D 只有在对应回归验证通过后才能接纳现有代码；若验证表明行为改变，必须停止并
