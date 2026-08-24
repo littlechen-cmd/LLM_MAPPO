@@ -25,7 +25,8 @@
   轨迹等价，三段计数守恒，焦点回归和完整测试通过。
 - [x] **P0-D** 验证静态布局预览并删除 rejected layout 与废弃 8-AGV 内容；8 项焦点回归、
   184 项完整测试、Flake8、CLI 与实际 PNG smoke 通过。
-- [ ] **P0-E** 完成干净 checkout、完整测试、静态检查、配置/CLI/smoke 和验证报告。
+- [x] **P0-E** 完成干净 checkout、完整测试、静态检查、配置/CLI/smoke 和验证报告；证据见
+  `docs/p0-validation-report.md`。
 - [ ] **P0-F** 完成稳定路线工程师交接；fast-forward 本地 `master`；从同一 SHA 建立
   `codex/optimization` 与 `codex/stable`。
 

@@ -51,14 +51,14 @@
 
 ## Task group P0-E：干净检出与集成候选验证
 
-- [ ] 确认工作树中没有未归属的 tracked/untracked 修改，`artifacts/p0_safety_backup/` 仍未进入
+- [x] 确认工作树中没有未归属的 tracked/untracked 修改，`artifacts/p0_safety_backup/` 仍未进入
   暂存区；
-- [ ] 从干净 checkout 验证 `python -m pip install -e ".[dev,train]"` 或现有等价安装合同；
-- [ ] 在 `py310` 运行完整 pytest、规定范围 Flake8、核心 YAML/config 解析、关键 CLI `--help`、
+- [x] 从干净 checkout 验证 `python -m pip install -e ".[dev,train]"` 或现有等价安装合同；
+- [x] 在 `py310` 运行完整 pytest、规定范围 Flake8、核心 YAML/config 解析、关键 CLI `--help`、
   A* 诊断 smoke 和 layout preview smoke；
-- [ ] 运行阶段 ID/文档引用/唯一任务入口检查与 `git diff --check`；
-- [ ] 生成 `docs/p0-validation-report.md`，记录命令、退出码、测试计数、环境、commit 和未执行项；
-- [ ] 更新 CHANGELOG，创建集成候选验证 commit；任何失败均阻塞 P0-F。
+- [x] 运行阶段 ID/文档引用/唯一任务入口检查与 `git diff --check`；
+- [x] 生成 `docs/p0-validation-report.md`，记录命令、退出码、测试计数、环境、commit 和未执行项；
+- [x] 更新 CHANGELOG，创建集成候选验证 commit；任何失败均阻塞 P0-F。
 
 ## Task group P0-F：稳定路线工程师交接与双分支落位
 

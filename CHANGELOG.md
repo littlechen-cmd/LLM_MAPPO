@@ -16,6 +16,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
   writes deterministic PNG output, and exits before environment or policy setup.
 - Removed: Two untracked rejected-layout drafts and the obsolete active 8-AGV planning
   contract; O3 will design unseen topologies from scratch.
+- Verified: A clean P0 checkout installs through an isolated editable prefix and passes
+  184 tests, focused A*/layout/config checks, 30 YAML parses, CLI smokes, and Flake8.
 
 ## 2026-08-20
 
