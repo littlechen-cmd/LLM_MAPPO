@@ -5,6 +5,13 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O0-D freezes a leakage-resistant 61-dimensional `semantic-view-v3`,
+  five-point three-score anchors, truncated-exponential OOD reliability selected
+  in the semantic view space, Flash-to-Pro pilot gating, immutable 60/800 label
+  datasets, fingerprint isolation, and formal dataset-level No-Go thresholds.
+- Changed: All project Python work must directly invoke the existing canonical
+  `D:\Anaconda3\envs\py310\python.exe`; PATH lookup, Conda activation, and virtual
+  environment creation or modification are prohibited.
 - Added: O0-C freezes a canonical branch-state snapshot, H=12 paired Student/A*
   shadows, event-addressed common random numbers, detached return calibration, a
   deterministic shared 1/16 calibration mask for Fixed/RC-KD, EMA state, and the

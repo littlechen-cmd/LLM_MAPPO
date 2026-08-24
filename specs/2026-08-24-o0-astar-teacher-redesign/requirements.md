@@ -162,8 +162,17 @@ Spearman `rho>=0.80` 即为持续增长。任一 gate 失败必须返回 O0；H4
 2. `yielding_preference`：局部冲突中主动等待/让行的语义倾向；
 3. `coordination_risk`：局部交互导致冲突、拥堵、死锁或协作失败的风险。
 
-三维值均位于 `[0,1]`。LLM 不输出低层动作、路径、任务分配或强制让行决策。标签使用整记录
-validity：任一字段缺失、非有限、越界或不满足 schema 时整条记录无效，不做逐维蒸馏门控。
+三维值均位于 `[0,1]`，使用 canonical architecture 第 11.2 节的固定五点量表 anchors。高
+`yielding_preference` 表示更倾向让行；三维之间不存在互补、蕴含或代数推导关系。LLM 不输出
+低层动作、路径、任务分配、通行权裁决或强制让行决策。输出必须正好包含三个 score 与对应三个
+reason；reason 只作 audit metadata。任一字段缺失、额外、非有限、越界或不满足 schema 时整条
+记录无效，不做逐维蒸馏门控。
+
+LLM 输入和 OOD 距离共同使用 `semantic-view-v3`。该视图排除 AGV/scenario ID、`scenario_type`、
+raw/full observation、A*、reservation、coordinator、reward、Student 与 calibration；保留 focal
+任务/资源/朝向/局部静态几何，以及三个匿名邻居的相对位置、载货、电量、死亡、任务优先级、
+目标阶段和充电站状态。邻居选择距离、无 ID tie-break、机器人中心坐标、padding、mask、类别顺序
+和唯一 61D 数值编码全部以 canonical architecture 第 11.3 节为准。
 
 LLM reliability 唯一形式为：
 
@@ -178,19 +187,27 @@ O0 只能比较两个预注册候选：
 - 基于标签集 leave-one-out 距离分位数的分段线性权重。
 
 选择依据只允许 coverage、distance-to-weight monotonicity 和 numerical stability；不得依据 MAPPO
-训练性能或下游 reward。O0 必须冻结唯一公式、特征标准化、近邻数、参考分位数/截断、零方差
-处理、无邻居降级和日志字段。选择证据只能来自现有已存 observation corpus 和由冻结现有场景
-生成器产生的未标注确定性状态，不得生成新 LLM label；若证据不足以唯一选择，O0 必须阻塞并
-请求研究所有者裁定，不能把选择权下放 O1。
+训练性能或下游 reward。旧 615D full observation 审计只算 preliminary evidence。O0-D 已在从
+历史 400 条 corpus 精确重建的 61D `semantic-view-v3` 上完成五折比较，并选择第 11.4 节的截断
+指数公式；正式 reference set 仅包含 validity=1 的 formal records。特征标准化、k=3 距离、
+leave-one-out 分位数、零方差、无邻居和非有限降级均不得由 O1 修改。
 
-新数据合同固定为 60 条 prompt/schema pilot 与 800 条正式标签。pilot 不进入训练。沿用现有
-标签生成链路的基础模型，但 O0 必须追溯并冻结精确 model ID/version、prompt、temperature、
-scenario generator、parser、seed/配额、原始响应保留和失败处理。正式数据只能在上述合同冻结
-后由研究所有者运行生成。60 条 pilot 和 800 条 formal labels 均由研究所有者运行；Codex 只
-准备冻结命令、检查产物和分析结果。
+新数据合同固定为 60 条 prompt/schema pilot 与 800 条正式记录，五类场景分别为 12/160 条。
+pilot 不进入训练。首选 `deepseek-v4-flash`；只有 60 条完整 pilot 达到第 11.6 节预注册的系统性
+失败条件时，才允许保持场景、prompt/schema 和所有参数不变，将整组 pilot 切换为
+`deepseek-v4-pro`。Pro 仍失败则 O0-D No-Go。模型为 non-thinking、temperature=0、JSON object、
+max_tokens=1024；prompt、生成器、parser、seed/配额、原始请求/响应、重试、缺失、fingerprint 和
+内容哈希合同见第 11.5 至 11.8 节。
+
+60 pilot 和 800 formal 只能由研究所有者运行；Codex 只准备命令、检查产物和分析结果。formal
+生成期间 `system_fingerprint` 变化必须暂停；一个 formal dataset 只能含一个 fingerprint。正式
+记录禁止逐条人工改分、针对坏标签重试或选择性删除。若 validity 或确定性 100 条分层复核未
+达到第 11.8 节阈值，整个 formal dataset No-Go，返回 O0-D、升级 prompt/schema version、重跑
+pilot，并重新生成完整 800 条。
 
 标签审计同时报告 Pearson 与 Spearman 相关系数；任意维度对 `|ρ|>=0.80` 只触发人工复核，
-不得自动删除标签、修改语义定义或按训练结果重生成数据。
+不得自动删除标签、修改语义定义或按训练结果重生成数据。相关性本身不属于 dataset No-Go，
+只能形成具名 owner 审核结论。
 
 ### 3.5 Student、损失与 schedule
 

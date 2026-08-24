@@ -2,7 +2,11 @@
 
 ## 语言与运行环境
 
-- Python 3.10；项目统一使用现有 `py310` Conda 环境；
+- Python 3.10；项目必须始终使用已有 `py310` 环境；
+- 唯一规范 Python 解释器为 `D:\Anaconda3\envs\py310\python.exe`；所有 Python
+  命令、测试、脚本与训练必须直接调用该解释器，不依赖 `python` 已加入 `PATH`，也不要求
+  `conda activate py310`；
+- 禁止为本项目创建、重建、升级或修改虚拟环境；
 - UTF-8、LF、四空格缩进，最大行长 89；
 - 本地 Intel i5、无独显 Huawei MateBook 用于文档、代码开发、静态检查、确定性测试和短
   smoke；

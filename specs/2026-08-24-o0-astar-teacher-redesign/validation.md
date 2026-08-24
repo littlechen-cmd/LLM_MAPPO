@@ -50,15 +50,18 @@
 
 ### 1.4 三维 LLM 教师
 
-- [ ] 三个标签名称、定义、顺序、范围、整记录 validity、共享 OOD 与 forbidden outputs 精确冻结；
-- [ ] reliability 公式只包含 validity×OOD，不存在 consistency 或逐维门控；
-- [ ] 两个 OOD 候选的输入、输出、coverage、monotonicity、stability 证据完整，并按预注册标准
-  从现有 observation/unlabelled state 选择唯一公式而未生成新标签或查看训练性能；证据不足时
-  O0 阻塞而不把选择下放 O1；
-- [ ] 60 pilot/800 formal 的精确 model ID/version、prompt、temperature、scenario generator、
-  parser、seed/配额、原始响应、失败和哈希合同完整；
-- [ ] pilot 与 formal 严格隔离；Pearson/Spearman 和 `|ρ|>=0.80` 只触发人工复核；
-- [ ] 数据生成责任明确为研究所有者，O0 未调用 LLM 或生成标签。
+- [x] 三个标签名称、定义、顺序、五点 anchors、范围、整记录 validity、共享 OOD、reason
+  audit-only 与 forbidden outputs 精确冻结；
+- [x] reliability 公式只包含 validity×OOD，不存在 consistency、逐维门控或 disagreement 权重；
+- [x] `semantic-view-v3` 的 61D 顺序、类别、匿名邻居距离/tie-break/排序、机器人中心坐标、
+  padding 和 mask 唯一；正式 OOD 不读取旧 615D full observation；
+- [x] 两个 OOD 候选已在重建 61D corpus 上仅按 coverage、monotonicity、stability 选择截断指数；
+  旧 615D 结果明确仅为 preliminary evidence，未生成新标签或查看训练性能；
+- [x] 60 pilot/800 formal 的精确模型切换门、prompt、temperature、scenario generator、parser、
+  seed/配额、原始响应、fingerprint、失败和哈希合同完整；
+- [x] pilot/formal 隔离、formal dataset-level validity/100-record review No-Go、禁止逐条修复和整组
+  version 升级规则完整；Pearson/Spearman 与 `|ρ|>=0.80` 只触发人工复核；
+- [x] 数据生成责任明确为研究所有者；O0 未调用 LLM、生成 pilot/formal 标签或使用所提供 key。
 
 ### 1.5 Student、兼容、对照与主张
 
@@ -90,10 +93,10 @@
 ```powershell
 git diff --check
 git status --short
-python -m pytest
-python -m flake8 rware llm_mappo eval train scripts figures/core
-python visualize.py --help
-python eval/evaluate_dynamic_ingress_astar.py --help
+D:\Anaconda3\envs\py310\python.exe -m pytest
+D:\Anaconda3\envs\py310\python.exe -m flake8 rware llm_mappo eval train scripts figures/core
+D:\Anaconda3\envs\py310\python.exe visualize.py --help
+D:\Anaconda3\envs\py310\python.exe eval/evaluate_dynamic_ingress_astar.py --help
 ```
 
 此外必须执行并记录：

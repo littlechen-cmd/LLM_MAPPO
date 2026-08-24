@@ -53,18 +53,21 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
 
 ## Task group O0-D：三维 LLM 数据、可靠性与语义边界
 
-- [ ] 冻结 `task_persistence/yielding_preference/coordination_risk` 的输入语义、输出 schema、互斥
+- [x] 冻结 `task_persistence/yielding_preference/coordination_risk` 的输入语义、输出 schema、互斥
   禁令、整记录 validity 和共享 OOD 权重，删除 consistency 与逐维门控；
-- [ ] 比较截断指数距离和 leave-one-out 分段线性两个预注册 OOD 候选，只用 coverage、
-  monotonicity 与 numerical stability 形成选择证据；证据只用现有 observation corpus 与未标注
-  确定性状态，证据不足时阻塞而不下放 O1，并冻结唯一公式及所有边界处理；
-- [ ] 冻结 60 条 pilot 与 800 条 formal labels 的场景分层、seed/配额、精确模型版本、prompt、
+- [x] 冻结完整 `semantic-view-v3` schema、匿名邻居选择/排序/坐标/padding/mask 和 61 维确定性
+  数值表示；旧 615D full observation 不得作为正式 OOD feature space；
+- [x] 在由历史 corpus 精确重建的 61D `semantic-view-v3` 上比较截断指数距离和 leave-one-out
+  分段线性两个预注册 OOD 候选，只用 coverage、monotonicity 与 numerical stability 选择截断
+  指数并冻结公式和边界处理；旧 615D 结果只保留为 preliminary evidence；
+- [x] 冻结 60 条 pilot 与 800 条 formal labels 的场景分层、seed/配额、精确模型版本、prompt、
   temperature、生成器、parser、原始响应、重试、缺失和内容哈希合同；
-- [ ] 冻结 pilot 与 formal 的隔离和人工复核流程；二者都只能由研究所有者运行，pilot 不得进入
-  训练，formal 生成只能在 prompt/schema 冻结后启动；
-- [ ] 冻结 Pearson/Spearman 报告、`|ρ|>=0.80` 人工复核触发和“不自动改语义/删标签/重生成”
-  规则；
-- [ ] 定义 LLM OOD、validity、覆盖、损失、disagreement-only 日志及零有效样本的计数守恒。
+- [x] 冻结 Flash pilot 系统性失败后整组切换 `deepseek-v4-pro` 的唯一门，以及 pilot/formal 隔离、
+  人工复核和 dataset-level No-Go；两者只能由研究所有者运行，pilot 不得进入训练；
+- [x] 冻结 Pearson/Spearman、`|ρ|>=0.80` 人工复核、固定量表 anchors、reason audit-only 和禁止
+  逐条改分/坏标签重试/选择性删除规则；
+- [x] 定义 LLM OOD、validity、覆盖、损失、disagreement-only 日志、fingerprint 暂停和零有效
+  样本的计数守恒。
 
 ## Task group O0-E：Student、schedule、执行依赖与兼容合同
 

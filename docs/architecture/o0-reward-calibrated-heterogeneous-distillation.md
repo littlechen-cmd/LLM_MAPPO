@@ -899,7 +899,7 @@ Critic。
 O1 必须实现并由研究所有者运行以下唯一入口；参数默认值也必须与显式值一致：
 
 ```powershell
-python scripts/benchmark_reward_calibration.py `
+D:\Anaconda3\envs\py310\python.exe scripts/benchmark_reward_calibration.py `
   --config configs/optimization/o1_reward_calibration_smoke.yaml `
   --modes baseline h4 h12 --workers 12 --repeats 5 `
   --warmup-vector-steps 16 --measure-vector-steps 128 `
@@ -960,3 +960,410 @@ sampler determinism/density、Fixed/RC 同 mask 与计数守恒。A600 runtime/m
 - `git diff --check`：退出码 0；相对 P0 `6fcb7d3` 的 Python/YAML/JSON 差异为 0；
 - 未实现/运行 snapshot、paired shadow、EMA、训练或 A600 runtime/memory gate，未提前执行
   O0-D；两份根目录研究输入继续保持未跟踪。
+
+## 11. O0-D：三维离线语义、数据与 OOD reliability
+
+### 11.1 职责与因果边界
+
+离线 LLM 只回答三个高层语义问题：当前任务是否值得继续坚持、当前局部交互是否倾向让行、
+当前局部交互风险有多高。它不输出或暗示具体离散动作、路径、任务分配、目标改写、通行权裁决、
+充电站控制或规则层 override。训练和执行期均不调用在线 LLM。
+
+三个正式 score 按以下顺序形成
+`z_L=[task_persistence,yielding_preference,coordination_risk] in [0,1]^3`：
+
+1. `task_persistence`：继续当前已分配运输任务的合理程度；不等于立即移动，也不等于任务优先级；
+2. `yielding_preference`：在当前局部交互中主动延迟或让行的语义倾向；高值表示更倾向让行，但
+   不是 `NOOP` 或任何动作命令；
+3. `coordination_risk`：当前局部交互造成冲突、拥堵、死锁或协作失败的风险程度；不是行为建议。
+
+三维相互独立解释，不存在 `yielding=1-persistence`、高 risk 必然高 yielding、高 persistence 必然
+低 yielding 或其他代数/逻辑蕴含。高 persistence 与高 yielding 可以同时成立，例如任务仍值得
+完成但当前应先让行；高 risk 与低 yielding 也可以同时成立，例如双方均有强任务理由而冲突风险
+很高。
+
+### 11.2 固定 score anchors 与输出 schema
+
+三个维度共享五点位置，但每个位置按本维含义解释；模型可在 anchors 之间连续插值：
+
+| score | task persistence | yielding preference | coordination risk |
+|---:|---|---|---|
+| 0.00 | 没有继续当前任务的合理依据 | 没有主动让行的语义依据 | 没有可识别的局部协作风险 |
+| 0.25 | 暂停/转移理由明显强于继续 | 只有较弱的让行理由 | 存在轻微但可忽略的交互风险 |
+| 0.50 | 继续与暂停理由大致平衡 | 让行与不让行理由大致平衡 | 存在实质但非高危的交互风险 |
+| 0.75 | 继续理由明显强于暂停 | 有强理由主动让行 | 存在高冲突、拥堵或协作失败风险 |
+| 1.00 | 在给定语义事实下继续任务具有压倒性理由 | 在给定语义事实下让行具有压倒性理由 | 若无协调极可能立即或持续失败 |
+
+LLM response 必须是单个 JSON object，正好六个 key：
+
+```json
+{
+  "task_persistence": 0.0,
+  "task_persistence_reason": "...",
+  "yielding_preference": 0.0,
+  "yielding_preference_reason": "...",
+  "coordination_risk": 0.0,
+  "coordination_risk_reason": "..."
+}
+```
+
+score 必须是非 bool、有限 JSON number 且位于 `[0,1]`；reason 必须是去除首尾空白后长度
+`1..1000` 的 string。缺失或额外 key、markdown fence、JSON 前后文字、重复 key、NaN/Inf、越界、
+错误类型或空 reason 均使整条 record `validity=0`。parser 不裁剪分数、不提取部分字段、不做逐维
+validity。三个 reason 仅随原始数据保存供人工审计，不进入 Student 输入、semantic target、loss、
+OOD feature、reliability、schedule 或 checkpoint tensor。
+
+### 11.3 `semantic-view-v3` 与唯一 61D 数值编码
+
+同一 canonical semantic view 同时产生：供 LLM 阅读的 JSON view，以及供 kNN/OOD 使用的 61D
+float64 vector。两者来自同一冻结环境快照和同一 encoder version；禁止从旧 615D actor/full
+observation 直接计算正式 OOD 距离。`scenario_type`、scenario/AGV/任务 ID 只存在 dataset
+provenance，不进入 view 或 61D vector。
+
+LLM JSON view 的完整 schema 为：
+
+```text
+semantic_view_version = semantic-view-v3
+layout_hash: string
+focal:
+  battery_ratio: float [0,1]
+  loaded: bool
+  priority_present: bool
+  priority_rank: float [0,1]
+  target_kind: task | delivery | charging | idle
+  orientation: up | down | left | right
+  on_highway: bool
+  at_charging_station: bool
+  at_picking_station: bool
+  adjacent_highway: {forward: bool, right: bool, backward: bool, left: bool}
+neighbors: exactly 3 records
+  mask: bool
+  relative_forward: float [-1,1]
+  relative_right: float [-1,1]
+  normalized_manhattan_distance: float [0,1]
+  loaded: bool
+  battery_ratio: float [0,1]
+  dead: bool
+  priority_present: bool
+  priority_rank: float [0,1]
+  target_kind: task | delivery | charging | idle
+  at_charging_station: bool
+```
+
+`priority_rank=(ord(label[0])-ord('A'))/25`；无任务时 `priority_present=false` 且 rank=0。target kind
+one-hot 顺序固定为 `[task,delivery,charging,idle]`，orientation one-hot 顺序固定为
+`[up,down,left,right]`。所有 bool 编码为 0/1。
+
+邻居候选是除 focal 外的所有机器人。world delta 为 `dx=x_peer-x_focal`、
+`dy=y_peer-y_focal`，选择距离为未归一化 Manhattan `d_M=abs(dx)+abs(dy)`。以 focal 朝向建立右手
+语义坐标：
+
+```text
+up:    forward=-dy, right= dx
+down:  forward= dy, right=-dx
+left:  forward=-dx, right=-dy
+right: forward= dx, right= dy
+```
+
+`relative_forward/right` 除以 `M=max(width-1,height-1)`；Manhattan 距离除以
+`(width-1)+(height-1)`。候选按以下 tuple 升序排列并取前三个：
+
+```text
+(d_M, forward, right, -loaded, dead, -priority_present,
+ priority_rank, target_kind_rank, battery_ratio, -at_charging_station)
+```
+
+禁止以 ID tie-break。若 tuple 完全相同，则两个候选在所有保留字段上相同，交换顺序不会改变
+61D vector；实现必须通过 permutation test 证明这一点。机器人不足三个时在末尾补全；padding
+record 的 14 个数全部为 0，其中 `mask=0`。真实邻居 `mask=1`，即使其他字段恰为 0 也不能与
+padding 混淆。匿名化只删除身份，不删除 loaded、battery、dead、priority、target kind 或 station
+等判断 yielding/risk 必需的语义。
+
+61D vector 顺序固定为：
+
+```text
+focal[19] =
+  battery, loaded, priority_present, priority_rank,
+  target_kind_onehot[4], orientation_onehot[4],
+  on_highway, at_charging_station, at_picking_station,
+  adjacent_highway[forward,right,backward,left]
+
+neighbor_0[14], neighbor_1[14], neighbor_2[14] =
+  mask, relative_forward, relative_right, normalized_manhattan_distance,
+  loaded, battery, dead, priority_present, priority_rank,
+  target_kind_onehot[4], at_charging_station
+```
+
+任何 schema/version/layout hash 不符、非法类别、非有限值、范围错误或 vector 维数不为 61 均使
+该 query fail closed，`c_validity=0`、`c_OOD=0`，不得回退到 615D observation。
+
+### 11.4 OOD 候选证据与正式公式
+
+O0-D 只读取历史
+`artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl` 的场景事实和 observation
+字段，没有读取旧 LLM score、训练 reward 或下游性能。历史记录包含 focal 朝向、位置、匿名化所
+需邻居相对位置/状态和固定 layout，因此可以重建上述 61D view；重建矩阵为 `400x61`、185 个唯一
+向量，按 record 顺序 little-endian float64 的 SHA-256 为
+`371ff59c5f9b89fc87a9dbd9a45bd22ca9b023e0cbfbd2dbe369ff0e7fb05caa`。此前 400x615
+审计只保留为 preliminary evidence，不能支持正式公式。
+
+五折由 `uint32(SHA256(scenario_id)[0:8]) mod 5` 固定。每折只用 reference fold 计算 population
+mean/std，`scale_j=max(std_j,1e-3)`，并将每个向量标准化。两个向量的距离是 61 维 normalized
+Euclidean：`sqrt(mean((z_q-z_r)^2))`。query distance `d` 是三个最近 reference vector 距离的
+算术平均；reference LOO distance 同样排除自身后取三个最近邻均值。分位数使用 Hyndman-Fan
+type 7，即 NumPy `method="linear"`。
+
+两个预注册候选为：
+
+$$
+c_{exp}(d)=
+\begin{cases}
+\exp(-d/q_{95}), & d\le q_{99},\\
+0, & d>q_{99},
+\end{cases}
+$$
+
+$$
+c_{linear}(d)=
+\begin{cases}
+1, & d\le q_{50},\\
+(q_{95}-d)/(q_{95}-q_{50}), & q_{50}<d<q_{95},\\
+0, & d\ge q_{95}.
+\end{cases}
+$$
+
+61D 五折结果：
+
+| 候选 | `c>0` coverage | `c>=0.1` coverage | mean weight | Spearman(distance,weight) | max float32/64 diff | boundary flip | finite |
+|---|---:|---:|---:|---:|---:|---:|---|
+| truncated exponential | 0.9800 | 0.9800 | 0.820221 | -0.999952 | `4.19e-8` | 0 | yes |
+| LOO piecewise linear | 0.9325 | 0.9225 | 0.802567 | -0.985732 | `1.12e-7` | 0 | yes |
+
+截断指数同时具有更高正权重覆盖、更严格单调性和不差的数值稳定性，因此是唯一正式候选。
+不得依据训练结果重新选择。正式 800 数据冻结后，reference set 只含整记录 validity=1 的 records，
+并在该 reference set 上重新计算和持久化 `mu/scale/q50/q95/q99`；这一步实例化公式参数，不重新
+选择公式。
+
+正式 retrieval 固定 k=3。三个有效邻居标签以
+`alpha_j proportional to (d_j+1e-6)^-2` 归一化形成三维 target；如果存在一个或多个 `d_j=0`，
+只平均所有 exact-match labels，忽略非 exact neighbors。`c_validity=1` 仅当至少有三个有效 formal
+records、query 与三个标签/距离全部有限且 target 合法；否则为 0。正式共享权重为：
+
+$$
+c_L=c_{validity}c_{OOD}.
+$$
+
+若 reference 少于 3、`q95<=1e-6`、`q99<q95`、任何统计量非有限或 index/hash 不符，则整个 LLM
+分支 fail closed 并使 O1 No-Go；禁止 uniform、旧 2D labels、规则标签或 615D fallback。
+
+### 11.5 Prompt、parser 与模型身份
+
+system prompt 固定为：
+
+```text
+You are a JSON-only warehouse semantic teacher. Evaluate only the supplied
+semantic state. Never output actions, paths, assignments, right-of-way rulings,
+station controls, or changes to task labels.
+```
+
+user prompt template 的 UTF-8 文本固定如下；实现只能替换最后一行的 `{semantic_state}`，不得改写
+其他字符：
+
+```text
+Return one JSON object with exactly these six keys: task_persistence,
+task_persistence_reason, yielding_preference, yielding_preference_reason,
+coordination_risk, coordination_risk_reason. Each score must be a finite number
+in [0,1]. Each reason must be a non-empty string of at most 1000 characters.
+
+task_persistence is how reasonable it is to keep the currently assigned
+transport task. It is not an immediate movement instruction and is not the task
+priority itself. yielding_preference is the semantic tendency to voluntarily
+delay or cede local passage; a higher value means a stronger tendency to yield,
+but it is not a NOOP or action command. coordination_risk is the risk that the
+current local interaction causes conflict, congestion, deadlock, or cooperative
+failure; it is not a behavior command.
+
+For each dimension use these anchors and interpolate when needed. 0.00 means no
+semantic basis for that property. 0.25 means weak persistence or yielding, or
+minor coordination risk. 0.50 means balanced persistence/yielding reasons, or
+material but non-high coordination risk. 0.75 means strong persistence or
+yielding reasons, or high coordination risk. 1.00 means overwhelming persistence
+or yielding reasons, or near-certain immediate or sustained coordination failure
+without coordination.
+
+The three scores are not complements or aliases. High task persistence may
+coexist with high yielding preference. High coordination risk does not imply a
+particular yielding score. Use only facts in SEMANTIC_STATE. Do not invent facts,
+IDs, actions, paths, assignments, priorities, right-of-way rulings, station
+controls, or task-label changes. Do not emit markdown or text outside the JSON.
+
+Expected JSON shape:
+{"task_persistence":0.0,"task_persistence_reason":"...","yielding_preference":0.0,"yielding_preference_reason":"...","coordination_risk":0.0,"coordination_risk_reason":"..."}
+
+SEMANTIC_STATE={semantic_state}
+```
+
+`semantic_state` 是 sorted-key、compact-separator 的 canonical `semantic-view-v3` JSON。
+
+prompt 中不得出现 `scenario_type`、任何 ID、场景目标分数、controlled reference direction 或
+“某类应高/低于某阈值”。prompt bytes、system/user text、semantic JSON 和 request body 分别计算
+SHA-256。parser 只接受第 11.2 节严格 JSON；禁止 fence stripping、文本中搜寻 JSON、clamp、字段
+补全或 reason 推导 score。
+
+首选 provider/model 是 DeepSeek official Chat Completions
+`https://api.deepseek.com/chat/completions` / `deepseek-v4-flash`，配置固定：
+
+```text
+stream=false
+thinking={type: disabled}
+temperature=0.0
+response_format={type: json_object}
+max_tokens=1024
+timeout_seconds=120
+max_attempts=3
+retry_backoff_seconds=[5,15]
+```
+
+每次 attempt 保存去除 Authorization 后的完整 request、HTTP status/headers、原始 response bytes、
+response id/model/system_fingerprint/created/finish_reason/usage、错误与时间戳。只有 timeout、连接错误、
+HTTP 429 和 5xx 可按同一 request bytes 重试；4xx、`finish_reason!=stop`、空 content 或 schema/content
+invalid 不作针对性重试，直接形成 invalid record。成功 content 缺少或返回非字符串
+`response.model/system_fingerprint` 同样 invalid，并使 formal fingerprint gate No-Go。API key 只能由 owner 通过 `DEEPSEEK_API_KEY`
+注入，禁止写入仓库、artifact、日志、命令参数或 checkpoint。
+
+### 11.6 60 条 pilot 与 Flash→Pro 唯一切换门
+
+`semantic-pilot-v3` 固定五类各 12 条；base seeds 为 `[410,411,412]`，每 seed 每类 4 条。pilot
+场景、prompt、raw response、review 和 manifest 全部放在 `artifacts/optimization/labels/pilot/`，
+不得进入正式 800、kNN reference、Student、训练、checkpoint 或论文性能统计。
+
+首轮必须使用 Flash，并由两名独立 reviewer 在不知道 score 来源的情况下复核全部 60 条。以下
+任一条件定义为 Flash 在三维语义判断上的系统性失败：
+
+- parser-valid 少于 57/60，或任一场景类型少于 11/12；
+- substantive semantic error 超过 6/60，或任一类型超过 2/12；
+- 出现任一 critical error：输出/建议动作、路径、分配、通行权或规则改写，捏造输入中不存在的
+  任务/载货/电量事实，或把任一维固定解释为另一维的补数/同义项；
+- 两名 reviewer 对同一维的 anchor 区间判断在超过 12/60 records 上相差两个或以上 anchor
+  intervals，表明 prompt/scale 无法稳定解释。
+
+若 Flash 通过，formal 必须继续用 Flash。若且仅若 Flash 触发上述门，保持同一 60 场景、
+semantic-view、prompt/schema/parser、temperature 和所有请求参数不变，废弃整组 Flash pilot 并用
+`deepseek-v4-pro` 重新生成完整 60 条；禁止只重标失败记录。Pro pilot 使用相同门；仍失败则
+O0-D No-Go，必须升级 prompt/schema version，不能生成 formal。模型切换不参考 MAPPO reward、
+训练性能或研究者偏好的 score。
+
+### 11.7 确定性 60/800 场景生成合同
+
+`semantic-scenario-v3` 使用 optimization medium topology、5 AGV、动态入库、max_steps=1000、
+batch interval 40、batch size `[4,8]`、queue size 8、task target 50 与能源
+`battery_cost_scale/charge_threshold/charge_release_threshold=1.10/0.30/0.80`。layout、环境参数和
+生成器代码 commit 必须进入 manifest。生成器只构造并验证环境快照，不调用或读取 A*、LLM、
+Student、reward、reservation、yield/coordinator 或 calibration，也不以旧协调 A* rollout 产生
+normal records。
+
+五个 stratum 固定为 `normal_transport/priority_conflict/narrow_corridor_yield/
+low_battery_diversion/station_exit_congestion`；名称只进入 provenance。pilot 按第 11.6 节分配。
+formal 每类 160 条，base seeds 为 `[500,501,502,503,504,505,506,507,508,509]`，每 seed 每类
+16 条。派生环境 seed 固定为：
+
+```text
+derived_seed = base_seed * 100000 + stratum_rank * 1000 + within_seed_index
+stratum_rank = 0..4 in the order above
+within_seed_index = 0..3 for pilot, 0..15 for formal
+```
+
+每个 derived seed 重置环境后，确定性参数化 injector 先按坐标、任务 label、shelf ID 的 canonical
+tuple 枚举 highway/station/task 候选，再按
+`SHA256("semantic-scenario-v3"|derived_seed|canonical_candidate_tuple)` 升序检查，选择第一个满足
+invariant 的组合；最多检查前 128 个 candidates，耗尽即整个数据集 No-Go，不跨 seed 借配额，
+也不使用进程 RNG。五类 invariant 分别为：normal 的 focal 有 active task 且所有 peer Manhattan
+距离大于 4；priority conflict 的两车相邻且 focal 位于 degree>=3 highway，within-seed index 偶数时
+focal 优先级更高、奇数时更低；narrow corridor 的 empty focal 与 loaded peer 相邻且 focal 位于
+degree=2 highway；low battery 的 loaded focal battery 固定 0.15；station exit 的一车占据充电站、
+focal 占据该站 lexicographic 第一合法 highway 出口。其余机器人放置到使其与已放置机器人最小
+Manhattan 距离最大的 highway cell，tie-break 为 `(y,x)` 升序。每条只记录一个 focal；环境
+invariant、61D view、JSON view 和 scenario content hash 必须同时通过。scenario ID 是
+`SHA256(generator_version|layout_hash|derived_seed|focal_snapshot_hash)`，pilot/formal ID 与 content
+hash 必须完全不相交。
+
+### 11.8 Formal dataset-level acceptance 与不可变性
+
+`semantic-formal-v3` 是恰好 800 个预注册 scenario attempts，不是“收集到 800 个成功回答为止”。
+失败 response 仍占原 scenario 配额并作为 `validity=0` record 保存。formal 生成前必须已批准
+pilot、模型和全部 prompt/schema hashes；生成后禁止逐条改分、修改 reason、针对坏标签重试、
+选择性删除、用新 scenario 补洞或根据训练表现重生成。
+
+生成期间第一条成功 response 冻结 `response.model` 与 `system_fingerprint`。任一后续 response 的
+二者变化必须立即原子保存 partial manifest 并暂停，由 owner 审核；禁止静默继续。一个获准
+formal dataset 只能含一个 `(request_model,response.model,system_fingerprint)` tuple。owner 只能
+等待原 fingerprint 恢复或废弃整套 partial 后从 800 条第一条重新启动，不能批准混合 backend。
+
+自动完整性与 validity 门：
+
+```text
+records = 800 exactly
+each stratum = 160 exactly
+unique scenario_id/content_hash = 800
+overall parser validity >= 784/800 = 98%
+each-stratum parser validity >= 152/160 = 95%
+one model/fingerprint tuple
+all request/response/manifest hashes and count conservation valid
+```
+
+人工复核样本在不含 review 的 canonical 800-record content hash 冻结后，以
+`SHA256("20260820"|records_content_hash|scenario_id)` 每个 stratum 升序选前 20 条，共 100 条；两名独立
+reviewer 只看 semantic view、anchors、scores/reasons，不看训练结果。critical error 必须为 0；
+substantive semantic error 必须不超过 5/100 且每类不超过 2/20。substantive error 是 score 落在
+reviewer 依据冻结 anchors 判定区间相隔两个或以上 anchor intervals，或 reason 与输入事实/score
+方向实质矛盾；轻微措辞差异不算错误。reviewer 分歧由 owner 在 dataset-level 判定前具名裁决，
+裁决只能改 audit verdict，不能改 label。
+
+任一门失败时整个 formal dataset No-Go：返回 O0-D，升级 prompt/schema/parser/generator 中实际
+需要改变者的 version，重新运行完整 60 pilot 并生成新的完整 800；旧 dataset 原样归档并禁止
+训练。禁止只修复失败 records。
+
+所有 validity=1 formal labels 同时报告三个维度两两 Pearson 与 Spearman。任一
+`abs(rho)>=0.80` 只触发 owner 人工复核并记录“接受为真实语义相关”或“启动全新 version”之一，
+不自动改定义、删记录、改分或重生成当前 dataset；相关性本身不是上述 acceptance No-Go。
+
+### 11.9 日志、损失与计数守恒
+
+dataset 级记录 scenario/prompt/request/raw response/parser/model/fingerprint/review/content hashes；训练
+query 级记录 view/index version、三个 neighbor IDs 的匿名 record hashes、三距离、`q50/q95/q99`、
+`c_validity/c_OOD/c_L`、三维 target、semantic loss、coverage bucket、零权重/失败原因及 Student
+disagreement。disagreement 只诊断，不影响 retrieval、validity、OOD、loss 或 schedule。
+
+每个 dataset 必须满足：
+
+```text
+planned = response_received + request_failed
+response_received = parser_valid + parser_invalid
+records = parser_valid + parser_invalid + request_failed
+records = sum(stratum_records)
+review_sample = review_pass + review_substantive_error + review_critical_error
+```
+
+每个训练统计窗口必须满足：
+
+```text
+semantic_queries = validity_zero + validity_one
+validity_one = ood_positive + ood_zero
+semantic_loss_active <= ood_positive
+fallback_count = 0
+```
+
+语义损失使用整记录共享权重；精确 Student head/gradient 和 `lambda_L(t)` schedule 在 O0-E 冻结。
+当前窗口无有效或正 OOD query 时 `L_L=0`，不产生 optimizer contribution，仍记录零样本窗口。
+
+### 11.10 O0-D 允许主张与验证证据
+
+O0-D 完成只允许声称：三维语义、61D view、正式截断指数 OOD、模型切换、60/800 数据治理和
+dataset-level No-Go 已预注册。不得声称 Flash/Pro 已通过 pilot、800 labels 已生成、三维语义改善
+MAPPO、OOD 权重有效或标签具有论文质量。
+
+验证日期为 2026-08-25，使用规范解释器
+`D:\Anaconda3\envs\py310\python.exe`；O0-D 未读取或保存 API key，未调用 DeepSeek，未生成
+pilot/formal labels，未修改 Python/YAML/JSON 运行代码。61D 重建和候选比较结果见第 11.4 节；
+旧 615D 审计明确降级为 preliminary evidence。完整 `pytest` 为 184 passed（38.15 s）；Flake8、
+`visualize.py --help`、dynamic-ingress A* evaluation help 与 `git diff --check` 退出码均为 0。
