@@ -3,6 +3,12 @@
 This file records meaningful project engineering and experiment-governance
 changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
+## 2026-08-25
+
+- Added: S1 history-diff audit and minimal recovery plan trace the pre-`f6f0650` A*
+  baseline `119f20d`, reduce the divergence to five behavioral deltas, and smoke-verify
+  `--reservation-mode legacy --coordinator-yield-action right` restores the legacy gate.
+
 ## 2026-08-24
 
 - Added: P0 migration audit and ignored safety backup uniquely classify and protect
