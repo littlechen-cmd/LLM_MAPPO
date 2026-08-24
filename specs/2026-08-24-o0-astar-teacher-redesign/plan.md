@@ -8,16 +8,16 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
 
 ## Task group O0-A：现有全链路与污染面审计
 
-- [ ] 以 P0 最终 commit 为基准，逐函数追踪规则目标、充电目标、waypoint observation/reward、
+- [x] 以 P0 最终 commit 为基准，逐函数追踪规则目标、充电目标、waypoint observation/reward、
   `AStarExpert` preference/reservation/priority/yield/coordinator、hard mask、buffer、KL、离线
   LLM、三类 actor/critic 梯度、checkpoint、训练、评估和执行入口；
-- [ ] 在 canonical architecture 的审计章节记录每个字段的生产者、消费者、shape、梯度、启用
+- [x] 在 canonical architecture 的审计章节记录每个字段的生产者、消费者、shape、梯度、启用
   条件、失败降级、日志和执行期依赖，并提供准确文件/符号引用；
-- [ ] 建立“允许 Pure Motion 信息 / 禁止高层污染 / 仅诊断信息”矩阵，明确当前实现中所有违反
+- [x] 建立“允许 Pure Motion 信息 / 禁止高层污染 / 仅诊断信息”矩阵，明确当前实现中所有违反
   O0 purity 的路径；
-- [ ] 追溯现有标签生成链路的精确基础 model ID/version、prompt、temperature、scenario
+- [x] 追溯现有标签生成链路的精确基础 model ID/version、prompt、temperature、scenario
   generator、parser、数据 schema 和历史一维/二维 checkpoint；
-- [ ] 对照两个已记录哈希的根目录研究输入，区分排版差异与方法差异；逐项审计方法主张，标记
+- [x] 对照两个已记录哈希的根目录研究输入，区分排版差异与方法差异；逐项审计方法主张，标记
   接纳、修正、延后或拒绝及理由，保证 canonical architecture 建成后无有效内容只存在于未
   跟踪输入。
 

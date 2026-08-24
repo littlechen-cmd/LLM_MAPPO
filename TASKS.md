@@ -35,7 +35,7 @@
 
 唯一规格：`specs/2026-08-24-o0-astar-teacher-redesign/`
 
-- [ ] 审计 waypoint、A* preference、协调器、buffer、KL、规则目标和 MAPPO 动作全链路；
+- [x] 审计 waypoint、A* preference、协调器、buffer、KL、规则目标和 MAPPO 动作全链路；
 - [ ] 比较候选并冻结 Pure Motion Teacher、逐机器人有效掩码、H=12 paired shadow rollout、
   团队 reward confidence、EMA 和 runtime/memory No-Go；
 - [ ] 冻结三维离线 LLM schema、60/800 数据合同、validity×OOD reliability、共同 schedule、

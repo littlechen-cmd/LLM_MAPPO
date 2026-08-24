@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O0-A now records the P0 field-level teacher-to-policy data flow, twelve
+  confirmed A* and semantic pollution gaps, the historical label/checkpoint
+  provenance, and a claim-by-claim disposition of both research inputs.
 - Added: The O0 specification scopes a Pure Motion A* teacher, H=12 paired-shadow
   reward calibration, route-isolated three-dimensional LLM semantics, and an explicit
   owner approval gate before implementation, with mandatory review pauses between
