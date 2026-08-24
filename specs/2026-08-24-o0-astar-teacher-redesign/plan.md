@@ -23,15 +23,15 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
 
 ## Task group O0-B：Pure Motion Teacher 职责、候选与标签合同
 
-- [ ] 比较至少三个候选：现有预约/协调 `AStarExpert`、无高层调度的独立几何 A*、有限局部动态
+- [x] 比较至少三个候选：现有预约/协调 `AStarExpert`、无高层调度的独立几何 A*、有限局部动态
   障碍但无通行权分配的 A*；从纯度、覆盖、计算、可解释性和标签因果边界说明拒绝/接纳理由；
-- [ ] 冻结唯一 Pure Motion Teacher 的输入、短时域搜索状态、邻居/动态障碍语义、动作集合、
+- [x] 冻结唯一 Pure Motion Teacher 的输入、短时域搜索状态、邻居/动态障碍语义、动作集合、
   概率平滑、budget、replan、tie-break、缓存键与确定性规则；
-- [ ] 冻结 `motion_preferences[N,A]`、`valid_mask[N]`、失败原因和诊断 schema，保证
+- [x] 冻结 `motion_preferences[N,A]`、`valid_mask[N]`、失败原因和诊断 schema，保证
   `TOGGLE_LOAD`/非法动作质量为零且逐机器人有效性不丢失；
-- [ ] 明确证明目标、优先级、充电、parking、yield、预约优先顺序、coordinator、reward、Student
+- [x] 明确证明目标、优先级、充电、parking、yield、预约优先顺序、coordinator、reward、Student
   disagreement 和 calibration 均不能参与标签生成；
-- [ ] 定义搜索失败、预算超限、无合法轨迹、零有效标签和异常数值的 fail-closed 行为。
+- [x] 定义搜索失败、预算超限、无合法轨迹、零有效标签和异常数值的 fail-closed 行为。
 
 ## Task group O0-C：状态分叉、paired rollout 与 Reward Calibration
 

@@ -2,8 +2,9 @@
 
 ## 1. 文档状态与审计基线
 
-本文是优化路线唯一 canonical architecture。当前只纳入已经完成并等待研究所有者审核的
-O0-A 现状审计，不把 O0-B 至 O0-F 尚未审核的设计选择提前写成实现合同。
+本文是优化路线唯一 canonical architecture。当前纳入已经获批的 O0-A 现状审计，以及已经由
+研究所有者给出设计批准、等待任务组交付审核的 O0-B Pure Motion Teacher 冻结合同。不把
+O0-C 至 O0-F 尚未审核的设计选择提前写成实现合同。
 
 - 代码审计基线：P0 最终 commit `6fcb7d3`；
 - 规格分支：`codex/o0-astar-teacher-redesign`；
@@ -247,8 +248,8 @@ hash 或 generator commit。因此历史数据可以复现其仓库侧请求合�
    条件主张。
 4. 历史 LLM 链路可追溯到仓库侧 model alias、prompt、temperature、generator、parser 和 2D
    schema，但缺少服务端不可变版本及原始请求/响应 manifest；新 3D 数据必须重新生成且严格隔离。
-5. O0-B 的唯一边界是比较并冻结 Pure Motion Teacher 候选和标签合同。O0-A 没有选择候选、
-   搜索 horizon、概率平滑、budget、replan、cache 或 fail-closed 常数。
+5. O0-B 的唯一边界是比较并冻结 Pure Motion Teacher 候选和标签合同。O0-A 当时没有选择候选、
+   搜索 horizon、概率平滑、budget、replan、cache 或 fail-closed 常数；获批选择见第 9 章。
 
 ## 8. O0-A 验证证据
 
@@ -263,3 +264,295 @@ hash 或 generator commit。因此历史数据可以复现其仓库侧请求合�
 - O0 spec 目录：唯一 1 个；canonical architecture 占位术语命中：0；
 - 两份研究输入 SHA-256 均与 O0 requirements 登记值一致；
 - 两份研究输入按任务组边界继续保持未跟踪，O0-A 未提前执行 O0-F 的删除动作。
+
+## 9. O0-B Pure Motion Teacher 冻结合同
+
+### 9.1 候选比较与唯一选择
+
+| 候选 | 纯度 | 覆盖与计算 | 可解释性与因果边界 | 结论 |
+|---|---|---|---|---|
+| A：现有预约/协调 `AStarExpert` | 低；包含 parking、规划顺序、reservation 和 coordinator | 在部分拥堵状态下可给出端到端动作，但计算和失败互相耦合 | 无法区分几何建议与通行权/让行决策 | 拒绝作为 Teacher；只保留为 `Heuristic-Dispatcher+A*` 类启发式基线 |
+| B：完全忽略其他机器人的静态几何 A* | 高；不读取其他机器人 | 覆盖高、计算低，但可能反复建议驶向当前已占用位置 | 是纯几何标签，但缺少当前局部拥堵事实 | 不作为正式 Teacher；可保留为 Pure Teacher 诊断消融 |
+| C：独立、无通行权的局部动态几何 A* | 高；其他机器人只形成匿名当前占用集合 | 以部分 coverage 换取当前几何可行性；每机器人独立、有界 | 只回答已解析目标下的运动方向，不推断谁应让行 | **唯一正式 Pure Motion Teacher** |
+
+正式 Teacher 版本固定为 `pure-motion-astar-v1`。候选 A、B 都不得由实现者切换成主方法，也不得
+与 C 混合生成标签。
+
+### 9.2 职责和输入边界
+
+每台机器人独立执行一次 query。query 只包含：
+
+1. 自身 `(x, y, direction)`；
+2. 规则层已解析、已验证且只读的目标坐标 `(goal_x, goal_y)`；
+3. canonical static layout；
+4. 除自身以外的机器人当前坐标组成的匿名、去重、字典序排序集合；
+5. 独立 `pure_motion_mask[5]`；
+6. 固定 `K_motion=12`、expansion budget `512` 和 teacher version。
+
+其他机器人在整个本次 `K_motion` 搜索窗口内仅视为占据其当前坐标的匿名静态障碍。Teacher
+不接收或推断其 ID、方向、载货状态、任务、优先级、目标、动作、路径或未来轨迹。各机器人
+query 不共享 reservation table、搜索 frontier、规划结果或可变协调状态；批处理遍历顺序不得
+改变任意机器人的输出。
+
+carrying state 默认不进入 query 或 cache。只有底层环境确实因载货改变 footprint 或物理可通行性
+时，才允许把规范化 `footprint_class` 作为物理字段加入 static traversability 和 cache；不得以
+carrying state 推导任务优先权、让行权或调度语义。
+
+以下信息禁止直接进入输入，也禁止经 mask、heuristic、tie-break、cache 或 fallback 间接进入：
+
+- task assignment、task label、priority、waiting time；
+- 充电意图、充电站选择、parking 或规则目标改写；
+- reservation、yield、coordinator、机器人规划顺序或通行权；
+- reward、future return、Critic、Student action/disagreement；
+- LLM label/reliability、Reward Calibration、`Delta G` 或任何训练结果。
+
+职责问题固定为：“给定自身几何状态和已解析目标，哪个运动方向在几何上合理？”是否等待、
+谁应让行、何时行动以及最终动作属于 LLM+MAPPO，不属于 Pure Motion A*。
+
+### 9.3 Static graph、mask 与动作支持
+
+`G_static` 是由 canonical layout 和当前物理 `footprint_class` 唯一构造的无权网格图。它只编码
+边界、固定不可通行单元和底层 footprint 可通行性；不编码机器人、任务、优先级或动态规则。
+静态目标距离固定为：
+
+$$
+h_{static}(q,g)=\operatorname{shortest\_path\_length}_{G_{static}}(q,g).
+$$
+
+该距离用确定性 BFS 预计算或等价确定性最短路得到，单位为 cell transition，忽略 orientation
+和其他机器人。静态不可达时为正无穷并直接 fail-closed。它既是 bounded A* 的 `h`，也是唯一
+progress certificate 距离；不得换成 reward、Manhattan 距离或可学习估计。
+
+`pure_motion_mask` 是独立 bool `[N,5]`，只允许物理/执行层合法性进入：地图边界、静态 footprint
+碰撞、匿名当前占用、死亡、物理锁和底层强制交互状态。其动作位固定为项目枚举：
+
+```text
+NOOP=0, FORWARD=1, LEFT=2, RIGHT=3, TOGGLE_LOAD=4
+```
+
+Teacher 的监督 support 只含 `FORWARD/LEFT/RIGHT`。`NOOP` 和 `TOGGLE_LOAD` 在
+`pure_motion_mask` 的 Teacher 视图中始终为 false，输出质量始终为 0。priority、yield、
+reservation、coordinator 或 task policy 不得参与 mask。若底层环境要求 mandatory
+`TOGGLE_LOAD`，该机器人不是 motion teaching state，按 fail-closed 处理。
+
+搜索 successor 也只包含 `FORWARD/LEFT/RIGHT`，每个动作 cost 为 1；不允许把 NOOP 作为内部
+等待动作绕过监督 support。转向改变 orientation 而不改变坐标，FORWARD 按当前 orientation
+移动一个 cell。输入的 `pure_motion_mask` 只约束当前 root action；后续 successor 必须使用同一
+纯物理 transition validator 在各自模拟状态重新计算合法性，不能错误复用 root mask，也不能
+调用包含 priority/yield/reservation/coordinator 的环境 mask。所有 successor 均须满足 static
+footprint 和匿名占用约束。
+
+### 9.4 Bounded A*、预算和确定性
+
+搜索状态固定为：
+
+```text
+(x, y, direction, depth, root_action)
+```
+
+`depth` 从首个 root action 后的 1 开始，最大为 `K_motion=12`。`K_motion` 与 Reward Calibration
+的 `H_reward=12` 是两个不同配置字段、日志字段和 checkpoint 字段，禁止别名、联动修改或共享
+同一个参数对象。
+
+每机器人、每次 query 最多 512 次 node expansion。一次 expansion 严格定义为一个 state 从
+OPEN pop 后执行 successor processing；过期 heap entry 不计 expansion，但必须在 processing
+之前按 deterministic best-cost table 丢弃。达到 512 后不得再 pop 或生成 successor。
+
+OPEN 的唯一排序键固定为：
+
+```text
+f ascending
+-> h_static ascending
+-> depth descending
+-> root_action_rank ascending
+-> x ascending
+-> y ascending
+-> direction_rank ascending
+```
+
+其中：
+
+```text
+root_action_rank: FORWARD=0, LEFT=1, RIGHT=2
+direction_rank: UP=0, RIGHT=1, DOWN=2, LEFT=3
+```
+
+direction rank 与 `llm_mappo/planner.py::_DIRECTION_ORDER` 一致，不使用底层 `Direction.value` 的
+`UP,DOWN,LEFT,RIGHT` 顺序。successor 生成顺序同样固定为
+`FORWARD, LEFT, RIGHT`。相同 state 和 root action 的相同或更高 `g` 路径直接丢弃；相同 `g`
+保留由固定 successor 顺序首先插入的路径，不增加随机或时钟 tie-break。
+
+搜索为所有通过 root mask 的动作保留 root provenance，直到：
+
+- 每个 root 的 frontier 已耗尽；或
+- 达到 512 expansions；或
+- 对每个物理合法 root action 都已经找到至少一个 progress trajectory。
+
+不得因为先找到某一机器人的局部建议而改变其他机器人的搜索输入或顺序。规划时间只记录，
+不能作为搜索终止条件；因此相同输入的 label、validity、failure reason 和结构化 diagnostics 必须
+完全相同。wall-clock timing 本身允许随机器波动，但仅属日志。
+
+### 9.5 Progress certificate 与 root action 选择
+
+一条候选 trajectory 必须：
+
+- 长度位于 `[1, K_motion]`；
+- 每个动作和中间状态均满足本 query 的纯物理约束；
+- 满足窗口整体严格进展：
+
+$$
+h_{static}(q_{end},g)<h_{static}(q_{start},g).
+$$
+
+不要求每一步降低距离，允许先转向或进行必要的几何绕行；但窗口末态无严格进展时不能成为
+Teacher label。达到 goal 的 trajectory 以 `h_static=0` 自然满足证书。每个 root action 的可行性
+只由该 root 下是否找到至少一条通过证书的轨迹决定。
+
+在全部已认证 trajectory 中，首选 trajectory 使用第 9.4 节同一排序键选取，其
+`root_action` 是唯一 preferred action。搜索到预算上限时，只要已经存在至少一条认证 trajectory，
+仍可基于已经确定的可行 root 集产生有效 label，并记录 `budget_exhausted=true`；只有超预算仍无
+认证 trajectory 才使用 `budget_exceeded` 失败原因。
+
+### 9.6 Motion preference 与输出 schema
+
+固定 label smoothing 为 `epsilon_ls=0.15`，它是 supervision smoothing，不是 A* confidence。
+设已认证可行 root action 集为 `F_i`，preferred action 为 `a_i*`：
+
+$$
+p_i(a)=
+\begin{cases}
+1, & |F_i|=1\ \land\ a=a_i^*,\\
+0.85, & |F_i|>1\ \land\ a=a_i^*,\\
+0.15/(|F_i|-1), & |F_i|>1\ \land\ a\in F_i\setminus\{a_i^*\},\\
+0, & \text{otherwise}.
+\end{cases}
+$$
+
+该分布生成前必须与 `pure_motion_mask` 相交；`NOOP`、`TOGGLE_LOAD`、非法动作和没有 progress
+certificate 的 root action 质量均为 0。有效行必须为有限 float32、非负、shape `[5]` 且和为
+1（容差 `1e-6`）；否则整行 fail-closed。
+
+正式批量输出固定为：
+
+| 字段 | dtype/shape | 合同 |
+|---|---|---|
+| `motion_preferences` | float32 `[N,5]` | 有效行按上式归一化；无效行全零 |
+| `valid_mask` | bool `[N]` | 每机器人独立，不得提升为团队级 validity |
+| `failure_reason` | enum string `[N]` | 有效行为 `ok`，无效行为唯一首个失败原因 |
+| `diagnostics` | struct `[N]` | 只记录，不参与标签、validity 的连续权重或 loss 权重 |
+
+`diagnostics[i]` 至少包含：`teacher_version/query_hash/cache_hit/expanded_nodes/
+planning_time_ms/path_length_actions/reached_goal/h_static_start/h_static_end/
+progress_delta/feasible_root_actions/preferred_root_action/budget_exhausted/non_finite_detected/
+layout_hash/K_motion/expansion_budget`。除 `planning_time_ms` 外，结构化 diagnostics 也必须对相同
+输入确定。`valid_coverage` 是上层按 `sum(valid_mask)/N` 聚合的日志量，不是单机器人 label 字段。
+
+### 9.7 Fail-closed 与失败原因优先级
+
+以下检查按固定顺序执行，首个命中项成为唯一 `failure_reason[i]`：
+
+1. `dead`；
+2. `picking_lock`；
+3. `mandatory_toggle_load`；
+4. `already_at_goal`；
+5. `invalid_goal`（越界或非静态可通行）；
+6. `static_unreachable`；
+7. `no_physical_root_action`；
+8. `non_finite_output`；
+9. `budget_exceeded`（512 expansions 后无 progress trajectory）；
+10. `search_exhausted`（OPEN 耗尽且无合法 trajectory）；
+11. `no_progress_trajectory`（存在合法短轨迹但没有严格 progress certificate）。
+
+成功时为 `ok`。第 8 项同时覆盖 heuristic、cost、preference 或归一化出现 NaN/Inf；输出校验在
+搜索后再次执行，因此后验非有限也使用同一原因。若搜索结束时既存在合法非进展轨迹又 OPEN
+耗尽，使用更具体的 `no_progress_trajectory`；完全没有合法轨迹才使用 `search_exhausted`。
+
+任何失败都统一产生：
+
+```text
+valid_mask[i] = false
+motion_preferences[i, :] = 0
+```
+
+禁止回退为 Fixed-KD、uniform distribution、NOOP teacher、coordinator action、旧 reservation
+preference 或 previous cached label。全队 `sum(valid_mask)=0` 时，本次 A* 蒸馏分子和分母都不
+更新，定义 `L_A=0`，PPO/LLM 分支按自身合同继续。
+
+### 9.8 Cache 合同
+
+cache 只能做 exact-query memoization。key 固定为 canonical JSON 的 SHA-256；JSON 使用 UTF-8、
+排序 key、无多余空白、整数坐标和显式枚举字符串，并至少包含：
+
+- `layout_hash`；
+- `own_pose=[x,y]` 与 `orientation`；
+- `resolved_goal=[x,y]`；
+- 匿名、去重、按 `(x,y)` 排序的 `occupied_coordinates`；
+- 5 位 `pure_motion_mask`；
+- `K_motion=12`；
+- `expansion_budget=512`；
+- `teacher_version=pure-motion-astar-v1`；
+- 仅在影响 footprint/legality 时存在的 `footprint_class`。
+
+`layout_hash` 同样是 canonical JSON SHA-256，内容为 layout 宽高、固定不可通行坐标及
+footprint-class traversability version。cache key 禁止包含机器人 ID、priority、reward、Student、
+LLM、calibration、yield、coordinator、reservation 或 wall-clock。
+
+exact key hit 可以返回此前保存的完整确定性结果，包括无效结果；它不是 fallback。key miss、版本
+不符、schema 不符或缓存值未通过 shape/finite/sum 校验时必须重新规划，不能返回相似状态或上一
+步 label。cache 不跨 teacher version 复用；cache hit/miss 只进入 diagnostics。
+
+### 9.9 Diagnostics-only 与因果隔离证明
+
+planning time、expanded nodes、path length、failure reason、valid coverage、cache 命中、Student
+disagreement、paired return、`Delta G` 和 Reward Calibration 全部只记录。其中前五项可描述搜索
+和 coverage，后四项可描述 Student/教师效果；任何一项都不得改变 A* query、OPEN、heuristic、
+root action、preference、validity 或 smoothing。
+
+Reward Calibration 的时序边界固定为：Pure Motion Teacher 先独立生成并冻结本 query 的
+`motion_preferences/valid_mask`，随后 calibration 才能评价该标签。它不能重试搜索、修改 root
+action、把 invalid 变 valid 或把 reward 写入 cache key。Student disagreement 同理只在 label
+生成后计算和记录。
+
+因此候选 C 的因果链只有：
+
+```text
+own geometry + resolved goal + static layout
++ anonymous current occupancy + pure physical mask
+-> deterministic bounded A*
+-> per-agent motion preference + binary validity
+```
+
+高层任务、协同、回报和学习状态均不存在通向 label generator 的有效边。
+
+### 9.10 固定边界示例与验收不变量
+
+以下示例使用项目 `[NOOP, FORWARD, LEFT, RIGHT, TOGGLE_LOAD]` 顺序：
+
+| 情形 | `valid_mask[i]` | `motion_preferences[i]` | 原因 |
+|---|---:|---|---|
+| 三个 root 均有证书，首选 FORWARD | true | `[0, 0.85, 0.075, 0.075, 0]` | 其余两个可行 root 均分 0.15 |
+| FORWARD/LEFT 有证书，首选 FORWARD | true | `[0, 0.85, 0.15, 0, 0]` | RIGHT 无证书不分质量 |
+| 只有 RIGHT 有证书 | true | `[0, 0, 0, 1, 0]` | 唯一可行 root one-hot |
+| mandatory TOGGLE | false | `[0, 0, 0, 0, 0]` | `mandatory_toggle_load` |
+| 512 expansions 后无 progress | false | `[0, 0, 0, 0, 0]` | `budget_exceeded` |
+| 全队均无效 | 全 false | 全零矩阵 | 本次 `L_A=0`，其他训练分支不变 |
+
+O1 必须以确定性测试证明：重复 query bitwise 相同；置换其他机器人 ID 不改变结果；改变 priority、
+reward、Student、LLM 或 calibration 不改变结果；改变匿名占用、静态地图、目标或纯物理 mask
+可以改变结果；任意有效行和为 1，任意无效行和为 0，且 NOOP/TOGGLE/非法动作质量恒为 0。
+
+### 9.11 O0-B 验证证据
+
+验证日期为 2026-08-25，运行环境为项目 `py310`（Python 3.10.19）。
+
+- O0-B 五项 plan checklist 全部完成，O0-C checked item 为 0；
+- 候选结论、输入白名单/黑名单、`K_motion/H_reward` 隔离、512-expansion 定义、唯一 tie-break、
+  direction rank、progress certificate、label smoothing、输出 schema、失败优先级、cache key 和
+  diagnostics-only 边界均有无占位精确定义；
+- 固定边界表验证三/二/单一可行 root 的概率分别归一化为 1，NOOP/TOGGLE 为 0；
+- `python -m pytest`：退出码 0，184 tests passed；
+- `python -m flake8 rware llm_mappo eval train scripts figures/core`：退出码 0；
+- `python visualize.py --help` 与
+  `python eval/evaluate_dynamic_ingress_astar.py --help`：退出码均为 0；
+- `git diff --check`：退出码 0；相对 P0 `6fcb7d3` 的 Python/YAML/JSON 差异为 0；
+- 两份研究输入继续保持未跟踪，未提前执行 O0-C 或 O0-F。
