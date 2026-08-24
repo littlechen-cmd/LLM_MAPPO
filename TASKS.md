@@ -13,7 +13,7 @@
   禁止直接复制覆盖；
 - 长任务不得由 Codex 或项目工程师启动。
 
-## P0 — 基线整理与双分支建立（进行中）
+## P0 — 基线整理与双分支建立（完成）
 
 唯一规格：`specs/2026-08-24-p0-baseline-integration/`
 
@@ -27,8 +27,9 @@
   184 项完整测试、Flake8、CLI 与实际 PNG smoke 通过。
 - [x] **P0-E** 完成干净 checkout、完整测试、静态检查、配置/CLI/smoke 和验证报告；证据见
   `docs/p0-validation-report.md`。
-- [ ] **P0-F** 完成稳定路线工程师交接；fast-forward 本地 `master`；从同一 SHA 建立
-  `codex/optimization` 与 `codex/stable`。
+- [x] **P0-F** 完成稳定路线工程师交接；交接见
+  `docs/handoffs/stable-route-engineer.md`。本地 `master`、`codex/optimization` 与
+  `codex/stable` 按 P0 最终 commit 同 SHA 落位。
 
 ## O0 — 优化路线 A* 教师算法与架构重设计
 

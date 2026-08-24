@@ -62,18 +62,18 @@
 
 ## Task group P0-F：稳定路线工程师交接与双分支落位
 
-- [ ] 创建 `docs/handoffs/stable-route-engineer.md`，完整覆盖 requirements 中的交接字段；
-- [ ] 交接文档明确项目工程师只负责 S1/S2 稳定路线实现、短验证、命令准备和结果分析，所有长
+- [x] 创建 `docs/handoffs/stable-route-engineer.md`，完整覆盖 requirements 中的交接字段；
+- [x] 交接文档明确项目工程师只负责 S1/S2 稳定路线实现、短验证、命令准备和结果分析，所有长
   训练/评估由研究所有者在 A600 运行；
-- [ ] 将 `specs/roadmap.md` 的 P0 标记为 `[x] complete`，更新 CHANGELOG，并重新运行
+- [x] 将 `specs/roadmap.md` 的 P0 标记为 `[x] complete`，更新 CHANGELOG，并重新运行
   `git diff --check`、规格结构检查和 `git status --short`；
-- [ ] 将交接文档、Roadmap 完成状态和 CHANGELOG 作为当前 feature 分支最后一个聚焦 commit，
+- [x] 将交接文档、Roadmap 完成状态和 CHANGELOG 作为当前 feature 分支最后一个聚焦 commit，
   此后 P0 不再修改任何文件；
-- [ ] 验证 `master` 是当前分支祖先且可 fast-forward；不满足时停止并请求研究所有者决定；
-- [ ] fast-forward 本地 `master` 到当前分支最终 HEAD；
-- [ ] 从该同一 SHA 创建 `codex/optimization` 与 `codex/stable`；若分支已存在且不指向该 SHA，
+- [x] 验证 `master` 是当前分支祖先且可 fast-forward；不满足时停止并请求研究所有者决定；
+- [x] fast-forward 本地 `master` 到当前分支最终 HEAD；
+- [x] 从该同一 SHA 创建 `codex/optimization` 与 `codex/stable`；若分支已存在且不指向该 SHA，
   停止并请求研究所有者决定，禁止强制移动；
-- [ ] 验证 `master`、`codex/optimization`、`codex/stable` 指向同一 SHA，并向研究所有者提供
+- [x] 验证 `master`、`codex/optimization`、`codex/stable` 指向同一 SHA，并向研究所有者提供
   commit 列表、分支状态和 push 命令；
-- [ ] 若分支落位后发现仍需修改 P0 文件，按 validation 中的无循环落位规则撤销尚未发布的
+- [x] 若分支落位后发现仍需修改 P0 文件，按 validation 中的无循环落位规则撤销尚未发布的
   新分支落位并重新形成最终 commit，禁止直接让三个分支停留在不同 SHA。

@@ -18,6 +18,10 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
   contract; O3 will design unseen topologies from scratch.
 - Verified: A clean P0 checkout installs through an isolated editable prefix and passes
   184 tests, focused A*/layout/config checks, 30 YAML parses, CLI smokes, and Flake8.
+- Added: The stable-route engineer handoff freezes S1 scope, permissions, evidence,
+  artifact isolation, owner-run boundaries, acceptance thresholds, and prohibited claims.
+- Completed: P0 governance, shared diagnostics, reproducibility validation, and the
+  common baseline for the optimization and stable branches.
 
 ## 2026-08-20
 
