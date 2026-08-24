@@ -44,11 +44,16 @@ class AStarExpert:
         self,
         terminal_hold_steps: int = 2,
         legacy_terminal_reservation: bool = False,
+        coordinator_yield_action: str = "noop",
     ):
         if terminal_hold_steps < 0:
             raise ValueError("terminal hold steps cannot be negative.")
         self.terminal_hold_steps = terminal_hold_steps
         self.legacy_terminal_reservation = legacy_terminal_reservation
+        if coordinator_yield_action not in {"noop", "right"}:
+            raise ValueError("coordinator_yield_action must be 'noop' or 'right'.")
+        self.coordinator_yield_action = coordinator_yield_action
+        self.last_action_pipeline = []
         self._last_state = {}
         self._stalled_steps = {}
         self._last_env_step = None
@@ -291,19 +296,40 @@ class AStarExpert:
 
     def act(self, env: Phase2Warehouse, action_masks: np.ndarray) -> tuple:
         preferences = self.action_preferences(env)
+        planner_actions = np.argmax(preferences, axis=-1).astype(np.int64)
         masked = _mask_and_normalize(preferences, action_masks)
         actions = np.argmax(masked, axis=-1).astype(np.int64)
-        coordinated = self._coordinate_actions(env, actions)
+        coordinated, yield_reasons = self._coordinate_actions(
+            env, actions, self.coordinator_yield_action, return_reasons=True
+        )
         for index, action in enumerate(coordinated):
             if action != actions[index]:
                 masked[index] = 0.0
                 masked[index, action] = 1.0
+        self.last_action_pipeline = [
+            {
+                "planner_action": int(planner_actions[index]),
+                "masked_action": int(actions[index]),
+                "coordinated_action": int(action),
+                "planner_masked": bool(planner_actions[index] != actions[index]),
+                "coordinator_reason": yield_reasons.get(index),
+            }
+            for index, action in enumerate(coordinated)
+        ]
         return coordinated, masked
 
     @staticmethod
-    def _coordinate_actions(env: Phase2Warehouse, actions: np.ndarray) -> np.ndarray:
+    def _coordinate_actions(
+        env: Phase2Warehouse,
+        actions: np.ndarray,
+        yield_action: str = "noop",
+        return_reasons: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, dict[int, str]]:
         """Break immediate movement conflicts before RWARE resolves actions."""
+        if yield_action not in {"noop", "right"}:
+            raise ValueError("yield_action must be 'noop' or 'right'.")
         safe_actions = actions.copy()
+        reasons = {}
         positions = {
             (agent.x, agent.y): index for index, agent in enumerate(env.env.agents)
         }
@@ -313,14 +339,24 @@ class AStarExpert:
                 index: env.env._forward_target(env.env.agents[index])
                 for index in forward_indices
             }
-            yielding = _occupied_target_yields(
+            occupied_yields = _occupied_target_yields(
                 env, safe_actions, positions, targets
             )
-            yielding.update(_contested_target_yields(forward_indices, targets))
+            edge_swap_yields = _edge_swap_yields(env, positions, targets)
+            contested_yields = _contested_target_yields(forward_indices, targets)
+            yielding = occupied_yields | edge_swap_yields | contested_yields
             if not yielding:
-                return safe_actions
+                return (safe_actions, reasons) if return_reasons else safe_actions
             for index in yielding:
-                safe_actions[index] = Action.NOOP.value
+                if index in edge_swap_yields:
+                    reasons[index] = "coordinator_edge_swap_yield"
+                elif index in contested_yields:
+                    reasons[index] = "coordinator_vertex_yield"
+                else:
+                    reasons[index] = "coordinator_occupied_yield"
+                safe_actions[index] = (
+                    Action.RIGHT.value if yield_action == "right" else Action.NOOP.value
+                )
 
 
 def _forward_indices(actions: np.ndarray) -> list[int]:
@@ -342,6 +378,18 @@ def _occupied_target_yields(env, actions, positions, targets) -> set[int]:
         if occupant == index or not occupant_moving:
             yielding.add(index)
         elif targets.get(occupant) == agent_position:
+            yielding.update((index, occupant))
+    return yielding
+
+
+def _edge_swap_yields(env, positions, targets) -> set[int]:
+    yielding = set()
+    for index, target in targets.items():
+        occupant = positions.get(target)
+        if occupant is None or occupant == index:
+            continue
+        agent_position = (env.env.agents[index].x, env.env.agents[index].y)
+        if targets.get(occupant) == agent_position:
             yielding.update((index, occupant))
     return yielding
 

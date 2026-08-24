@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from collections import Counter
 import json
 from pathlib import Path
 from typing import Iterable
@@ -12,13 +13,42 @@ import numpy as np
 from llm_mappo.phase2 import Phase2Warehouse
 from llm_mappo.phase2_expert import AStarExpert
 from llm_mappo.phase3_training import Phase3TrainingConfig
+from rware.warehouse import Action
 
 
-def evaluate_dynamic_astar(
+STALL_REASON_CODES = (
+    "planner_noop",
+    "planner_turn",
+    "coordinator_vertex_yield",
+    "coordinator_edge_swap_yield",
+    "coordinator_occupied_yield",
+    "action_mask_block",
+    "environment_blocked_forward",
+    "interaction_lock",
+    "charging_wait",
+    "dead_or_inactive",
+    "unknown_stationary",
+)
+TERMINATION_REASONS = (
+    "target_reached",
+    "deadlock",
+    "time_limit",
+    "energy_failure",
+)
+PIPELINE_STAGES = (
+    "planner_to_mask",
+    "mask_to_coordinator",
+    "coordinator_to_executed",
+)
+
+
+def evaluate_dynamic_astar(  # noqa: C901
     config: Phase3TrainingConfig,
     seeds: Iterable[int],
     episodes_per_seed: int = 20,
     legacy_terminal_reservation: bool = False,
+    coordinator_yield_action: str = "noop",
+    collect_stall_diagnostics: bool = False,
 ) -> dict:
     """Evaluate time-reserved A* in the exact dynamic Phase 3 environment."""
     if config.batch_interval is None:
@@ -53,18 +83,43 @@ def evaluate_dynamic_astar(
             planning_times_ms = []
             for offset in range(episodes_per_seed):
                 expert = AStarExpert(
-                    legacy_terminal_reservation=legacy_terminal_reservation
+                    legacy_terminal_reservation=legacy_terminal_reservation,
+                    coordinator_yield_action=coordinator_yield_action,
                 )
                 env.reset(seed=seed * 10_000 + offset)
+                stall_counts = Counter()
+                pipeline_counts = Counter()
                 while True:
+                    positions_before = [
+                        (agent.x, agent.y) for agent in env.env.agents
+                    ]
                     actions, _ = expert.act(env, env.action_masks())
                     transition = env.step(actions)
+                    if collect_stall_diagnostics:
+                        _record_step_diagnostics(
+                            env,
+                            expert.last_action_pipeline,
+                            positions_before,
+                            actions,
+                            transition,
+                            stall_counts,
+                            pipeline_counts,
+                        )
                     if (
                         transition.terminated
                         or transition.truncated
                         or transition.metrics.deadlocked
                     ):
-                        records.append(transition.metrics.as_dict())
+                        record = transition.metrics.as_dict()
+                        if collect_stall_diagnostics:
+                            record["stall_diagnostics"] = {
+                                "termination_reason": _termination_reason(transition),
+                                "stationary_reason_counts": dict(stall_counts),
+                                "pipeline_counts": dict(pipeline_counts),
+                                "agent_steps": transition.info["step"] * env.n_agents,
+                                "stationary_agent_steps": sum(stall_counts.values()),
+                            }
+                        records.append(record)
                         _accumulate_expert(expert_totals, expert.statistics())
                         planning_times_ms.extend(expert.planning_times_ms)
                         all_planning_times_ms.extend(expert.planning_times_ms)
@@ -90,6 +145,8 @@ def evaluate_dynamic_astar(
         "reservation_mode": (
             "legacy_horizon" if legacy_terminal_reservation else "bounded_2_step"
         ),
+        "coordinator_yield_action": coordinator_yield_action,
+        "stall_diagnostics_enabled": collect_stall_diagnostics,
         "seeds": per_seed,
         "episodes": int(sum(record["episodes"] for record in per_seed)),
         "task_completion_rate": float(completion.mean()) if len(completion) else 0.0,
@@ -145,6 +202,153 @@ def _aggregate_seed(
         "path_livelocks": expert_totals["path_livelocks"],
         "state_deadlocks": expert_totals["state_deadlocks"],
         "reservation_teacher": expert_summary,
+        "stall_diagnostics": _aggregate_stall_diagnostics(records),
+    }
+
+
+def _record_step_diagnostics(  # noqa: C901
+    env, pipeline, positions_before, actions, transition, stall_counts, pipeline_counts
+) -> None:
+    """Classify each stationary agent-step without changing controller behavior."""
+    for index, detail in enumerate(pipeline):
+        planner = Action(detail["planner_action"])
+        masked = Action(detail["masked_action"])
+        coordinated = Action(detail["coordinated_action"])
+        agent = env.env.agents[index]
+        executed = _executed_action(
+            agent,
+            positions_before[index],
+            coordinated,
+        )
+        _record_pipeline_stage(pipeline_counts, "planner_to_mask", planner, masked)
+        _record_pipeline_stage(
+            pipeline_counts,
+            "mask_to_coordinator",
+            masked,
+            coordinated,
+        )
+        _record_pipeline_stage(
+            pipeline_counts,
+            "coordinator_to_executed",
+            coordinated,
+            executed,
+        )
+        if positions_before[index] != (agent.x, agent.y):
+            continue
+        if agent.dead:
+            reason = "dead_or_inactive"
+        elif agent.picking_lock_steps:
+            reason = "interaction_lock"
+        elif detail["coordinator_reason"]:
+            reason = detail["coordinator_reason"]
+        elif detail["planner_masked"]:
+            reason = "action_mask_block"
+        elif planner == Action.NOOP:
+            reason = "planner_noop"
+        elif planner in {Action.LEFT, Action.RIGHT}:
+            reason = "planner_turn"
+        elif any(
+            event["type"] == "blocked_forward" and event["agent_id"] == agent.id
+            for event in transition.info["events"]
+        ):
+            reason = "environment_blocked_forward"
+        elif (agent.x, agent.y) in env.env.charging_stations:
+            reason = "charging_wait"
+        else:
+            reason = "unknown_stationary"
+        stall_counts[reason] += 1
+
+
+def _executed_action(agent, position_before, coordinated: Action) -> Action:
+    if coordinated == Action.FORWARD and position_before == (agent.x, agent.y):
+        return Action.NOOP
+    if agent.req_action is None:
+        return coordinated
+    return Action(agent.req_action)
+
+
+def _record_pipeline_stage(
+    counts: Counter,
+    stage: str,
+    action_before: Action,
+    action_after: Action,
+) -> None:
+    suffix = "unchanged" if action_before == action_after else "overrides"
+    counts[f"{stage}_{suffix}"] += 1
+
+
+def _termination_reason(transition) -> str:
+    if transition.metrics.energy_deaths:
+        return "energy_failure"
+    if transition.metrics.deadlocked:
+        return "deadlock"
+    if transition.metrics.completed_tasks >= transition.metrics.task_completion_target:
+        return "target_reached"
+    return "time_limit"
+
+
+def _aggregate_stall_diagnostics(records: list[dict]) -> dict:  # noqa: C901
+    counts = Counter()
+    terminations = Counter()
+    pipeline_counts = Counter()
+    agent_steps = 0
+    stationary_agent_steps = 0
+    records_with_diagnostics = 0
+    for record in records:
+        diagnostics = record.get("stall_diagnostics", {})
+        if not diagnostics:
+            continue
+        records_with_diagnostics += 1
+        counts.update(diagnostics.get("stationary_reason_counts", {}))
+        pipeline_counts.update(diagnostics.get("pipeline_counts", {}))
+        termination = diagnostics.get("termination_reason")
+        if termination:
+            terminations[termination] += 1
+        agent_steps += diagnostics.get("agent_steps", 0)
+        stationary_agent_steps += diagnostics.get(
+            "stationary_agent_steps",
+            sum(diagnostics.get("stationary_reason_counts", {}).values()),
+        )
+    if not records_with_diagnostics:
+        return {
+            "schema_version": 1,
+            "available": False,
+            "unavailable_reason": "stall_diagnostics_not_collected",
+            "records_with_diagnostics": 0,
+        }
+    conservation_errors = []
+    if sum(counts.values()) != stationary_agent_steps:
+        conservation_errors.append("stationary_reason_total")
+    if sum(terminations.values()) != records_with_diagnostics:
+        conservation_errors.append("termination_reason_total")
+    for reason in STALL_REASON_CODES:
+        counts.setdefault(reason, 0)
+    for reason in TERMINATION_REASONS:
+        terminations.setdefault(reason, 0)
+    for stage in PIPELINE_STAGES:
+        pipeline_counts.setdefault(f"{stage}_overrides", 0)
+        pipeline_counts.setdefault(f"{stage}_unchanged", 0)
+    for stage in PIPELINE_STAGES:
+        stage_total = (
+            pipeline_counts[f"{stage}_overrides"]
+            + pipeline_counts[f"{stage}_unchanged"]
+        )
+        if records_with_diagnostics and stage_total != agent_steps:
+            conservation_errors.append(stage)
+    return {
+        "schema_version": 1,
+        "available": records_with_diagnostics > 0,
+        "records_with_diagnostics": records_with_diagnostics,
+        "stationary_reason_counts": dict(counts),
+        "termination_reason_counts": dict(terminations),
+        "pipeline_counts": dict(pipeline_counts),
+        "agent_steps": agent_steps,
+        "stationary_agent_steps": stationary_agent_steps,
+        "stationary_reason_rates": {
+            key: value / agent_steps if agent_steps else 0.0
+            for key, value in counts.items()
+        },
+        "conservation_errors": conservation_errors,
     }
 
 
@@ -186,6 +390,10 @@ def main() -> None:
     parser.add_argument(
         "--reservation-mode", choices=("fixed", "legacy"), default="fixed"
     )
+    parser.add_argument(
+        "--coordinator-yield-action", choices=("noop", "right"), default="noop"
+    )
+    parser.add_argument("--stall-diagnostics", action="store_true")
     parser.add_argument("--output")
     args = parser.parse_args()
     result = evaluate_dynamic_astar(
@@ -193,6 +401,8 @@ def main() -> None:
         args.seeds,
         args.episodes_per_seed,
         legacy_terminal_reservation=args.reservation_mode == "legacy",
+        coordinator_yield_action=args.coordinator_yield_action,
+        collect_stall_diagnostics=args.stall_diagnostics,
     )
     result["config"] = str(Path(args.config))
     text = json.dumps(result, indent=2)

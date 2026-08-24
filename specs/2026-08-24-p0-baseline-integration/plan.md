@@ -31,13 +31,13 @@
 
 ## Task group P0-C：共享 A* 诊断基础设施
 
-- [ ] 审查 `AStarExpert` 的 `NOOP/RIGHT` 诊断开关、动作流水线和 stall reason，确认默认行为保持
+- [x] 审查 `AStarExpert` 的 `NOOP/RIGHT` 诊断开关、动作流水线和 stall reason，确认默认行为保持
   当前 `NOOP` 且关闭诊断时无额外行为变化；
-- [ ] 补齐 planner→mask→coordinator→executed 计数守恒、开关轨迹等价、reason 分类、CLI 和
+- [x] 补齐 planner→mask→coordinator→executed 计数守恒、开关轨迹等价、reason 分类、CLI 和
   JSON 聚合回归测试；
-- [ ] 确保诊断字段与旧产物兼容，未知停滞保留为显式 `unknown_stationary`，不静默归因；
-- [ ] 运行焦点 pytest、完整 pytest 和规定范围 Flake8；
-- [ ] 更新 CHANGELOG，创建聚焦 A* 诊断 commit。
+- [x] 确保诊断字段与旧产物兼容，未知停滞保留为显式 `unknown_stationary`，不静默归因；
+- [x] 运行焦点 pytest、完整 pytest 和规定范围 Flake8；
+- [x] 更新 CHANGELOG，创建聚焦 A* 诊断 commit（随本状态同步提交）。
 
 ## Task group P0-D：共享静态布局预览与废弃内容清理
 

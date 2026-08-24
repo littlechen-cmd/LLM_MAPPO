@@ -9,6 +9,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
   every pre-existing workspace change before baseline integration.
 - Changed: Replaced the root Constitution and legacy G2/G3 task entrances with the
   dual-route specs, route-aware protocol/manifest/TASKS, and indexed historical archive.
+- Added: Behavior-neutral A* diagnostics now preserve the planner-to-execution action
+  pipeline, distinct conflict reasons, explicit legacy-schema availability, and count
+  conservation while retaining the default NOOP coordinator behavior.
 
 ## 2026-08-20
 
