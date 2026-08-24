@@ -105,9 +105,12 @@ python -c "import json;d=json.load(open('artifacts/stable/s1_acceptance/run_<ts>
 # 完整性检查：seeds 覆盖 300-309 各 20 episodes、无缺失
 python -c "import json;d=json.load(open('.../aggregate.json',encoding='utf-8'));print(sorted(s['seed'] for s in d['seeds']), [s['episodes'] for s in d['seeds']])"
 
-# 聚合分析（逐 seed 汇总）
-python eval/aggregate_formal_results.py artifacts/stable/s1_acceptance/run_<ts>/aggregate.json
+# 聚合分析（eval CLI 已输出逐 seed + 总体聚合，直接读 JSON 即可）
+python -c "import json;d=json.load(open('artifacts/stable/s1_acceptance/run_<ts>/aggregate.json',encoding='utf-8'));print('completion',d['task_completion_rate'],'collisions',d['mean_collisions_per_episode'],'deadlock',d['deadlock_rate'],'energy_deaths',d['mean_energy_deaths_per_episode'])"
 ```
+
+注：`eval/aggregate_formal_results.py` 的接口是 `--manifest/--evaluation-root/--output-dir/...`，
+面向 E2 正式多组结果聚合，不适用于 S1 单 JSON 验收；S1 聚合直接读 `aggregate.json`。
 
 ## 6. 失败分类与处理
 
