@@ -23,11 +23,13 @@ P0 ──> O0 ──> O1 ──> O2 ──> O3 ──┐
 
 ## Phase O0：优化路线 A* 教师算法与架构重设计
 
-- [ ] pending
+- [~] in progress
 - 目标：在不改代码、不训练的前提下，完整审计 waypoint、A* preference、协调器、rollout
-  buffer、KL、规则目标和 MAPPO 动作的数据流；提出 2–3 个可选架构并比较权衡。
-- 必须冻结：A* 教师职责、输入输出、有效标签定义、置信/掩码机制、执行期 A* 依赖、与 LLM
-  教师的互补边界、日志、消融和失败降级。
+  buffer、KL、规则目标和 MAPPO 动作的数据流；比较候选后冻结 Pure Motion Teacher、H=12
+  paired shadow Reward Calibration 与三维离线 LLM 教师。
+- 必须冻结：A* 教师职责、输入输出、逐机器人有效掩码、团队 reward confidence、环境状态分叉、
+  EMA、三维标签与 validity×OOD reliability、共同 schedule、checkpoint、执行期 A* 条件依赖、
+  日志、消融、runtime/memory No-Go 和失败降级。
 - 人工门：研究所有者书面批准唯一方案后才能进入 O1。
 
 ## Phase O1：优化路线角色对齐实现与静态验证

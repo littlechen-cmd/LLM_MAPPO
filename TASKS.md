@@ -31,11 +31,16 @@
   `docs/handoffs/stable-route-engineer.md`。本地 `master`、`codex/optimization` 与
   `codex/stable` 按 P0 最终 commit 同 SHA 落位。
 
-## O0 — 优化路线 A* 教师算法与架构重设计
+## O0 — 优化路线 A* 教师算法与架构重设计（进行中）
+
+唯一规格：`specs/2026-08-24-o0-astar-teacher-redesign/`
 
 - [ ] 审计 waypoint、A* preference、协调器、buffer、KL、规则目标和 MAPPO 动作全链路；
-- [ ] 提出并比较 2–3 个候选架构，冻结教师职责、接口、有效标签、置信/掩码和降级；
-- [ ] 冻结与离线 LLM 教师的互补边界、日志、消融、执行期 A* 依赖和允许主张；
+- [ ] 比较候选并冻结 Pure Motion Teacher、逐机器人有效掩码、H=12 paired shadow rollout、
+  团队 reward confidence、EMA 和 runtime/memory No-Go；
+- [ ] 冻结三维离线 LLM schema、60/800 数据合同、validity×OOD reliability、共同 schedule、
+  checkpoint、执行期 A* 条件依赖、日志、消融和允许主张；
+- [ ] 建立并版本化唯一 canonical architecture，完成输入映射与跨文档一致性审计；
 - [ ] 取得研究所有者书面批准；批准前不得实现或训练。
 
 ## O1 — 优化路线角色对齐实现与静态验证

@@ -16,7 +16,7 @@
 - Gymnasium 与项目 `rware/`：动态仓储多智能体环境；
 - NumPy：状态、动作偏好、日志聚合与数值处理；
 - A*：运行期 waypoint 与训练期路径/运动教师；
-- 离线 JSON/JSONL 标签与近邻检索：LLM 双语义教师；
+- 离线 JSON/JSONL 标签与近邻检索：优化路线三维、稳定路线历史二维的 LLM 语义教师；
 - CSV、JSON、JSONL 与 TensorBoard：训练、评估、诊断和证据追踪；
 - Matplotlib/Pillow：论文图表与确定性回放；
 - pytest 与 Flake8：回归、安全和静态质量门。
@@ -26,7 +26,10 @@
 - MAPPO 输出最终离散动作，共享 Actor、集中式 Critic；
 - A* 只提供路径或局部运动先验，具体教师语义由优化路线 O0 人工设计门或稳定路线历史行为
   合同分别冻结；
-- 离线 LLM 只提供 `task_commitment` 与 `local_assertiveness` 标签；
+- 优化路线离线 LLM 只提供 `task_persistence`、`yielding_preference` 与
+  `coordination_risk`；稳定路线保留历史 `task_commitment` 与 `local_assertiveness`；
+- 优化路线 LLM reliability 仅为整记录 validity×共享 OOD reliability；A* reward
+  calibration 只评价独立生成的 Pure Motion label，不能参与标签生成；
 - 规则层负责任务队列、合法目标、固定阈值充电安全、动作合法性和硬安全约束；
 - `Heuristic-Dispatcher+A*` 是非学习端到端基线，不等同于训练期 A* 教师；
 - 训练与执行期间不得调用在线 LLM。
@@ -56,6 +59,8 @@ Phase P0 完成前不创建正式双路线分支。P0 必须先：
 - 校准、稳定验收和正式评估 seed 必须分离；
 - 基础设施故障允许同 seed、同配置重跑并保留故障记录；算法失败、安全失败、NaN、死锁和
   能量死亡必须作为结果保留，不能静默替换 seed。
+- 优化路线三维 checkpoint 与历史一维/二维 checkpoint 严格隔离，禁止语义权重填充迁移；
+  新三维训练从新架构初始化并持久化 semantic schema、reliability、EMA、horizon 与 schedule。
 
 ## 正式实验技术合同
 

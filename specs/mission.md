@@ -16,7 +16,8 @@ LLM-A-MAPPO 多教师蒸馏多智能体路径规划与调度研究
 ## 一句话概述
 
 面向动态仓储多 AGV 场景，构建以 MAPPO 为最终动作策略、A* 为路径/运动教师、离线 LLM
-为双语义教师的多教师蒸馏系统，在执行期保持零在线 LLM 调用。
+为语义教师的多教师蒸馏系统，在执行期保持零在线 LLM 调用。优化路线采用三维语义，稳定路线
+保留历史二维语义，二者通过分支和 checkpoint schema 严格隔离。
 
 ## 目标用户
 
@@ -30,8 +31,10 @@ LLM-A-MAPPO 多教师蒸馏多智能体路径规划与调度研究
 ## 要解决的问题
 
 项目研究两类异构教师能否向同一 MAPPO 策略提供互补监督：A* 提供可解释的路径与局部运动
-先验，离线 LLM 提供 `task_commitment` 和 `local_assertiveness` 双语义监督，MAPPO通过环境
-交互、team reward 与集中式 critic 学习最终运动动作和多智能体协同。
+先验；优化路线离线 LLM 提供 `task_persistence`、`yielding_preference` 和
+`coordination_risk` 三维语义监督，稳定路线保留历史 `task_commitment` 与
+`local_assertiveness` 二维监督；MAPPO 通过环境交互、team reward 与集中式 critic 学习最终
+运动动作和多智能体协同。
 
 当前项目同时面临创新风险与截止期限风险，因此采用双路线并行、正式实验单路线选择：
 
@@ -41,6 +44,10 @@ LLM-A-MAPPO 多教师蒸馏多智能体路径规划与调度研究
 - 重新设计 A* 教师的算法和架构定位，经过人工批准后才允许实现和训练；
 - 将 A* 限定为针对规则层既定目标的局部几何运动教师，不承担任务选择、优先级重排或充电
   意图决策；
+- 采用 paired H-step team return 与 detached centralized critic bootstrap 评价 Pure Motion
+  label 的任务价值；团队级 reward confidence 与逐机器人有效性掩码结合，不得反向影响标签
+  生成；
+- 重新生成三维离线 LLM 标签，并仅使用整记录 validity 与共享 OOD reliability；
 - 建立窄通道与中央瓶颈/交叉通道两个真正的未见拓扑；
 - 不实施同图 8-AGV 压力场景；
 - 以形成具有中科院二区竞争力的方法与实验证据为现实目标。
@@ -59,7 +66,7 @@ LLM-A-MAPPO 多教师蒸馏多智能体路径规划与调度研究
 
 ### 共同标准
 
-- 始终保留“A* 路径/运动教师 + 离线 LLM 双语义教师 + MAPPO”的多教师技术主线；
+- 始终保留“A* 路径/运动教师 + 路线特定离线 LLM 语义教师 + MAPPO”的多教师技术主线；
 - MAPPO 是最终动作策略；规则层继续负责任务队列、合法目标、充电安全目标和硬约束；
 - 训练、评估和执行阶段在线 LLM API 调用次数均为 0；
 - 正式实验前冻结代码、环境、奖励、seed、训练预算、checkpoint 规则、指标和失败处理；

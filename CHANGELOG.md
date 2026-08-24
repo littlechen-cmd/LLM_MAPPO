@@ -3,6 +3,13 @@
 This file records meaningful project engineering and experiment-governance
 changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
+## 2026-08-25
+
+- Added: The O0 specification scopes a Pure Motion A* teacher, H=12 paired-shadow
+  reward calibration, route-isolated three-dimensional LLM semantics, and an explicit
+  owner approval gate before implementation, with mandatory review pauses between
+  task groups.
+
 ## 2026-08-24
 
 - Added: P0 migration audit and ignored safety backup uniquely classify and protect
