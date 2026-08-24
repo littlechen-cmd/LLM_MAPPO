@@ -8,6 +8,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 - Added: O0-B freezes `pure-motion-astar-v1` as an independent, anonymous-occupancy
   bounded A* teacher with a 12-step motion window, 512-expansion budget, motion-only
   support, deterministic tie-break, binary per-agent validity, and fail-closed output.
+- Changed: O0-B replaces fixed 0.85/0.15 smoothing with a root-action-conditioned
+  short-horizon planning-cost prior, using one provenance-preserving bounded search,
+  state-wise min-max normalization, and a fixed `tau_motion=1.0` Boltzmann transform.
 - Added: O0-A now records the P0 field-level teacher-to-policy data flow, twelve
   confirmed A* and semantic pollution gaps, the historical label/checkpoint
   provenance, and a claim-by-claim disposition of both research inputs.

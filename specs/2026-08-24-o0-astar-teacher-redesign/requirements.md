@@ -70,11 +70,24 @@ A* 只接收规则层已经确定的合法目标和当前物理状态，只输�
 
 输出至少包括：`motion_preferences[N,A]`、`valid_mask[N]`、逐机器人失败原因、规划耗时、展开
 节点数和规划窗口元数据。`TOGGLE_LOAD` 等非运动交互不得获得运动概率质量；非法动作质量必须
-在蒸馏前为零。搜索失败、预算超限、无合法短轨迹或标签非有限时，对应机器人
-`valid_mask=0`。
+在蒸馏前为零。正式 Motion Prior 不使用固定 label smoothing，而由
+root-action-conditioned short-horizon planning cost `C_A*^K(s,a)` 构造。每个合法 root action
+在首动作固定为 `a` 后，以窗口内累计 motion cost 加末态 `h_static` 为目标；三个 root branch
+必须保留 provenance，并在单次 bounded search 与同一总 512-expansion budget 内求解，禁止分别
+启动三个完整 A*。未得到有效 continuation 的 root cost 为正无穷且概率质量为零。
+
+有限 root cost 在每个状态内按 min-max 归一化；所有有限 cost 相等时归一化值全为零。随后使用
+固定 `tau_motion=1.0` 的 Boltzmann transform，并仅在有限 root 集上归一化。只要至少一个 root
+具有有限 cost，该机器人标签有效；若没有有限 root、标签非有限或输出校验失败，则对应机器人
+`valid_mask=0`。共享预算耗尽只会把尚未认证的 root 置为正无穷；只有最终没有任何有限 root 时
+才产生机器人级 `budget_exceeded`。
 
 搜索规模、耗时、路径长度、绕行和局部冲突只作为诊断日志，不组合为连续
 `c_A_search`。Reward Calibration 只能评价已经独立生成的标签，不得反向影响标签生成过程。
+search entropy、path-length confidence、Student disagreement 或任何其他量都不得成为额外权重。
+Motion cost 只决定标签内部动作偏好，整体蒸馏权重仍唯一为
+`w_A,i(t)=lambda_A(t)m_A,i^valid c_A^reward`。论文必须称其为
+“root-action-conditioned short-horizon planning cost”，不得表述为学习得到的 RL Q-value。
 
 ### 3.3 Paired Shadow Reward Calibration
 

@@ -249,7 +249,8 @@ hash 或 generator commit。因此历史数据可以复现其仓库侧请求合�
 4. 历史 LLM 链路可追溯到仓库侧 model alias、prompt、temperature、generator、parser 和 2D
    schema，但缺少服务端不可变版本及原始请求/响应 manifest；新 3D 数据必须重新生成且严格隔离。
 5. O0-B 的唯一边界是比较并冻结 Pure Motion Teacher 候选和标签合同。O0-A 当时没有选择候选、
-   搜索 horizon、概率平滑、budget、replan、cache 或 fail-closed 常数；获批选择见第 9 章。
+   搜索 horizon、root-action cost、Boltzmann transform、budget、replan、cache 或 fail-closed
+   常数；获批选择见第 9 章。
 
 ## 8. O0-A 验证证据
 
@@ -352,7 +353,8 @@ footprint 和匿名占用约束。
 
 `depth` 从首个 root action 后的 1 开始，最大为 `K_motion=12`。`K_motion` 与 Reward Calibration
 的 `H_reward=12` 是两个不同配置字段、日志字段和 checkpoint 字段，禁止别名、联动修改或共享
-同一个参数对象。
+同一个参数对象。累计 motion cost 固定为 `g=depth`，OPEN 使用
+`f=g+h_static((x,y),goal)`；该 `f` 与第 9.5 节窗口末 cost 使用同一单位和定义。
 
 每机器人、每次 query 最多 512 次 node expansion。一次 expansion 严格定义为一个 state 从
 OPEN pop 后执行 successor processing；过期 heap entry 不计 expansion，但必须在 processing
@@ -382,21 +384,30 @@ direction rank 与 `llm_mappo/planner.py::_DIRECTION_ORDER` 一致，不使用�
 `FORWARD, LEFT, RIGHT`。相同 state 和 root action 的相同或更高 `g` 路径直接丢弃；相同 `g`
 保留由固定 successor 顺序首先插入的路径，不增加随机或时钟 tie-break。
 
-搜索为所有通过 root mask 的动作保留 root provenance，直到：
+这是每机器人每次 query 的**单次** bounded search。所有通过 root mask 的动作共享同一个 OPEN、
+同一个 expansion counter 和同一总 512-expansion budget，但每个搜索状态必须保留 root
+provenance。禁止为 `FORWARD/LEFT/RIGHT` 分别启动独立完整 A*。搜索持续到：
 
-- 每个 root 的 frontier 已耗尽；或
+- 每个物理合法 root 已获得一个按 OPEN 顺序认证为最小 cost 的有效 continuation，或其 frontier
+  已耗尽；或
 - 达到 512 expansions；或
-- 对每个物理合法 root action 都已经找到至少一个 progress trajectory。
+- 全部共享 frontier 已耗尽。
+
+某个 root 的有效 continuation 首次按 OPEN 顺序出队并通过第 9.5 节证书时，该 root 的最小 cost
+已经确定，后续不再展开该 root。达到共享预算时，尚未获得认证 continuation 的 root 统一记为
+`C=+∞`，不得启动补充搜索；已经认证的 root cost 保留。该规则可能产生 root 级
+`budget_exceeded`，但只有全部 root 都没有有限 cost 时才产生机器人级失败。
 
 不得因为先找到某一机器人的局部建议而改变其他机器人的搜索输入或顺序。规划时间只记录，
 不能作为搜索终止条件；因此相同输入的 label、validity、failure reason 和结构化 diagnostics 必须
 完全相同。wall-clock timing 本身允许随机器波动，但仅属日志。
 
-### 9.5 Progress certificate 与 root action 选择
+### 9.5 Progress certificate 与 root-action-conditioned planning cost
 
-一条候选 trajectory 必须：
+对状态 `s` 和物理合法 root action `a`，有效 continuation 集 `T_K(s,a)` 中的轨迹必须：
 
-- 长度位于 `[1, K_motion]`；
+- 首动作固定为 `a`；
+- 未提前到达 goal 时长度严格为 `K_motion`；若在窗口内首次到达 goal，可在该步终止；
 - 每个动作和中间状态均满足本 query 的纯物理约束；
 - 满足窗口整体严格进展：
 
@@ -405,31 +416,58 @@ h_{static}(q_{end},g)<h_{static}(q_{start},g).
 $$
 
 不要求每一步降低距离，允许先转向或进行必要的几何绕行；但窗口末态无严格进展时不能成为
-Teacher label。达到 goal 的 trajectory 以 `h_static=0` 自然满足证书。每个 root action 的可行性
-只由该 root 下是否找到至少一条通过证书的轨迹决定。
+Teacher label。达到 goal 的 trajectory 以 `h_static=0` 自然满足证书。motion step cost 固定为
+`c_motion=1`，只描述运动长度，不读取 reward。正式 planning cost 定义为：
 
-在全部已认证 trajectory 中，首选 trajectory 使用第 9.4 节同一排序键选取，其
-`root_action` 是唯一 preferred action。搜索到预算上限时，只要已经存在至少一条认证 trajectory，
-仍可基于已经确定的可行 root 集产生有效 label，并记录 `budget_exhausted=true`；只有超预算仍无
-认证 trajectory 才使用 `budget_exceeded` 失败原因。
+$$
+C_{A^*}^{K}(s,a)=
+\min_{\tau\in\mathcal T_K(s,a)}
+\left[\sum_{t=0}^{L(\tau)-1}c_{motion}(a_t)
++h_{static}(q_{L(\tau)},g)\right].
+$$
+
+这里 `K=K_motion=12`；提前到达 goal 时 `L(τ)<=K`，否则 `L(τ)=K`。非法 root、搜索失败、共享
+预算耗尽时尚未认证、或不存在有效 continuation 的 root action 统一定义
+`C_A*^K(s,a)=+∞`。`+∞` 是“该 root 不进入 soft prior”的显式 sentinel，不是可学习数值，也不
+代表低置信度。论文优先使用“root-action-conditioned short-horizon planning cost”这一术语，
+不得把 `C_A*^K(s,a)` 称为或暗示为学习得到的 RL Q-value。
 
 ### 9.6 Motion preference 与输出 schema
 
-固定 label smoothing 为 `epsilon_ls=0.15`，它是 supervision smoothing，不是 A* confidence。
-设已认证可行 root action 集为 `F_i`，preferred action 为 `a_i*`：
+正式 Motion Prior 删除固定 `0.85/0.15` label smoothing。设有限 cost 的 root action 集为：
 
 $$
-p_i(a)=
+\mathcal F(s)=\{a\in\{\mathrm{FORWARD,LEFT,RIGHT}\}:C_{A^*}^{K}(s,a)<+\infty\}.
+$$
+
+只在 `F(s)` 内执行状态内 min-max 归一化。令 `C_min`、`C_max` 分别为有限 cost 的最小值和
+最大值：
+
+$$
+\widetilde C(s,a)=
 \begin{cases}
-1, & |F_i|=1\ \land\ a=a_i^*,\\
-0.85, & |F_i|>1\ \land\ a=a_i^*,\\
-0.15/(|F_i|-1), & |F_i|>1\ \land\ a\in F_i\setminus\{a_i^*\},\\
-0, & \text{otherwise}.
+0, & C_{max}=C_{min}\ \land\ a\in\mathcal F(s),\\
+\dfrac{C_{A^*}^{K}(s,a)-C_{min}}{C_{max}-C_{min}},
+& C_{max}>C_{min}\ \land\ a\in\mathcal F(s).
 \end{cases}
 $$
 
-该分布生成前必须与 `pure_motion_mask` 相交；`NOOP`、`TOGGLE_LOAD`、非法动作和没有 progress
-certificate 的 root action 质量均为 0。有效行必须为有限 float32、非负、shape `[5]` 且和为
+Boltzmann temperature 唯一固定为 `tau_motion=1.0`，不得按状态、训练性能、搜索规模或
+Reward Calibration 调整：
+
+$$
+p_{A^*}(a\mid s)=
+\begin{cases}
+\dfrac{\exp(-\widetilde C(s,a)/\tau_{motion})}
+{\sum_{b\in\mathcal F(s)}\exp(-\widetilde C(s,b)/\tau_{motion})},
+& a\in\mathcal F(s),\\
+0, & a\notin\mathcal F(s).
+\end{cases}
+$$
+
+当所有有限 cost 相等时，该公式在有限 root 间产生均匀分布；只有一个有限 root 时自然产生
+one-hot。实现必须使用数值稳定 softmax。`NOOP`、`TOGGLE_LOAD`、非法动作及没有有效
+continuation 的 root action 质量严格为 0。有效行必须为有限 float32、非负、shape `[5]` 且和为
 1（容差 `1e-6`）；否则整行 fail-closed。
 
 正式批量输出固定为：
@@ -442,10 +480,19 @@ certificate 的 root action 质量均为 0。有效行必须为有限 float32、
 | `diagnostics` | struct `[N]` | 只记录，不参与标签、validity 的连续权重或 loss 权重 |
 
 `diagnostics[i]` 至少包含：`teacher_version/query_hash/cache_hit/expanded_nodes/
-planning_time_ms/path_length_actions/reached_goal/h_static_start/h_static_end/
-progress_delta/feasible_root_actions/preferred_root_action/budget_exhausted/non_finite_detected/
-layout_hash/K_motion/expansion_budget`。除 `planning_time_ms` 外，结构化 diagnostics 也必须对相同
-输入确定。`valid_coverage` 是上层按 `sum(valid_mask)/N` 聚合的日志量，不是单机器人 label 字段。
+planning_time_ms/root_costs_raw/root_costs_normalized/root_status/root_path_length_actions/
+root_h_static_end/root_progress_delta/feasible_root_actions/preferred_root_action/
+budget_exhausted/non_finite_detected/layout_hash/K_motion/expansion_budget/
+cost_normalization/tau_motion`。三类数组均按项目五动作顺序保存；不在 support 的项使用 schema
+定义的 null/status，而不把 `+∞` 序列化为非标准 JSON 数字。`preferred_root_action` 只表示有限
+cost argmin，cost 相同按固定 root rank 决定；它不替代完整 soft preference。除
+`planning_time_ms` 外，结构化 diagnostics 也必须对相同输入确定。`valid_coverage` 是上层按
+`sum(valid_mask)/N` 聚合的日志量，不是单机器人 label 字段。
+
+`root_status[5]` 的唯一枚举固定为：`unsupported_action`（NOOP/TOGGLE）、`physical_illegal`、
+`finite`、`budget_exceeded`、`search_exhausted`、`no_progress_continuation`。只有 `finite` 对应
+JSON 中非 null 的 raw/normalized cost；其余状态对应 null cost 和零概率。任何意外非有限中间
+量都不降级为 root status，而是按第 9.7 节使整台机器人 `non_finite_output` fail-closed。
 
 ### 9.7 Fail-closed 与失败原因优先级
 
@@ -459,13 +506,16 @@ layout_hash/K_motion/expansion_budget`。除 `planning_time_ms` 外，结构化 
 6. `static_unreachable`；
 7. `no_physical_root_action`；
 8. `non_finite_output`；
-9. `budget_exceeded`（512 expansions 后无 progress trajectory）；
+9. `budget_exceeded`（512 expansions 后没有任何 root 获得有限 cost）；
 10. `search_exhausted`（OPEN 耗尽且无合法 trajectory）；
 11. `no_progress_trajectory`（存在合法短轨迹但没有严格 progress certificate）。
 
-成功时为 `ok`。第 8 项同时覆盖 heuristic、cost、preference 或归一化出现 NaN/Inf；输出校验在
-搜索后再次执行，因此后验非有限也使用同一原因。若搜索结束时既存在合法非进展轨迹又 OPEN
-耗尽，使用更具体的 `no_progress_trajectory`；完全没有合法轨迹才使用 `search_exhausted`。
+成功时为 `ok`。第 8 项覆盖 heuristic、有限 root cost、归一化结果或 preference 出现意外
+NaN/Inf；按合同为无效 root 设置的 `C=+∞` sentinel 不属于数值异常，且不得直接写入标准 JSON。
+输出校验在搜索后再次执行，因此后验非有限也使用同一原因。若搜索结束时既存在合法非进展轨迹
+又 OPEN 耗尽，使用更具体的 `no_progress_trajectory`；完全没有合法轨迹才使用
+`search_exhausted`。共享预算耗尽但至少存在一个有限 root cost 时机器人级结果为 `ok`，未认证
+root 的 `root_status` 为 `budget_exceeded` 且概率为 0。
 
 任何失败都统一产生：
 
@@ -490,6 +540,8 @@ cache 只能做 exact-query memoization。key 固定为 canonical JSON 的 SHA-2
 - 5 位 `pure_motion_mask`；
 - `K_motion=12`；
 - `expansion_budget=512`；
+- `cost_normalization=minmax-v1`；
+- `tau_motion=1.0`；
 - `teacher_version=pure-motion-astar-v1`；
 - 仅在影响 footprint/legality 时存在的 `footprint_class`。
 
@@ -503,15 +555,22 @@ exact key hit 可以返回此前保存的完整确定性结果，包括无效结
 
 ### 9.9 Diagnostics-only 与因果隔离证明
 
-planning time、expanded nodes、path length、failure reason、valid coverage、cache 命中、Student
-disagreement、paired return、`Delta G` 和 Reward Calibration 全部只记录。其中前五项可描述搜索
-和 coverage，后四项可描述 Student/教师效果；任何一项都不得改变 A* query、OPEN、heuristic、
-root action、preference、validity 或 smoothing。
+planning time、expanded nodes、root path length、failure reason、valid coverage、cache 命中、
+Student disagreement、paired return、`Delta G` 和 Reward Calibration 全部只记录。其中前五项可
+描述搜索和 coverage，后四项可描述 Student/教师效果；任何一项都不得改变 A* query、OPEN、
+heuristic、root cost、preference 或 validity。不得从 search entropy、path-length confidence、
+Student disagreement 或任何其他诊断量构造额外 loss 权重。
 
 Reward Calibration 的时序边界固定为：Pure Motion Teacher 先独立生成并冻结本 query 的
-`motion_preferences/valid_mask`，随后 calibration 才能评价该标签。它不能重试搜索、修改 root
-action、把 invalid 变 valid 或把 reward 写入 cache key。Student disagreement 同理只在 label
-生成后计算和记录。
+`motion_preferences/valid_mask`，随后 calibration 才能评价该标签。Motion cost 只决定标签内部
+动作偏好；Reward Calibration 只决定该标签整体是否值得蒸馏：
+
+$$
+w_{A,i}(t)=\lambda_A(t)m_{A,i}^{valid}c_A^{reward}.
+$$
+
+Calibration 不能重试搜索、修改 root cost/preference、把 invalid 变 valid 或把 reward 写入 cache
+key。Student disagreement 同理只在 label 生成后计算和记录，且不进入权重。
 
 因此候选 C 的因果链只有：
 
@@ -528,14 +587,15 @@ own geometry + resolved goal + static layout
 
 以下示例使用项目 `[NOOP, FORWARD, LEFT, RIGHT, TOGGLE_LOAD]` 顺序：
 
-| 情形 | `valid_mask[i]` | `motion_preferences[i]` | 原因 |
-|---|---:|---|---|
-| 三个 root 均有证书，首选 FORWARD | true | `[0, 0.85, 0.075, 0.075, 0]` | 其余两个可行 root 均分 0.15 |
-| FORWARD/LEFT 有证书，首选 FORWARD | true | `[0, 0.85, 0.15, 0, 0]` | RIGHT 无证书不分质量 |
-| 只有 RIGHT 有证书 | true | `[0, 0, 0, 1, 0]` | 唯一可行 root one-hot |
-| mandatory TOGGLE | false | `[0, 0, 0, 0, 0]` | `mandatory_toggle_load` |
-| 512 expansions 后无 progress | false | `[0, 0, 0, 0, 0]` | `budget_exceeded` |
-| 全队均无效 | 全 false | 全零矩阵 | 本次 `L_A=0`，其他训练分支不变 |
+| 情形 | 有限 root raw cost | `valid_mask[i]` | `motion_preferences[i]` | 原因 |
+|---|---|---:|---|---|
+| 三个 root 均有限 | F/L/R=`12/13/14` | true | `[0, 0.506480, 0.307196, 0.186324, 0]` | min-max=`0/0.5/1`，`tau_motion=1.0` |
+| RIGHT 无 continuation | F/L=`12/14` | true | `[0, 0.731059, 0.268941, 0, 0]` | RIGHT 为 `+∞`，质量为 0 |
+| 两个 root 等 cost | F/L=`12/12` | true | `[0, 0.5, 0.5, 0, 0]` | 等 cost 退化时在有限 root 间均匀 |
+| 只有 RIGHT 有限 | R=`14` | true | `[0, 0, 0, 1, 0]` | 唯一有限 root 自然 one-hot |
+| mandatory TOGGLE | 不适用 | false | `[0, 0, 0, 0, 0]` | `mandatory_toggle_load` |
+| 512 expansions 后没有有限 root | 无 | false | `[0, 0, 0, 0, 0]` | `budget_exceeded` |
+| 全队均无效 | 无 | 全 false | 全零矩阵 | 本次 `L_A=0`，其他训练分支不变 |
 
 O1 必须以确定性测试证明：重复 query bitwise 相同；置换其他机器人 ID 不改变结果；改变 priority、
 reward、Student、LLM 或 calibration 不改变结果；改变匿名占用、静态地图、目标或纯物理 mask
@@ -547,9 +607,9 @@ reward、Student、LLM 或 calibration 不改变结果；改变匿名占用、�
 
 - O0-B 五项 plan checklist 全部完成，O0-C checked item 为 0；
 - 候选结论、输入白名单/黑名单、`K_motion/H_reward` 隔离、512-expansion 定义、唯一 tie-break、
-  direction rank、progress certificate、label smoothing、输出 schema、失败优先级、cache key 和
-  diagnostics-only 边界均有无占位精确定义；
-- 固定边界表验证三/二/单一可行 root 的概率分别归一化为 1，NOOP/TOGGLE 为 0；
+  direction rank、progress certificate、root-action cost、min-max normalization、固定 Boltzmann
+  transform、输出 schema、失败优先级、cache key 和 diagnostics-only 边界均有无占位精确定义；
+- 固定边界表验证不同 cost、等 cost 与单一有限 root 的概率分别归一化为 1，NOOP/TOGGLE 为 0；
 - `python -m pytest`：退出码 0，184 tests passed；
 - `python -m flake8 rware llm_mappo eval train scripts figures/core`：退出码 0；
 - `python visualize.py --help` 与

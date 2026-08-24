@@ -18,12 +18,16 @@
 
 ### 1.2 Pure Motion Teacher
 
-- [ ] 教师输入/输出、搜索、概率、budget、确定性、cache、有效掩码和 fail-closed 合同精确冻结；
+- [ ] 教师输入/输出、root-action-conditioned cost、min-max 归一化、`tau_motion=1.0` Boltzmann
+  prior、共享 budget、确定性、cache、有效掩码和 fail-closed 合同精确冻结；
 - [ ] purity 矩阵证明任务/优先级/充电/parking/yield/预约优先权/coordinator/reward/LLM/Student/
   calibration 都不能参与标签生成；
-- [ ] `TOGGLE_LOAD` 和非法动作概率质量必须为零；搜索失败、超预算和非法轨迹逐机器人 mask=0；
+- [ ] `TOGGLE_LOAD`、非法动作及无有效 continuation 的 root 概率质量必须为零；三个 root 不得
+  启动独立完整 A*，必须共享单次 bounded search 的总 512-expansion budget；没有任何有限 root
+  cost 时逐机器人 mask=0；
 - [ ] reward calibration 只评价已经生成的标签，不能改变标签内容、validity 或规划过程；
-- [ ] 搜索质量指标只记录，不存在连续 `c_A_search` 优化乘子。
+- [ ] 搜索质量指标只记录，不存在连续 `c_A_search`、search entropy、path-length confidence、
+  Student disagreement 或其他优化乘子；论文不把 planning cost 表述为 RL Q-value。
 
 ### 1.3 Reward Calibration
 
