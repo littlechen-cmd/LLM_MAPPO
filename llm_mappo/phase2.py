@@ -314,6 +314,41 @@ class Phase2Warehouse:
         """Render the current warehouse state in the selected Gymnasium mode."""
         return self._env.render()
 
+    def export_shadow_state(self) -> dict:
+        """Export only mutable adapter state for `o0-shadow-state-v1`."""
+        return {
+            "raw_observations": [
+                np.asarray(item).copy() for item in self._raw_observations
+            ],
+            "metrics": self._metrics.as_dict(),
+            "last_progress_step": self._last_progress_step,
+            "last_completed": self._last_completed,
+            "last_picked": self._last_picked,
+            "low_battery_active": sorted(self._low_battery_active),
+            "charged_pending_recovery": sorted(self._charged_pending_recovery),
+            "charging_active": sorted(self._charging_active),
+            "planner_query_count": self._planner_query_counter.count,
+        }
+
+    def import_shadow_state(self, state: dict) -> None:
+        """Restore adapter state without querying a planner or resetting the env."""
+        self._raw_observations = tuple(
+            np.asarray(item, dtype=np.float32).copy()
+            for item in state["raw_observations"]
+        )
+        metrics = EpisodeMetrics()
+        for name, value in state["metrics"].items():
+            if name in EpisodeMetrics.__dataclass_fields__:
+                setattr(metrics, name, value)
+        self._metrics = metrics
+        self._last_progress_step = int(state["last_progress_step"])
+        self._last_completed = int(state["last_completed"])
+        self._last_picked = int(state["last_picked"])
+        self._low_battery_active = set(state["low_battery_active"])
+        self._charged_pending_recovery = set(state["charged_pending_recovery"])
+        self._charging_active = set(state["charging_active"])
+        self._planner_query_counter.count = int(state["planner_query_count"])
+
     def action_masks(self) -> np.ndarray:
         """Return decentralized masks for valid Phase 2 motion interactions."""
         masks = np.ones((self.n_agents, ACTION_COUNT), dtype=bool)

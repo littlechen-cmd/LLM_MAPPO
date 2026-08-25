@@ -1,12 +1,15 @@
 """Dynamic warehouse environment used by the LLM-MAPPO implementation."""
 
+import copy
+from hashlib import sha256
+import json
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
 from llm_mappo.rules import TaskQueue
-from llm_mappo.types import PriorityAdjustment, Task
-from rware.warehouse import Action, Direction, RewardType, Warehouse
+from llm_mappo.types import PriorityAdjustment, Task, TaskStatus
+from rware.warehouse import Action, Agent, Direction, RewardType, Shelf, Warehouse
 
 
 class DynamicWarehouse(Warehouse):
@@ -55,6 +58,8 @@ class DynamicWarehouse(Warehouse):
         self.total_blocked_forwards = 0
         self.last_events: List[dict] = []
         self.charging_reservations = {}
+        self._shadow_randomness = None
+        self._shadow_randomness_address = None
         super().__init__(*args, **kwargs)
         self.task_completion_target = (
             task_completion_target
@@ -155,6 +160,165 @@ class DynamicWarehouse(Warehouse):
         self._assign_available_tasks()
         observations = tuple(self._make_obs(agent) for agent in self.agents)
         return observations, self._get_info()
+
+    def shadow_config_payload(self) -> dict:
+        """Immutable settings covered by the branch import config hash."""
+        return {
+            "grid_size": self.grid_size,
+            "goals": self.goals,
+            "highways": self.highways.copy(),
+            "n_agents": self.n_agents,
+            "max_steps": self.max_steps,
+            "reward_type": self.reward_type.name,
+            "batch_interval": self.batch_interval,
+            "batch_size_range": self.batch_size_range,
+            "charging_stations": self.charging_stations,
+            "charging_rate": self.charging_rate,
+            "battery_cost_scale": self.battery_cost_scale,
+            "picking_lock_steps": self.picking_lock_steps,
+            "auto_assign": self.auto_assign,
+            "task_completion_target": self.task_completion_target,
+        }
+
+    def shadow_layout_hash(self) -> str:
+        payload = {
+            "grid_size": self.grid_size,
+            "goals": self.goals,
+            "highways": self.highways.astype(np.uint8).tolist(),
+            "charging_stations": self.charging_stations,
+            "picking_stations": self.picking_stations,
+        }
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return sha256(raw).hexdigest()
+
+    def export_shadow_state(self) -> dict:
+        """Serialize explicit mutable state without cross-branch entity references."""
+        return {
+            "agents": [
+                {
+                    "id": agent.id,
+                    "x": agent.x,
+                    "y": agent.y,
+                    "prev_x": agent.prev_x,
+                    "prev_y": agent.prev_y,
+                    "direction": agent.dir.name,
+                    "message": agent.message.copy(),
+                    "req_action": agent.req_action.name if agent.req_action else None,
+                    "carrying_shelf_id": (
+                        agent.carrying_shelf.id if agent.carrying_shelf else None
+                    ),
+                    "canceled_action": agent.canceled_action,
+                    "has_delivered": agent.has_delivered,
+                    "battery": float(agent.battery),
+                    "dead": bool(agent.dead),
+                    "picking_lock_steps": int(agent.picking_lock_steps),
+                    "task_id": agent.task_id,
+                    "collision_count": int(agent.collision_count),
+                    "blocked_forward_count": int(agent.blocked_forward_count),
+                }
+                for agent in self.agents
+            ],
+            "shelves": [
+                {"id": shelf.id, "x": shelf.x, "y": shelf.y,
+                 "prev_x": shelf.prev_x, "prev_y": shelf.prev_y}
+                for shelf in self.shelfs
+            ],
+            "request_queue_ids": [shelf.id for shelf in self.request_queue],
+            "grid_hash": sha256(self.grid.tobytes()).hexdigest(),
+            "task_queue": {
+                "tasks": self.task_queue.as_dict(),
+                "next_task_index": self.task_queue._next_task_index,
+                "next_label_number": dict(self.task_queue._next_label_number),
+            },
+            "batch_index": self._batch_index,
+            "shelf_home": dict(self._shelf_home),
+            "charging_reservations": dict(self.charging_reservations),
+            "total_collisions": self.total_collisions,
+            "total_blocked_forwards": self.total_blocked_forwards,
+            "last_events": copy.deepcopy(self.last_events),
+            "cur_steps": self._cur_steps,
+            "cur_inactive_steps": self._cur_inactive_steps,
+            "np_random_seed": self._np_random_seed,
+            "np_random_state": copy.deepcopy(self.np_random.bit_generator.state),
+            "agent_counter": Agent.counter,
+            "shelf_counter": Shelf.counter,
+        }
+
+    def import_shadow_state(self, state: dict) -> None:
+        """Restore a snapshot into a preconstructed environment without reset."""
+        if (
+            len(state["agents"]) != len(self.agents)
+            or len(state["shelves"]) != len(self.shelfs)
+        ):
+            raise ValueError("Shadow entity cardinality mismatch.")
+        shelves = {}
+        for shelf, record in zip(self.shelfs, state["shelves"]):
+            for name in ("id", "x", "y", "prev_x", "prev_y"):
+                setattr(shelf, name, record[name])
+            shelves[shelf.id] = shelf
+        for agent, record in zip(self.agents, state["agents"]):
+            agent.id = record["id"]
+            agent.x = record["x"]
+            agent.y = record["y"]
+            agent.prev_x = record["prev_x"]
+            agent.prev_y = record["prev_y"]
+            agent.dir = Direction[record["direction"]]
+            agent.message = np.asarray(record["message"], dtype=np.float64).copy()
+            agent.req_action = (
+                Action[record["req_action"]] if record["req_action"] else None
+            )
+            agent.carrying_shelf = shelves.get(record["carrying_shelf_id"])
+            agent.canceled_action = record["canceled_action"]
+            agent.has_delivered = record["has_delivered"]
+            agent.battery = float(record["battery"])
+            agent.dead = bool(record["dead"])
+            agent.picking_lock_steps = int(record["picking_lock_steps"])
+            agent.task_id = record["task_id"]
+            agent.collision_count = int(record["collision_count"])
+            agent.blocked_forward_count = int(record["blocked_forward_count"])
+        self.request_queue = [shelves[item] for item in state["request_queue_ids"]]
+        self.task_queue._tasks.clear()
+        for record in state["task_queue"]["tasks"]:
+            self.task_queue._tasks[record["task_id"]] = Task(
+                task_id=record["task_id"], shelf_id=record["shelf_id"],
+                batch_id=record["batch_id"], label=record["label"],
+                arrival_step=record["arrival_step"],
+                status=TaskStatus(record["status"]),
+                assigned_agent_id=record["assigned_agent_id"],
+                completed_step=record["completed_step"],
+            )
+        self.task_queue._next_task_index = int(state["task_queue"]["next_task_index"])
+        self.task_queue._next_label_number = dict(
+            state["task_queue"]["next_label_number"]
+        )
+        self._batch_index = int(state["batch_index"])
+        self._shelf_home = {
+            int(key): tuple(value) for key, value in state["shelf_home"].items()
+        }
+        self.charging_reservations = dict(state["charging_reservations"])
+        self.total_collisions = int(state["total_collisions"])
+        self.total_blocked_forwards = int(state["total_blocked_forwards"])
+        self.last_events = copy.deepcopy(state["last_events"])
+        self._cur_steps = int(state["cur_steps"])
+        self._cur_inactive_steps = int(state["cur_inactive_steps"])
+        self._np_random_seed = state["np_random_seed"]
+        self.np_random.bit_generator.state = copy.deepcopy(state["np_random_state"])
+        Agent.counter = int(state["agent_counter"])
+        Shelf.counter = int(state["shelf_counter"])
+        self.global_image = None
+        self._recalc_grid()
+        if sha256(self.grid.tobytes()).hexdigest() != state["grid_hash"]:
+            raise ValueError("Shadow grid reconstruction hash mismatch.")
+
+    def set_shadow_randomness(self, randomness, **address: int) -> None:
+        self._shadow_randomness = randomness
+        self._shadow_randomness_address = {
+            name: int(value) for name, value in address.items()
+        }
+
+    def clear_shadow_randomness(self) -> None:
+        self._shadow_randomness = None
+        self._shadow_randomness_address = None
 
     def step(self, actions):
         if self.msg_bits:
@@ -365,15 +529,41 @@ class DynamicWarehouse(Warehouse):
             for shelf in self.shelfs
             if shelf.id not in active_shelf_ids and shelf.id not in carried_shelf_ids
         ]
-        count = int(
-            self.np_random.integers(
-                self.batch_size_range[0], self.batch_size_range[1] + 1
-            )
-        )
+        count = self._scheduled_batch_count()
         count = min(count, len(candidates))
         if count:
-            chosen = self.np_random.choice(candidates, size=count, replace=False)
-            self._create_batch([int(shelf_id) for shelf_id in chosen])
+            chosen = self._scheduled_batch_shelves(candidates, count)
+            self._create_batch(chosen)
+
+    def _scheduled_batch_count(self) -> int:
+        lower, upper = self.batch_size_range
+        if self._shadow_randomness is None:
+            return int(self.np_random.integers(lower, upper + 1))
+        return self._shadow_randomness.integer(
+            **self._shadow_randomness_address,
+            event_type="dynamic_ingress_batch_size",
+            event_slot=0,
+            low=lower,
+            high=upper + 1,
+        )
+
+    def _scheduled_batch_shelves(
+        self, candidates: Sequence[int], count: int
+    ) -> list[int]:
+        if self._shadow_randomness is None:
+            return [
+                int(shelf_id)
+                for shelf_id in self.np_random.choice(
+                    candidates, size=count, replace=False
+                )
+            ]
+        return self._shadow_randomness.choose_without_replacement(
+            candidates,
+            count,
+            **self._shadow_randomness_address,
+            event_type="dynamic_ingress_shelf_choice",
+            event_slot=0,
+        )
 
     def _refresh_request_queue(self):
         self.request_queue = [

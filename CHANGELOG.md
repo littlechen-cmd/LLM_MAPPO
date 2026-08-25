@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O1-E introduces canonical JSON `o0-shadow-state-v1` snapshots,
+  preconstructed branch restore, stateless `crn-v1` dynamic-ingress events, shared
+  `calibration-sampler-v1`, and the frozen Welford/EMA reward-calibration state.
 - Added: O1-D adds strict three-score semantic parsing, `semantic-view-v3` 61D
   encoding, validity-only offline retrieval, truncated-exponential OOD reliability,
   and a zero-network owner-only label validation CLI.
