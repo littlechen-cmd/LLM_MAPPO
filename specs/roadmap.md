@@ -23,7 +23,7 @@ P0 ──> O0 ──> O1 ──> O2 ──> O3 ──┐
 
 ## Phase O0：优化路线 A* 教师算法与架构重设计
 
-- [~] in progress
+- [x] complete
 - 目标：在不改代码、不训练的前提下，完整审计 waypoint、A* preference、协调器、rollout
   buffer、KL、规则目标和 MAPPO 动作的数据流；比较候选后冻结 Pure Motion Teacher、H=12
   paired shadow Reward Calibration 与三维离线 LLM 教师。
@@ -34,7 +34,7 @@ P0 ──> O0 ──> O1 ──> O2 ──> O3 ──┐
 
 ## Phase O1：优化路线角色对齐实现与静态验证
 
-- [ ] pending
+- [~] in progress
 - 目标：只实现 O0 批准的方案，完成确定性教师纯度、action mask、零有效样本、buffer、KL、
   checkpoint 兼容、完整回归和短 smoke。
 - 禁止：训练、长评估、KL 系数搜索、环境/奖励/正式 seed 变更。

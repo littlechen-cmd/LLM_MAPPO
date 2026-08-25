@@ -105,6 +105,6 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
   参数预注册；
 - [x] 提供 O1 架构任务包，明确实现顺序、测试先行、短 smoke、owner-run A600 基准命令和禁止
   长任务；
-- [ ] 取得研究所有者对 canonical architecture、EMA 参数、OOD 公式、三维数据合同、schedule、
+- [x] 取得研究所有者对 canonical architecture、EMA 参数、OOD 公式、三维数据合同、schedule、
   H=12 runtime/memory gate、消融和允许主张的书面批准；
 - [x] 截至 O0-G 交付，批准前未标记 O0 complete、未进入 O1、未生成标签且未修改运行代码。

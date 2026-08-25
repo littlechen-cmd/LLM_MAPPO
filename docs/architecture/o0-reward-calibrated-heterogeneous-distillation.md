@@ -2,9 +2,9 @@
 
 ## 1. 文档状态与审计基线
 
-本文是优化路线唯一 canonical architecture。O0-A 至 O0-F 已逐组获研究所有者批准；第 14 节
-记录 O0-G 零偏差复核和 O1 实施交接。当前停在 O0 最终研究所有者书面批准门；批准前不得把
-O0 标记完成、进入 O1、生成 pilot/formal 标签或修改运行时代码。
+本文是优化路线唯一 canonical architecture。O0-A 至 O0-F 已逐组获研究所有者批准；O0-G 于
+2026-08-25 获研究所有者最终书面批准，O0 已完成并允许进入 O1。第 14 节记录零偏差复核、O1
+实施交接与批准边界。
 
 - 代码审计基线：P0 最终 commit `6fcb7d3`；
 - 规格分支：`codex/o0-astar-teacher-redesign`；
@@ -1799,13 +1799,12 @@ O1 本地工作只允许短单元/集成测试和单次短 smoke，不得生成 
 长评估、搜索 KL/schedule/EMA/OOD 参数或静默缩短 H。A600 的 12-worker H=4/H=12 开销与内存
 基准只由研究所有者运行；Codex 只分析其产物。
 
-### 14.3 最终书面批准门
+### 14.3 最终书面批准记录
 
-O0-G 交付不等于 O0 自动完成。研究所有者必须在本次交付后明确书面批准以下整体：唯一
-canonical architecture、Pure Motion A* 合同、Reward Calibration 与 EMA、OOD 公式、三维数据
-合同、Student/schedule/checkpoint、H=12 runtime/memory gate、证据预算/消融/统计和允许主张。
-获得该批准后，才可在单独的收口动作中标记 O0 complete、同步 Roadmap/TASKS/CHANGELOG 并进入
-O1；批准前这些状态必须保持 pending。
+研究所有者于 2026-08-25 明确书面批准完整 canonical architecture，并授权收口 O0、进入 O1。
+批准范围包括 Pure Motion A* 合同、Reward Calibration 与 EMA、OOD 公式、三维数据合同、
+Student/schedule/checkpoint、H=12 runtime/memory gate、证据预算/消融/统计和允许主张。该批准只
+解除 O1 的启动门，不授权生成 60/800 标签、启动 O2 训练、执行长评估、push 或 merge。
 
 ### 14.4 O0-G 验证证据
 
@@ -1813,7 +1812,10 @@ O1；批准前这些状态必须保持 pending。
 `184 passed in 45.37s`；Flake8、`visualize.py --help`、dynamic-ingress A* evaluation help 和
 `git diff --check` 均退出 0。`C:\Users\28016\bin\rg.exe --version` 返回 ripgrep 15.2.0。
 
-治理 manifest 通过 YAML 解析且状态为 `o0_g_final_owner_approval_pending`；canonical/spec/O1 任务
+O0-G 交付时治理 manifest 通过 YAML 解析且状态为 `o0_g_final_owner_approval_pending`；canonical/spec/O1 任务
 包链接全部存在；相对 P0 基线的运行代码与 runtime training config 差异为零；仓库凭据样式扫描
 未发现 API key。最终提交只包含 canonical architecture、O1 文档任务包、feature-spec checklist、
 治理 manifest 状态和 CHANGELOG，不包含运行代码、标签、artifact、训练或评估结果。
+
+最终批准后，治理 manifest 状态转为 `o1_implementation_in_progress`，O0 规格、Roadmap、TASKS
+与 CHANGELOG 同步收口。O1 仍必须逐任务组按唯一实施任务包执行和审核。

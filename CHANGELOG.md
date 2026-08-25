@@ -5,6 +5,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Changed: The research owner gave final written approval to the complete O0 contract;
+  O0 is closed and O1 role-alignment implementation is now the active phase.
 - Added: O0-G records the zero-deviation architecture audit and freezes the sole O1
   implementation task package, including module interfaces, TDD order, short smoke,
   strict legacy isolation, and the owner-only A600 runtime/memory gate command.

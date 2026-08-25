@@ -15,7 +15,7 @@
   合同；O0-F 仅按 owner 明确授权修订治理 manifest；
 - [x] O0-A 至 O0-F 各自拥有聚焦 commit、对应 CHANGELOG、验证证据和研究所有者继续批准，
   不存在跨人工检查点预做或混合提交；
-- [ ] 研究所有者已书面批准唯一架构，O0 才可标记 complete。
+- [x] 研究所有者已书面批准唯一架构，O0 已按授权标记 complete。
 
 ### 1.2 Pure Motion Teacher
 
@@ -121,13 +121,13 @@ smoke、禁止长任务和 owner-only A600 命令。O0-G 交付时只允许保�
 
 ## 4. Merge criteria
 
-- [ ] `plan.md` 的 O0-A 至 O0-G 全部完成；
-- [ ] 所有 validation 条目有证据且无未解释失败；
-- [ ] canonical architecture 不依赖未跟踪输入且已由研究所有者批准；
-- [ ] `specs/roadmap.md` 的 O0 状态更新为 `[x] complete`；
-- [ ] `TASKS.md` 的 O0 只由核心架构师在证据审查后标记完成；
-- [ ] `CHANGELOG.md` 已按每个完成任务组同步；
-- [ ] O0-A 至 O0-F 的逐组人工审核记录完整，且每组批准时间早于下一组首个 commit；
-- [ ] 没有运行代码、runtime training config、标签、训练、长评估、O3 拓扑或稳定路线修改混入
+- [x] `plan.md` 的 O0-A 至 O0-G 全部完成；
+- [x] 所有 validation 条目有证据且无未解释失败；
+- [x] canonical architecture 不依赖未跟踪输入且已由研究所有者批准；
+- [x] `specs/roadmap.md` 的 O0 状态更新为 `[x] complete`；
+- [x] `TASKS.md` 的 O0 只由核心架构师在证据审查后标记完成；
+- [x] `CHANGELOG.md` 已按每个完成任务组同步；
+- [x] O0-A 至 O0-F 的逐组人工审核记录完整，且每组批准时间早于下一组首个 commit；
+- [x] 没有运行代码、runtime training config、标签、训练、长评估、O3 拓扑或稳定路线修改混入
   O0；治理 manifest 仅含文档合同；
-- [ ] 分支工作树干净，commit 聚焦且未 push/merge，交由研究所有者发布。
+- [x] 收口前工作树干净、commit 聚焦且未 push/merge；收口提交仍交由研究所有者发布。

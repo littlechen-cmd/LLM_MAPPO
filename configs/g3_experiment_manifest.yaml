@@ -1,9 +1,8 @@
 schema_version: 4
-status: o0_g_final_owner_approval_pending
+status: o1_implementation_in_progress
 document_role: governance_manifest_not_runtime_training_config
 canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:
-  - O0-G zero-deviation owner approval
   - O1 implementation and static validation
   - O2 owner-run calibration Go
   - O3 unseen-topology freeze
@@ -13,6 +12,7 @@ freeze_blockers:
 code:
   branch: codex/o0-astar-teacher-redesign
   p0_base_commit: 6fcb7d3
+  o0_architecture_delivery_commit: a6545a5
   frozen_implementation_commit: null
 
 python_environment:
