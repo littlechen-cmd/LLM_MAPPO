@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O1-C implements the deterministic `pure-motion-astar-v1` Teacher with a
+  shared bounded search, root-conditioned soft motion prior, exact-query cache, and
+  fail-closed per-robot results.
 - Added: O1-B adds the isolated 613D/61D O0 Student, per-agent optimization buffer,
   real-environment-step schedule, and strict `o0-student-checkpoint-v1` loader.
 - Added: O1-A introduces versioned DirectGoal and NoGoalHint physical observations,
