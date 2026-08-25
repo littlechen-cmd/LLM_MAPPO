@@ -1,0 +1,6 @@
+{
+  "fixture_only": true,
+  "fixture_schema": "semantic-v3-smoke-fixture-v1",
+  "record_count": 4,
+  "network_calls": 0
+}

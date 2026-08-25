@@ -160,7 +160,7 @@ class RewardCalibrator:
         real_adapter,
         student_adapter,
         teacher_adapter,
-        student_logits: Callable[[np.ndarray], np.ndarray],
+        student_logits: Callable[[object, np.ndarray], np.ndarray],
         teacher_preferences: Callable[[object], tuple[np.ndarray, np.ndarray]],
         initial_valid_mask: np.ndarray,
         critic_value: Callable[[np.ndarray], object],
@@ -230,7 +230,7 @@ class RewardCalibrator:
         *,
         adapter,
         snapshot,
-        student_logits: Callable[[np.ndarray], np.ndarray],
+        student_logits: Callable[[object, np.ndarray], np.ndarray],
         teacher_preferences: Callable[[object], tuple[np.ndarray, np.ndarray]] | None,
         critic_value: Callable[[np.ndarray], object],
         gamma: float,
@@ -246,7 +246,7 @@ class RewardCalibrator:
             for shadow_offset in range(horizon):
                 masks = environment.action_masks()
                 actions = deterministic_masked_argmax(
-                    student_logits(observations), masks
+                    student_logits(environment, observations), masks
                 )
                 if teacher_preferences is not None:
                     preferences, valid = teacher_preferences(environment)

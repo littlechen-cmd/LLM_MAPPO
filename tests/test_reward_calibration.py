@@ -106,7 +106,9 @@ def test_paired_shadows_keep_real_rollout_unchanged_and_bootstrap_only_at_horizo
         real_adapter=real_adapter,
         student_adapter=student_adapter,
         teacher_adapter=teacher_adapter,
-        student_logits=lambda observations: np.zeros((3, 5), dtype=np.float32),
+        student_logits=lambda environment, observations: np.zeros(
+            (3, 5), dtype=np.float32
+        ),
         teacher_preferences=teacher_provider,
         initial_valid_mask=teacher_provider(real)[1],
         critic_value=lambda observations: 0.0,

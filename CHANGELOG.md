@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O1-F composes the isolated optimization runtime, strict functional-smoke
+  configuration, compact evidence logger, semantic fixture boundary, and frozen CLI
+  entry points; the 128-step smoke is interface-only and makes no performance claim.
 - Added: O1-E introduces canonical JSON `o0-shadow-state-v1` snapshots,
   preconstructed branch restore, stateless `crn-v1` dynamic-ingress events, shared
   `calibration-sampler-v1`, and the frozen Welford/EMA reward-calibration state.
