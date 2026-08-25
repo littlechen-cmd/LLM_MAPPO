@@ -211,16 +211,78 @@ pilot，并重新生成完整 800 条。
 
 ### 3.5 Student、损失与 schedule
 
-Student 使用 Motion Encoder/Motion Prior Head 与三维 Semantic Encoder/Semantic Head/
-Semantic Adapter 的异构分支，在 Student 内 late fusion 后由 MAPPO 输出最终动作。A* loss 只
-监督 Motion Representation 与 Motion Prior Head；LLM loss 只监督 Semantic Encoder/Head；
-PPO 不得穿过 detached 三维 semantic output，但可训练 Semantic Adapter 和最终策略。
+Student 固定使用 `o0-student-v1`。canonical 5-AGV 环境的物理观测为
+`x_phys[N,613]`，三维语义视图为 `x_sem[N,61]`。网络 shape 固定为：
+
+- Motion Encoder：`613 -> 128 -> 64`，两层后均为 ReLU，输出
+  `z_motion[N,64]`；
+- Motion Prior Head：`64 -> 3`，顺序固定为
+  `[FORWARD,LEFT,RIGHT]`，只用于 A* KD；
+- Semantic Encoder：`61 -> 128 -> 64`，两层后均为 ReLU；
+- Semantic Head：`64 -> 3 -> sigmoid`，顺序固定为
+  `[task_persistence,yielding_preference,coordination_risk]`；
+- Semantic Adapter：接收 detached 三维输出，执行 `3 -> 16 -> ReLU`；
+- late fusion：拼接 `z_motion[N,64]` 与 adapter 输出 `[N,16]`；
+- MAPPO Action Head：线性 `80 -> 5`，输出项目动作枚举顺序的最终 logits；
+- Centralized Critic：只接收 `[B,N,613]` 物理观测，逐机器人
+  `613 -> 128 -> 128`，4-head attention 后按机器人 mean pooling，再经
+  `128 -> 256 -> 128 -> 1` 输出团队 value `[B]`。
+
+梯度所有权固定如下：PPO actor loss 可更新 Motion Encoder、Semantic Adapter 与最终 Action
+Head；A* KD 只更新 Motion Encoder 与 Motion Prior Head；LLM semantic loss 只更新 Semantic
+Encoder/Head；value loss 只更新 Critic。Motion Prior Head 不进入最终动作路径；Semantic Head 的
+输出必须在进入 Adapter 前 stop-gradient，因此 PPO/A* 均不能绕回 Semantic Encoder/Head。
+Teacher target、reliability、planning cost、`Delta G`、EMA 或 disagreement 不得作为 Critic 输入。
+Calibration 只在 `eval/inference_mode` 读取 detached Critic value，不反传 Critic 或 A*。
+
+A* KD 只在运动三动作 support 上比较 Teacher prior 与 Motion Prior：
+
+$$
+Z_A=\sum_i m_{calib}(t)m^{valid}_{A,i},
+$$
+
+$$
+L_A=\begin{cases}
+\lambda_A(t)\dfrac{\sum_i m_{calib}(t)m^{valid}_{A,i}c_i
+D_{KL}(p_{A^*,i}\Vert p_{motion,i})}{Z_A},&Z_A>0,\\
+0,&Z_A=0,
+\end{cases}
+$$
+
+其中 Fixed-KD 的 `c_i=1`，RC-KD 的 `c_i=c_A_reward(t)`。分母不得包含 `lambda_A` 或
+`c_A_reward`，避免把正式缩放抵消。LLM loss 对三维先取逐记录 mean squared error，再定义：
+
+$$
+Z_L=\sum_i c_{validity,i},
+$$
+
+$$
+L_L=\begin{cases}
+\lambda_L(t)\dfrac{\sum_i c_{validity,i}c_{OOD,i}
+\operatorname{MSE}_3(\hat y_i,y_i)}{Z_L},&Z_L>0,\\
+0,&Z_L=0.
+\end{cases}
+$$
 
 Student–Teacher Disagreement 完全移出优化权重，只保留诊断日志。不得使用
 `q=c(1+ρd)` 或等价形式影响梯度。
 
-`λ_A(t)` 与 `λ_L(t)` 保留。O0 必须冻结两者完全确定、可恢复的预注册 schedule；所有相关主
-方法与对照使用完全相同 schedule，禁止按训练结果搜索或修改。
+共同 schedule 固定为 `linear-env-step-v1`。令 checkpoint 中严格单调的真实环境交互总数为
+`t=global_env_steps`，令当前证据族 manifest 中预注册、正整数且所有匹配组相同的交互预算为
+`B=schedule_total_env_steps`：
+
+$$
+p(t)=\min(\max(t/B,0),1),\qquad
+\lambda_A(t)=0.05(1-p(t)),\qquad
+\lambda_L(t)=0.10(1-p(t)).
+$$
+
+每个 optimizer update 开始前按该 update 已收集完成的 `global_env_steps` 计算一次，整个 update
+保持不变。vector worker 每产生一个真实环境 transition 计一步，shadow transition 不计入；因此
+并行度和 episode 长短不改变 schedule 语义。所有主方法、Fixed/RC 对照及消融记录相同名义
+schedule；缺少某教师的组只把对应有效 mask 置零，不能换 schedule。checkpoint 必须保存
+schedule version、两个初值、`B/t/p/lambda_A/lambda_L`，恢复时先逐字段校验再从保存的 `t`
+继续。禁止重置、按 wall-clock/episode 推断、按结果搜索或修改。
 
 Fixed-KD 与 Reward-Calibrated KD 除 reward calibration 外必须完全一致：
 
@@ -239,20 +301,59 @@ E1 的 8-seed 正式预算。
 
 ### 3.6 执行期依赖与 checkpoint
 
-新 Motion Branch 不得以 A* waypoint、desired direction 或 trajectory 作为必须输入。O0 必须
-冻结无 Teacher 派生量的物理观测替代合同，以及当前 waypoint 输入/reward 的兼容与消融边界。
+新物理观测固定为 `direct-goal-observation-v1`。canonical 5-AGV 环境继续保持 613 维：现有
+575 维 raw observation、7 维 own state、4 维自身朝向、15 维 nearby 和 3 维 global 字段不变；
+原 waypoint block 的 9 个位置改为：
+
+```text
+[normalized_goal_dx, normalized_goal_dy, 0, 0, 0, 0, 0, 0, 0]
+```
+
+目标坐标只由规则层既有 `_target_for_agent` 语义解析；位移分别除以 `max(width-1,1)` 与
+`max(height-1,1)`，已经在目标点时为 0。后七位是版本化 reserved zeros，不得填入 A* waypoint、
+desired direction、path/trajectory、reservation、coordinator 或可学习预测。构造 observation
+不得调用 planner。O3 真正未见拓扑必须保持同一 613 维 schema，否则在进入训练前 No-Go。
+
+当前 `waypoint_reward` 实际按规则目标的 Manhattan 距离是否下降计算，并未调用 A*。O1 只允许
+行为保持地把正式名称改为 `direct_goal_progress_reward`，数值、时机和公式不变；旧字段仅作为
+历史配置 alias。优化路线 NoWP 也保留相同 reward，以便只消融 observation cue，不把 reward
+变化混入比较。
+
+历史一维/二维 checkpoint 继续使用隔离的 legacy waypoint observation builder 执行历史评估，
+但该 builder 不得被新三维 policy、训练、评估或可视化入口调用。新 loader 遇到 legacy
+observation/schema 必须拒绝恢复。优化路线 NoWP 保留配置别名，正式 schema 名为
+`no-geometric-goal-hint-v1`：保持 613 维但把上述 9 位全部置零；它是三 seed 诊断消融，不要求
+性能等同于主方法。
 
 “执行期无需 A*”是条件主张：只有后续 NoWP/无 A* 证据通过冻结门槛后才能成立；O0/O1 不得
 预先宣称已经摆脱 A*。启发式 `Heuristic-Dispatcher+A*` 基线仍可独立使用 A*，不等同于 Student
-执行依赖。
+执行依赖。该主张必须同时满足：Student policy 评估/可视化的 planner query count 为 0；把
+planner 替换为任何调用即抛错的测试替身后 DirectGoal 与 NoWP 都能完成端到端短运行；DirectGoal
+通过 O2/O3/E1 对应冻结性能门；论文明确 A* 仍在训练期提供 Motion Teacher。NoWP 的性能只作
+诊断，不能单独决定该主张。
 
-三维 checkpoint 与旧一维/二维 checkpoint 严格隔离：
+新 checkpoint schema 固定为 `o0-student-checkpoint-v1`，只允许在完整 optimizer update 后且
+rollout buffer 为空时保存可恢复 checkpoint。必须保存：
+
+- architecture/observation/semantic/checkpoint/schedule/sampler/Teacher 版本和有序维度/动作名；
+- model 与 optimizer state、`global_env_steps/update_count/completed_episodes`；
+- canonical config/manifest/Git commit、环境 ID、layout hash、能源参数与 reward schema/hash；
+- semantic dataset/manifest/index/prompt/parser/OOD 参数及内容 hash；
+- `K_motion=12`、`H_reward=12`、expansion budget、1/16 sampler；
+- EMA schema 与 `count/mean/variance/initialized/decay/minimum_scale/init_count/clipping`；
+- Python/PyTorch/CUDA 版本和 Python/NumPy/PyTorch CPU/CUDA RNG state。
+
+strict loader 必须先验证所有必需字段、版本、顺序、shape 和 hash，再执行 strict model/optimizer
+state load；不兼容错误必须具名指出字段，禁止根据 tensor shape 猜测后继续。三维 checkpoint 与
+旧一维/二维 checkpoint 严格隔离：
 
 - 旧 checkpoint 继续支持历史评估；
 - 禁止复制、填充或映射旧 semantic 权重到三维结构；
 - 新三维训练从新架构初始化；
-- 新 checkpoint 必须保存 `semantic_schema_version`、有序维度名称、可靠性合同、EMA 状态、
-  horizon、schedule 和 observation contract；不兼容加载必须给出明确错误。
+- legacy loader 只接受历史 1D/2D schema，不能训练或恢复 `o0-student-v1`；
+- 新 loader 只接受明确的 3D metadata，不从 phase 名或 tensor shape 推断 semantic width；
+- 缺失 optimizer、schedule、EMA 或 RNG 状态的文件可由独立 inference-only 入口评估，但必须
+  标记 `non_resumable=true`，不得恢复训练。
 
 ### 3.7 O1 runtime gate
 
@@ -262,6 +363,14 @@ fallback。O0 必须冻结 A600 短基准的步数、并行度、重复次数、
 
 若 H=12 的每真实环境步 runtime 超过预注册无 shadow 基线的 `3×`，或满足 O0 冻结定义的
 持续 memory growth，O1 判定 No-Go 并返回 O0；禁止静默降低 horizon 或调整 1/16 sampler。
+
+### 3.8 O1 实现依赖
+
+O1 必须依次完成并验证：DirectGoal/NoWP observation 与零 planner-call instrumentation；新 Student
+梯度边界和 strict checkpoint；Pure Motion Prior；三维 semantic retrieval；snapshot/paired shadow/
+EMA；共同 sampler/buffer/schedule/log；最后才执行 H=12 smoke 与 owner-run A600 gate。后一步
+不得用临时 waypoint、旧二维权重、Fixed-KD warm start、H=4 fallback 或关闭 strict validation
+绕过前一步。O0 只冻结职责和依赖，不预先修改 Python/YAML/JSON 或虚构尚不存在的运行符号。
 
 ## 4. 不在范围内
 

@@ -5,6 +5,10 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O0-E freezes the 613D DirectGoal physical observation, 61D three-score
+  semantic branch, detached late-fusion Student, motion-only prior loss,
+  environment-step linear teacher schedule, strict 3D checkpoint isolation, and
+  the evidence gate required before claiming A*-free Student execution.
 - Added: O0-D freezes a leakage-resistant 61-dimensional `semantic-view-v3`,
   five-point three-score anchors, truncated-exponential OOD reliability selected
   in the semantic view space, Flash-to-Pro pilot gating, immutable 60/800 label

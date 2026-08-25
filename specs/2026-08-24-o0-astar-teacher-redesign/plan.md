@@ -71,15 +71,15 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
 
 ## Task group O0-E：Student、schedule、执行依赖与兼容合同
 
-- [ ] 冻结 Motion Encoder/Prior Head、三维 Semantic Encoder/Head/Adapter、late fusion、MAPPO
+- [x] 冻结 Motion Encoder/Prior Head、三维 Semantic Encoder/Head/Adapter、late fusion、MAPPO
   action head 和 centralized critic 的输入、输出、shape 与梯度所有权；
-- [ ] 明确 Student–Teacher Disagreement 只记录不加权，语义 stop-gradient 不被 PPO 绕过，
+- [x] 明确 Student–Teacher Disagreement 只记录不加权，语义 stop-gradient 不被 PPO 绕过，
   calibration 不反传 Critic/A*；
-- [ ] 冻结所有对照共用的 `λ_A(t)`/`λ_L(t)` 精确 schedule、恢复语义和日志，禁止按结果调整；
-- [ ] 冻结不含 waypoint/desired-direction/teacher-trajectory 的物理观测替代合同、旧 waypoint
+- [x] 冻结所有对照共用的 `λ_A(t)`/`λ_L(t)` 精确 schedule、恢复语义和日志，禁止按结果调整；
+- [x] 冻结不含 waypoint/desired-direction/teacher-trajectory 的物理观测替代合同、旧 waypoint
   兼容边界、NoWP 验证门和“执行期无需 A*”条件主张；
-- [ ] 冻结三维 checkpoint metadata、strict loader、旧一维/二维历史加载与禁止权重填充迁移；
-- [ ] 列出 O1 所需模块边界和依赖顺序，但不写实现代码、伪造类名或提前修改配置。
+- [x] 冻结三维 checkpoint metadata、strict loader、旧一维/二维历史加载与禁止权重填充迁移；
+- [x] 列出 O1 所需模块边界和依赖顺序，但不写实现代码、伪造类名或提前修改配置。
 
 ## Task group O0-F：日志、消融、论文主张与 canonical architecture
 

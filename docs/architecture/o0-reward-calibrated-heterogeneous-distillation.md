@@ -1367,3 +1367,229 @@ MAPPO、OOD 权重有效或标签具有论文质量。
 pilot/formal labels，未修改 Python/YAML/JSON 运行代码。61D 重建和候选比较结果见第 11.4 节；
 旧 615D 审计明确降级为 preliminary evidence。完整 `pytest` 为 184 passed（38.15 s）；Flake8、
 `visualize.py --help`、dynamic-ingress A* evaluation help 与 `git diff --check` 退出码均为 0。
+
+## 12. O0-E Student、schedule、执行依赖与 checkpoint 冻结合同
+
+### 12.1 当前实现审计基线
+
+现有 `DualHeadActor` 使用 `motion_encoder: O -> 128 -> 64`、独立
+`engagement_encoder: O -> 128 -> 64`、一维或二维 sigmoid semantic head，以及
+`(64+D) -> 5` 最终线性 action head。PPO 和旧 A* KL 都更新 Motion Encoder 与最终 Action Head；
+semantic MSE 更新 Semantic Encoder/Head；最终 action path 对 semantic 输出执行 detach。当前没有
+独立 Motion Prior Head 或 Semantic Adapter。Centralized Critic 对每台机器人执行
+`O -> 128 -> 128`，经 4-head self-attention 和 mean pooling，再以 `128 -> 256 -> 128 -> 1`
+产生团队 value。
+
+优化路线当前 5-AGV 配置的 observation 宽度实测为 613：575 维 raw observation，加 7 维 own、
+4 维当前 orientation、9 维 waypoint block、15 维 nearby 和 3 维 global。在线 A* 执行依赖来自
+9 维 waypoint block：next-waypoint delta 2 维、desired direction 4 维和 waypoint relation 3 维。
+`include_waypoint_features=false` 虽保持相同宽度并把这些槽置零，但没有为策略提供规则目标相对
+位置。名为 `waypoint_reward` 的 shaping 实际只比较规则目标的 Manhattan distance，未调用
+planner；其命名与真正的 A* observation 依赖必须分开处理。
+
+现有 schedule 按 completed episodes 阶梯衰减，受 episode 长短和并行完成顺序影响；checkpoint
+只保存 model/config/observation width/semantic width/episodes/steps/phase，没有 optimizer、独立
+schedule、EMA、RNG 或新三维 schema。历史 loader 还会从 phase 名和 tensor shape 推断一维/二维
+semantic width。上述行为只构成 legacy 合同，不迁移为新架构默认值。
+
+### 12.2 `o0-student-v1` 唯一网络
+
+正式网络接收两个互不替代的输入：无 Teacher 派生量的物理观测
+`x_phys[N,613]`，以及 O0-D 冻结的 `semantic-view-v3` 数值表示 `x_sem[N,61]`。shape 固定如下：
+
+| 分支/组件 | 输入 → 输出 | 激活与用途 |
+|---|---|---|
+| Motion Encoder | `613 -> 128 -> 64` | 每层 Linear 后 ReLU；输出 `z_motion[N,64]` |
+| Motion Prior Head | `64 -> 3` | 无末端激活；顺序为 `FORWARD/LEFT/RIGHT`，只服务 A* KD |
+| Semantic Encoder | `61 -> 128 -> 64` | 每层 Linear 后 ReLU |
+| Semantic Head | `64 -> 3` | sigmoid；顺序为 persistence/yielding/risk |
+| Semantic Adapter | `3 -> 16` | Linear 后 ReLU；输入必须是 detached Semantic Head 输出 |
+| late fusion | `64 + 16 -> 80` | 只做固定顺序 concatenate |
+| MAPPO Action Head | `80 -> 5` | 单一 Linear；输出项目五动作顺序 logits |
+| Centralized Critic | `[B,N,613] -> [B]` | `613->128->128`、4-head attention、mean、`128->256->128->1` |
+
+Motion Prior Head 不连接最终动作 logits；它把 A* 教授的局部几何知识写入共享 Motion
+Representation。MAPPO Action Head 才是最终五动作策略，并继续使用统一 hard action mask。LLM
+三维输出不是最终动作、通行权或强制规则，而是经 Adapter 转为可由 PPO 使用的内部语义特征。
+
+### 12.3 梯度所有权与不可绕过边界
+
+| 梯度来源 | 可更新 | 禁止更新 |
+|---|---|---|
+| PPO actor | Motion Encoder、Semantic Adapter、Action Head | Motion Prior Head、Semantic Encoder/Head、Critic |
+| A* KD | Motion Encoder、Motion Prior Head | Semantic 分支、Adapter、Action Head、Critic |
+| LLM semantic KD | Semantic Encoder、Semantic Head | Motion 分支、Adapter、Action Head、Critic |
+| PPO value | Centralized Critic | Actor 全部分支 |
+| Reward Calibration | 无 | 所有网络与 A*；只读取 detached 值 |
+
+Semantic Head 的三维 tensor 必须在进入 Adapter 之前 stop-gradient。实现测试必须分别反传四类
+loss 并检查参数梯度集合；不能只依赖模块命名或 optimizer 分组。PPO 不得通过共享输入、额外
+auxiliary head、Critic loss 或 checkpoint restore 绕回 Semantic Encoder/Head。A* loss 不得直接
+监督最终 Action Head。Teacher target、reliability、root cost、`Delta G`、EMA、Student
+disagreement 和 reason 均不得进入 Critic。
+
+Disagreement 只在 detached Student distribution 与 detached Teacher prior 之间计算并记录；其
+精确日志字段在 O0-F 冻结。它不得参与 loss、sample selection、reliability、schedule、EMA、
+Teacher query 或 fallback。
+
+### 12.4 A* 与 LLM loss 的归一化
+
+Motion Prior 只在 `[FORWARD,LEFT,RIGHT]` 上做 softmax；Teacher `[N,5]` 输出只取同顺序三列。
+令：
+
+$$
+Z_A=\sum_i m_{calib}(t)m^{valid}_{A,i}.
+$$
+
+当 `Z_A>0` 时：
+
+$$
+L_A=\lambda_A(t)\frac{\sum_i m_{calib}(t)m^{valid}_{A,i}c_i
+D_{KL}(p_{A^*,i}\Vert p_{motion,i})}{Z_A}.
+$$
+
+Fixed-KD 固定 `c_i=1`；Reward-Calibrated KD 固定 `c_i=c_A_reward(t)`。当 `Z_A=0` 时
+`L_A=0`，不产生 A* optimizer contribution。分母只计算 sampler 选中的有效机器人，禁止把
+`lambda_A` 或 `c_A_reward` 放入分母，否则会抵消二者对总优化强度的正式含义。
+
+三维 semantic loss 先对每个 record 的三个维度取 MSE 均值，再定义：
+
+$$
+Z_L=\sum_i c_{validity,i},
+$$
+
+$$
+L_L=\lambda_L(t)\frac{\sum_i c_{validity,i}c_{OOD,i}
+\operatorname{MSE}_3(\hat y_i,y_i)}{Z_L},\quad Z_L>0.
+$$
+
+`Z_L=0` 时 `L_L=0`。OOD 是整条三维记录共享的强度，不能逐维分母归一化或让 reliability
+从最终梯度幅度中消失。两类 Teacher loss 独立相加，不做教师间 softmax，也不要求权重和为 1。
+
+### 12.5 `linear-env-step-v1` 共同 schedule
+
+schedule 的唯一时间变量是 checkpoint 中严格单调的真实环境 transition 总数
+`t=global_env_steps`。shadow transition、evaluation step、label generation 和 wall-clock 均不计入。
+每个匹配证据族在 manifest 中冻结相同正整数
+`B=schedule_total_env_steps`，并定义：
+
+$$
+p(t)=\min(\max(t/B,0),1),
+$$
+
+$$
+\lambda_A(t)=0.05(1-p(t)),\qquad
+\lambda_L(t)=0.10(1-p(t)).
+$$
+
+每个 optimizer update 开始前，用该 update 已完成收集后的 `t` 计算一次，并在整个 update 内保持
+不变。一个 vector worker 产生一个真实 transition 即计一步，因此改变并行 worker 数不能改变
+同一交互预算下的 schedule。没有某类 Teacher 的消融组仍记录相同名义 schedule，只把对应有效
+mask 置零。禁止使用旧 episode 阶梯、wall-clock、训练 reward、coverage 或性能结果修改 schedule。
+
+恢复时 loader 必须验证 version、`B`、初值和保存的 `t/p/lambda_A/lambda_L` 一致，再从 `t`
+继续。不能从 episodes、CSV 行数或 checkpoint 文件名重建，不能在换机器或换 worker 数后重置。
+
+### 12.6 `direct-goal-observation-v1`
+
+新物理观测保持 613 维，避免 observation width 变化成为额外实验变量。原 9 维 waypoint block
+唯一替换为：
+
+```text
+[goal_dx / max(width-1,1), goal_dy / max(height-1,1),
+ 0, 0, 0, 0, 0, 0, 0]
+```
+
+goal 只由现有规则层解析任务、配送或固定安全充电目标；Student 只读该坐标，不得要求 A* 决定
+或改写目标。已到达时两个 delta 均为 0。后七个 reserved slot 必须为 bitwise float32 zero，不能
+承载 waypoint、desired direction、trajectory、reservation、coordinator、Teacher prediction 或
+learned path embedding。raw/own/orientation/nearby/global 其余 604 维保持当前语义。
+
+observation builder、policy evaluation 和 policy visualization 不得调用 planner。O3 的两个真正
+未见拓扑必须保持该字段顺序与 613 维宽度；不满足时先修复 layout/observation contract，禁止以
+padding、截断或另建网络进入训练。
+
+当前 `waypoint_reward` 的真实行为是：规则目标 Manhattan distance 下降时给固定 shaping reward，
+没有 planner query。O1 只做行为保持的正式重命名 `direct_goal_progress_reward`，并为旧配置保留
+只读 legacy alias；公式、数值和时机不变。优化路线主方法与 NoWP 使用相同 reward，防止在消融
+observation 时同时改变优化目标。
+
+### 12.7 Legacy waypoint、NoWP 与执行期主张门
+
+历史 1D/2D checkpoint 通过独立 legacy evaluation path 继续获得旧 waypoint observation；该
+路径只为复现历史结果，不能进入新三维训练、评估或可视化入口。新三维 loader 遇到 legacy
+observation contract 必须拒绝，而不是把旧 waypoint slot 解释成 DirectGoal。
+
+优化路线 `NoWP` 是兼容配置别名，正式 observation schema 名为
+`no-geometric-goal-hint-v1`。它保留 613 维但把整个 9-slot geometry block 置零，其余环境、reward、
+hard mask、网络和训练预算与对应组匹配。NoWP 是三 seed 诊断消融；不要求与主方法性能等同，
+也不能单独证明或否定执行期 A* 主张。
+
+“Student 执行期无需 A*”只有全部满足后才允许写入论文：
+
+1. policy evaluation 与 visualization 的 instrumented planner query count 均为 0；
+2. 把 planner 替换为任何调用即抛错的测试替身后，DirectGoal 与 NoWP 均完成端到端短运行；
+3. DirectGoal 主方法通过 O2、O3 和 E1 对应的冻结性能/接口门；
+4. 论文同时说明 Pure Motion A* 仍是训练期 Teacher，启发式 A* baseline 仍独立使用 A*。
+
+O0/O1 只能声称“冻结/实现了面向无 A* Student 执行的 observation contract”，不能声称该方法
+已经达到无 A* 执行性能或部署要求。
+
+### 12.8 `o0-student-checkpoint-v1`
+
+可恢复 checkpoint 只在完整 optimizer update 完成且 rollout buffer 为空时保存，必须包含：
+
+- checkpoint/architecture/observation/semantic/schedule/sampler/Pure Teacher 的版本；
+- 613/61/3/5 等 shape、有序 semantic names 与项目 action names；
+- model 与 optimizer state、`global_env_steps/update_count/completed_episodes`；
+- canonical config/manifest/Git commit、环境 ID、layout hash、能源参数、reward schema/hash；
+- semantic dataset/manifest/index/prompt/parser/OOD 参数及全部内容 hash；
+- 相互独立的 `K_motion=12`、`H_reward=12`、512-expansion budget 和 1/16 sampler；
+- EMA 的 schema、count/mean/variance/initialized、0.99 decay、`1e-3` minimum scale、64 initial
+  samples 与 `[0,1]` clipping；
+- Python/PyTorch/CUDA 版本以及 Python、NumPy、PyTorch CPU/CUDA RNG state。
+
+strict loader 先逐字段验证 required key、version、ordered names、shape、hash 和配置，再执行
+strict model/optimizer state load。错误必须指出具体不兼容字段；禁止靠 phase 名或 tensor shape
+猜测三维合同。缺少 optimizer、schedule、EMA 或 RNG state 的新文件只能由独立 inference-only
+入口读取，并标记 `non_resumable=true`。
+
+旧 1D/2D loader 继续服务历史评估，但不能构造 `o0-student-v1`。禁止把旧 semantic weight 复制、
+补零、截断、重复、平均或映射到三维结构；新训练必须从新架构初始化。两类 loader 的 dispatch
+只读取明确 checkpoint schema version，不允许“尝试新 loader、失败后静默回退”。
+
+### 12.9 O1 模块边界与依赖顺序
+
+O1 不得由实现者另选类名、网络宽度或公式；实际符号命名可以遵守项目模块风格，但职责必须按
+以下顺序实现和验证：
+
+1. DirectGoal/NoWP observation schema、legacy alias 和 planner-zero-call instrumentation；
+2. 新 Student、四类梯度所有权测试与 strict checkpoint/legacy dispatcher；
+3. Pure Motion query、Motion Prior loss、逐机器人 validity 和诊断输出；
+4. semantic-view-v3 encoder、三维 offline retrieval、reliability 和 semantic loss；
+5. canonical snapshot、CRN paired shadow、detached Critic bootstrap 与 EMA；
+6. 共同 sampler、Fixed/RC 开关、buffer、schedule、恢复和计数日志；
+7. H=12 功能 smoke、A600 overhead/memory owner-run 命令与完整 O1 Go/No-Go 证据。
+
+依赖只能从前一层已验证接口流向后一层；不能用临时 waypoint、旧 2D weight、Fixed-KD warm
+start、H=4 fallback 或关闭严格检查来推进后续步骤。O1 的长 A600 基准仍由研究所有者运行，
+Codex 只准备命令和分析结果。
+
+### 12.10 O0-E 允许主张
+
+O0-E 完成只允许声称：Student shape、梯度边界、loss 归一化、共同 schedule、DirectGoal/NoWP、
+checkpoint 隔离和 O1 实现顺序已经预注册。不得声称网络已实现、checkpoint 已可恢复、执行期
+已经摆脱 A*、三维语义有效、Reward Calibration 改善性能或训练已经收敛。
+
+### 12.11 O0-E 验证证据
+
+验证日期为 2026-08-25，使用规范解释器
+`D:\Anaconda3\envs\py310\python.exe`。现有环境短审计确认 canonical 5-AGV observation 为
+`[5,613]`、raw observation 为 575 维；`linear-env-step-v1` 在示例
+`B=150000` 的 `t=0/75000/150000/200000` 上分别得到
+`lambda_A=0.05/0.025/0/0` 和 `lambda_L=0.10/0.05/0/0`。O0 spec 目录计数为 1。
+
+完整 `pytest` 为 184 passed（42.08 s）；Flake8、`visualize.py --help`、dynamic-ingress A*
+evaluation help 与 `git diff --check` 退出码均为 0。相对 O0-D commit `611c981` 的 Python、YAML、
+YML、JSON 运行代码/配置差异为 0；仓库中未发现研究所有者提供的 API key。两个根目录研究输入
+继续按 O0-F 合同保持未跟踪，本组未提前执行内容映射或删除。

@@ -65,13 +65,13 @@
 
 ### 1.5 Student、兼容、对照与主张
 
-- [ ] 新三维网络的 shape、梯度边界、late fusion、semantic detach、Motion Prior loss 与 PPO
+- [x] 新三维网络的 shape、梯度边界、late fusion、semantic detach、Motion Prior loss 与 PPO
   所有权精确冻结；
-- [ ] `λ_A(t)`/`λ_L(t)` schedule 为所有相关组共同的预注册确定算法；
+- [x] `λ_A(t)`/`λ_L(t)` schedule 为所有相关组共同的预注册确定算法；
 - [ ] Fixed-KD 和 RC-KD 共用 `m_calib`、shadow/EMA/logging 且只在 `c_A_reward` 上有优化差异，
   O2 三诊断 seed 已登记但未运行；
-- [ ] 三维 checkpoint 从新初始化并与历史一维/二维严格隔离，loader/metadata/EMA 恢复无歧义；
-- [ ] 无 Teacher 派生物理观测和 waypoint 兼容边界完整；执行期无需 A* 仍是后续证据条件主张；
+- [x] 三维 checkpoint 从新初始化并与历史一维/二维严格隔离，loader/metadata/EMA 恢复无歧义；
+- [x] 无 Teacher 派生物理观测和 waypoint 兼容边界完整；执行期无需 A* 仍是后续证据条件主张；
 - [ ] 每项 O0 后允许主张均有合同依据，所有性能/泛化/收敛/部署主张保持禁止。
 
 ## 2. 审查方法
