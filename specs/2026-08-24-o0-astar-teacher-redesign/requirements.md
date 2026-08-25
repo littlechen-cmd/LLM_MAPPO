@@ -23,7 +23,7 @@ O0 完成只表示架构、接口、数学定义、日志、消融和失败门�
 ## 2. 输入与治理
 
 - 当前分支从 `codex/optimization` 的 P0 最终基线派生；
-- 研究输入有两个根目录未跟踪版本：用户最初指定且更新时间较新的 `方案文档.md`，SHA-256
+- 研究输入原有两个根目录未跟踪版本：用户最初指定且更新时间较新的 `方案文档.md`，SHA-256
   `261A33536C2E53EEEBDFF08F49DD2A42217A0AAE7324C154CFA7785918ABD2B0`；以及长文件名排版版本
   `基于异构多教师知识蒸馏与MAPPO的多机器人路径规划与协同方案.md`，SHA-256
   `12DB077897D25DA999746CF044C28497BDF2C5C5675B2705F6598CCE780B70E7`。二者章节结构和方法内容
@@ -33,8 +33,7 @@ O0 完成只表示架构、接口、数学定义、日志、消融和失败门�
   参数整理为唯一 canonical architecture；
 - canonical architecture 路径固定为
   `docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md`；
-- canonical architecture 获批并纳入 Git 后，两份根目录未跟踪输入不得继续作为并列正式方案；
-  应在逐项内容映射与哈希审计后移除两个根目录副本，不得留下多个活动版本；
+- O0-F 已按上述哈希完成逐项内容映射并移除两个根目录副本；它们不得恢复为并列正式方案；
 - `specs/mission.md`、`specs/tech-stack.md`、`specs/roadmap.md`、`TASKS.md` 与
   `CHANGELOG.md` 必须和 O0 最终合同同步。
 - O0-A 至 O0-F 每个 Task Group 都是独立人工检查点：完成该组全部任务、验证、计划状态、
@@ -162,7 +161,9 @@ Spearman `rho>=0.80` 即为持续增长。任一 gate 失败必须返回 O0；H4
 2. `yielding_preference`：局部冲突中主动等待/让行的语义倾向；
 3. `coordination_risk`：局部交互导致冲突、拥堵、死锁或协作失败的风险。
 
-三维值均位于 `[0,1]`，使用 canonical architecture 第 11.2 节的固定五点量表 anchors。高
+三维值均位于 `[0,1]`，使用 canonical architecture 第 11.2 节的固定五点量表 anchors，并允许在
+anchors 之间输出任意连续值。第 11.5 节方向性因素只作为语义 rubric，不得形成确定性场景到
+分数映射；RuleKD 必须是与正式 LLM 生成链路隔离的独立基线。高
 `yielding_preference` 表示更倾向让行；三维之间不存在互补、蕴含或代数推导关系。LLM 不输出
 低层动作、路径、任务分配、通行权裁决或强制让行决策。输出必须正好包含三个 score 与对应三个
 reason；reason 只作 audit metadata。任一字段缺失、额外、非有限、越界或不满足 schema 时整条
@@ -316,20 +317,20 @@ desired direction、path/trajectory、reservation、coordinator 或可学习预�
 
 当前 `waypoint_reward` 实际按规则目标的 Manhattan 距离是否下降计算，并未调用 A*。O1 只允许
 行为保持地把正式名称改为 `direct_goal_progress_reward`，数值、时机和公式不变；旧字段仅作为
-历史配置 alias。优化路线 NoWP 也保留相同 reward，以便只消融 observation cue，不把 reward
+历史配置 alias。优化路线 NoGoalHint 也保留相同 reward，以便只消融 observation cue，不把 reward
 变化混入比较。
 
 历史一维/二维 checkpoint 继续使用隔离的 legacy waypoint observation builder 执行历史评估，
 但该 builder 不得被新三维 policy、训练、评估或可视化入口调用。新 loader 遇到 legacy
-observation/schema 必须拒绝恢复。优化路线 NoWP 保留配置别名，正式 schema 名为
-`no-geometric-goal-hint-v1`：保持 613 维但把上述 9 位全部置零；它是三 seed 诊断消融，不要求
+observation/schema 必须拒绝恢复。优化路线停止使用正式 `NoWP` 组名，改用 `NoGoalHint-v1`；
+schema 名为 `no-geometric-goal-hint-v1`：保持 613 维但把上述 9 位全部置零；它是三 seed 诊断消融，不要求
 性能等同于主方法。
 
-“执行期无需 A*”是条件主张：只有后续 NoWP/无 A* 证据通过冻结门槛后才能成立；O0/O1 不得
+“执行期无需 A*”是条件主张：只有后续 DirectGoal 零 planner-query 证据通过冻结门槛后才能成立；O0/O1 不得
 预先宣称已经摆脱 A*。启发式 `Heuristic-Dispatcher+A*` 基线仍可独立使用 A*，不等同于 Student
 执行依赖。该主张必须同时满足：Student policy 评估/可视化的 planner query count 为 0；把
-planner 替换为任何调用即抛错的测试替身后 DirectGoal 与 NoWP 都能完成端到端短运行；DirectGoal
-通过 O2/O3/E1 对应冻结性能门；论文明确 A* 仍在训练期提供 Motion Teacher。NoWP 的性能只作
+planner 替换为任何调用即抛错的测试替身后 DirectGoal 与 NoGoalHint 都能完成端到端短运行；DirectGoal
+通过 O2/O3/E1 对应冻结性能门；论文明确 A* 仍在训练期提供 Motion Teacher。NoGoalHint 的性能只作
 诊断，不能单独决定该主张。
 
 新 checkpoint schema 固定为 `o0-student-checkpoint-v1`，只允许在完整 optimizer update 后且
@@ -366,15 +367,38 @@ fallback。O0 必须冻结 A600 短基准的步数、并行度、重复次数、
 
 ### 3.8 O1 实现依赖
 
-O1 必须依次完成并验证：DirectGoal/NoWP observation 与零 planner-call instrumentation；新 Student
+O1 必须依次完成并验证：DirectGoal/NoGoalHint observation 与零 planner-call instrumentation；新 Student
 梯度边界和 strict checkpoint；Pure Motion Prior；三维 semantic retrieval；snapshot/paired shadow/
 EMA；共同 sampler/buffer/schedule/log；最后才执行 H=12 smoke 与 owner-run A600 gate。后一步
 不得用临时 waypoint、旧二维权重、Fixed-KD warm start、H=4 fallback 或关闭 strict validation
 绕过前一步。O0 只冻结职责和依赖，不预先修改 Python/YAML/JSON 或虚构尚不存在的运行符号。
 
+### 3.9 O0-F 证据、日志、对照与统计
+
+O0-F 必须以 canonical architecture 第 13 节为唯一详细合同，并满足：
+
+- 总学习预算明确为 O2 9 次加 E1/E2 65 次，共 74 次；O2 使用
+  `107/117/127`，正式 8 seed 与诊断 3 seed 保持原预注册集合；
+- O2 的 coverage 分母、10k-step AUC 网格、逐 seed gate 与 Fixed/RC 计数相等式唯一；
+- 使用 compact per-step counts、selected/failure/deterministic-sample events、update/episode/resource
+  日志；禁止普通状态全量数组 JSONL 改变实验运行特征；
+- 正式 LLM 标签保持连续三维；方向 rubric 不是标签规则。RuleKD-v3 是完整、确定、独立的规则
+  教师；ShuffleKD-v3 必须是分层无 fixed point 的三维联合标签 derangement；
+- 优化路线正式组名使用 `NoGoalHint-v1`，只诊断目标几何提示敏感性；DirectGoal planner-query
+  为零才是执行期 A* 主张的直接证据；
+- QMIX-DG 共享 DirectGoal、环境步、seed、评估、mask、reward、能源和 tuning budget；禁止静默
+  fallback；
+- 训练 seed 是独立统计单位；primary endpoint、七个配对 contrast、Holm 校正、95% CI、paired
+  effect size、bootstrap sensitivity 与 secondary endpoint 边界均在看结果前冻结；
+- 三维干预只支持 policy sensitivity，不得被解释为训练贡献；所有失败降级保持 fail closed。
+
+旧 P0 协议与治理 manifest 可以在 O0-F 经研究所有者明确授权后做文档级一致性修正；这不授权
+修改 Python 运行代码、训练配置、环境、reward、稳定路线合同或运行实验。
+
 ## 4. 不在范围内
 
-- 不修改 Python 运行代码、配置、环境语义、reward 或 checkpoint；
+- 不修改 Python 运行代码、runtime training config、环境语义、reward 或 checkpoint；O0-F 仅按
+  owner 明确授权修订 `configs/g3_experiment_manifest.yaml` 这一治理 manifest；
 - 不生成 60 条 pilot 或 800 条正式标签，不调用在线 LLM；
 - 不启动训练、长评估、长回放或 KL/schedule/horizon 搜索；
 - 不实现环境 fork/snapshot、Pure Motion Teacher、三维网络或新 buffer；

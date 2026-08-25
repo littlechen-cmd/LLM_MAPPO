@@ -2,15 +2,16 @@
 
 ## 1. 文档状态与审计基线
 
-本文是优化路线唯一 canonical architecture。当前纳入已经获批的 O0-A 现状审计，以及已经由
-研究所有者给出设计批准、等待任务组交付审核的 O0-B Pure Motion Teacher 冻结合同。不把
-O0-C 至 O0-F 尚未审核的设计选择提前写成实现合同。
+本文是优化路线唯一 canonical architecture。O0-A 至 O0-E 已逐组获研究所有者批准；第 13 节
+整合 O0-F 的日志、消融、统计、主张和跨文档一致性合同，当前等待 O0-F 人工交付审核。批准前
+不得进入 O0-G 或实现阶段。
 
 - 代码审计基线：P0 最终 commit `6fcb7d3`；
 - 规格分支：`codex/o0-astar-teacher-redesign`；
 - 审计范围：规则目标、充电目标、A* waypoint/preference/reservation/coordinator、hard mask、
   buffer、KL、离线 LLM、Actor/Critic 梯度、checkpoint、训练、评估和执行入口；
-- O0-A 不修改 Python、配置、环境语义、reward、checkpoint 或实验 seed；
+- O0 不修改 Python/runtime training config、环境语义、reward、checkpoint 或实验 seed；O0-F
+  仅按 owner 明确授权修订治理 manifest；
 - 本章描述“当前代码实际做了什么”，不表示这些行为已被接受为新方法。
 
 本文中的 `N` 是机器人数量，`A=5` 是
@@ -153,7 +154,7 @@ Standalone A* evaluation or expert replay
 | P-06 | buffer 只有 `[N,5]` preference，没有 `valid_mask[N]` 或逐机器人失败原因 | 无法保持逐机器人 coverage、降级和计数守恒 |
 | P-07 | reservation KL 直接比较 Teacher 与最终 Actor distribution | A* 直接约束最终动作策略，不是独立 Motion Representation/Prior Head |
 | P-08 | actor observation 的 waypoint/desired-direction/relation 由 A* 在线生成 | 当前 Student evaluation/execution 尚未摆脱 A* |
-| P-09 | movement reward 按规则目标距离变化提供 waypoint progress shaping | reward 与未来 NoWP/无 A* 合同存在耦合，需要后续明确兼容边界 |
+| P-09 | movement reward 按规则目标距离变化提供 waypoint progress shaping | reward 与未来 DirectGoal/NoGoalHint 合同存在耦合，需要后续明确兼容边界 |
 | P-10 | normal LLM 样本沿带预约、parking 和 coordinator 的 A* rollout 采集 | 历史语义数据的状态分布带有旧 expert policy provenance |
 | P-11 | 历史 2D kNN 对任意查询都返回标签，没有 validity × OOD reliability | 不满足新三维语义可靠性合同 |
 | P-12 | Actor、buffer 与 loader 只允许 D=1/2，checkpoint 不含新合同元数据 | 旧 checkpoint 不能安全迁移为三维架构 |
@@ -232,11 +233,11 @@ hash 或 generator commit。因此历史数据可以复现其仓库侧请求合�
 | `lambda_A(t)`/`lambda_L(t)` 随训练衰减 | 接纳并延后常数 | 所有对照共用预注册 schedule；精确算法和恢复语义在 O0-E 冻结 |
 | 两类教师无需 softmax 竞争 | 接纳 | 两个知识空间独立门控，不要求权重和为 1 |
 | Teacher 不直接监督 Critic | 接纳并限定 | Critic 只为 PPO 与 detached continuation bootstrap 服务；calibration 不反传 |
-| 执行期无需 A* | 延后且禁止现时声称 | 当前 P-08/P-09 明确不成立；只有后续 NoWP/无 A* 门通过后才允许 |
+| 执行期无需 A* | 延后且禁止现时声称 | 当前 P-08/P-09 明确不成立；只有后续 DirectGoal 零 planner-query 门通过后才允许 |
 | 方法已提高样本效率、协作或泛化 | 拒绝作为当前事实 | 输入是方案而非实验结果；必须由冻结的后续实验支持 |
 
-上述矩阵已覆盖两份输入中的有效方法内容。两份输入仍保持未跟踪状态，待 O0-F 完成全部章节
-映射、研究所有者审核并确认 canonical architecture 无内容丢失后再移除；O0-A 不提前删除。
+上述矩阵与第 13.5 节已覆盖两份输入中的有效方法内容。O0-F 已按记录哈希完成映射并移除两份
+未跟踪输入；canonical architecture 是唯一正式方案，研究输入不再构成并列合同。
 
 ## 7. O0-A 审计结论与后续边界
 
@@ -1183,13 +1184,26 @@ but it is not a NOOP or action command. coordination_risk is the risk that the
 current local interaction causes conflict, congestion, deadlock, or cooperative
 failure; it is not a behavior command.
 
-For each dimension use these anchors and interpolate when needed. 0.00 means no
+For each dimension use these anchors and interpolate continuously when needed.
+The output is not restricted to the five anchor values. 0.00 means no
 semantic basis for that property. 0.25 means weak persistence or yielding, or
 minor coordination risk. 0.50 means balanced persistence/yielding reasons, or
 material but non-high coordination risk. 0.75 means strong persistence or
 yielding reasons, or high coordination risk. 1.00 means overwhelming persistence
 or yielding reasons, or near-certain immediate or sustained coordination failure
 without coordination.
+
+Use the following factors as a semantic rubric, not as deterministic scoring
+rules. For task_persistence, consider whether an active transport task exists,
+its priority, carrying and battery state, progress, interruption cost, and local
+difficulty. With no active task, persistence should be near zero. For
+yielding_preference, consider whether there is an actual local interaction,
+loaded versus empty status, relative task priority, delay cost, and whether
+yielding can resolve a bottleneck. For coordination_risk, consider neighbor
+density, narrow or station bottlenecks, dead or blocking robots, movement
+constraints, and whether the area is open. These factors may conflict; weigh
+them jointly and use any finite value in [0,1]. Do not convert scenario types or
+fixed rules into target scores.
 
 The three scores are not complements or aliases. High task persistence may
 coexist with high yielding preference. High coordination risk does not imply a
@@ -1205,8 +1219,10 @@ SEMANTIC_STATE={semantic_state}
 
 `semantic_state` 是 sorted-key、compact-separator 的 canonical `semantic-view-v3` JSON。
 
-prompt 中不得出现 `scenario_type`、任何 ID、场景目标分数、controlled reference direction 或
-“某类应高/低于某阈值”。prompt bytes、system/user text、semantic JSON 和 request body 分别计算
+该模板版本固定为 `semantic-prompt-v4-directional-rubric`。五点 anchors 只解释量表语义，
+`0.18/0.43/0.72/0.91` 等连续值均合法；禁止把 anchor 或 rubric 实现为场景到分数的查表规则。
+prompt 中不得出现 `scenario_type`、任何 ID、场景目标分数、RuleKD 标签、controlled reference
+direction 或“某类应高/低于某阈值”。prompt bytes、system/user text、semantic JSON 和 request body分别计算
 SHA-256。parser 只接受第 11.2 节严格 JSON；禁止 fence stripping、文本中搜寻 JSON、clamp、字段
 补全或 reason 推导 score。
 
@@ -1511,24 +1527,24 @@ padding、截断或另建网络进入训练。
 
 当前 `waypoint_reward` 的真实行为是：规则目标 Manhattan distance 下降时给固定 shaping reward，
 没有 planner query。O1 只做行为保持的正式重命名 `direct_goal_progress_reward`，并为旧配置保留
-只读 legacy alias；公式、数值和时机不变。优化路线主方法与 NoWP 使用相同 reward，防止在消融
+只读 legacy alias；公式、数值和时机不变。优化路线主方法与 NoGoalHint 使用相同 reward，防止在消融
 observation 时同时改变优化目标。
 
-### 12.7 Legacy waypoint、NoWP 与执行期主张门
+### 12.7 Legacy waypoint、NoGoalHint 与执行期主张门
 
 历史 1D/2D checkpoint 通过独立 legacy evaluation path 继续获得旧 waypoint observation；该
 路径只为复现历史结果，不能进入新三维训练、评估或可视化入口。新三维 loader 遇到 legacy
 observation contract 必须拒绝，而不是把旧 waypoint slot 解释成 DirectGoal。
 
-优化路线 `NoWP` 是兼容配置别名，正式 observation schema 名为
-`no-geometric-goal-hint-v1`。它保留 613 维但把整个 9-slot geometry block 置零，其余环境、reward、
-hard mask、网络和训练预算与对应组匹配。NoWP 是三 seed 诊断消融；不要求与主方法性能等同，
-也不能单独证明或否定执行期 A* 主张。
+优化路线停止把 `NoWP` 作为正式实验组名；正式诊断名为 `NoGoalHint-v1`，observation schema
+为 `no-geometric-goal-hint-v1`。它保留 613 维但把整个 9-slot geometry block 置零，其余环境、
+reward、hard mask、网络和训练预算与对应组匹配。它是三 seed 目标几何提示消融；不要求与主方法
+性能等同，也不能单独证明或否定执行期 A* 主张。
 
 “Student 执行期无需 A*”只有全部满足后才允许写入论文：
 
 1. policy evaluation 与 visualization 的 instrumented planner query count 均为 0；
-2. 把 planner 替换为任何调用即抛错的测试替身后，DirectGoal 与 NoWP 均完成端到端短运行；
+2. 把 planner 替换为任何调用即抛错的测试替身后，DirectGoal 与 NoGoalHint 均完成端到端短运行；
 3. DirectGoal 主方法通过 O2、O3 和 E1 对应的冻结性能/接口门；
 4. 论文同时说明 Pure Motion A* 仍是训练期 Teacher，启发式 A* baseline 仍独立使用 A*。
 
@@ -1563,7 +1579,7 @@ strict model/optimizer state load。错误必须指出具体不兼容字段；�
 O1 不得由实现者另选类名、网络宽度或公式；实际符号命名可以遵守项目模块风格，但职责必须按
 以下顺序实现和验证：
 
-1. DirectGoal/NoWP observation schema、legacy alias 和 planner-zero-call instrumentation；
+1. DirectGoal/NoGoalHint observation schema、legacy alias 和 planner-zero-call instrumentation；
 2. 新 Student、四类梯度所有权测试与 strict checkpoint/legacy dispatcher；
 3. Pure Motion query、Motion Prior loss、逐机器人 validity 和诊断输出；
 4. semantic-view-v3 encoder、三维 offline retrieval、reliability 和 semantic loss；
@@ -1577,7 +1593,7 @@ Codex 只准备命令和分析结果。
 
 ### 12.10 O0-E 允许主张
 
-O0-E 完成只允许声称：Student shape、梯度边界、loss 归一化、共同 schedule、DirectGoal/NoWP、
+O0-E 完成只允许声称：Student shape、梯度边界、loss 归一化、共同 schedule、DirectGoal/NoGoalHint、
 checkpoint 隔离和 O1 实现顺序已经预注册。不得声称网络已实现、checkpoint 已可恢复、执行期
 已经摆脱 A*、三维语义有效、Reward Calibration 改善性能或训练已经收敛。
 
@@ -1593,3 +1609,151 @@ checkpoint 隔离和 O1 实现顺序已经预注册。不得声称网络已实�
 evaluation help 与 `git diff --check` 退出码均为 0。相对 O0-D commit `611c981` 的 Python、YAML、
 YML、JSON 运行代码/配置差异为 0；仓库中未发现研究所有者提供的 API key。两个根目录研究输入
 继续按 O0-F 合同保持未跟踪，本组未提前执行内容映射或删除。
+
+## 13. O0-F：证据预算、日志、消融、统计与论文主张
+
+### 13.1 训练预算与 O2 校准门
+
+优化路线全部学习运行共 `74` 次，不得再简称为 65 次：
+
+- O2 校准：`MAPPO-DG`、`Fixed-AStarKD`、`RC-AStarKD` 均关闭 LLMKD，各使用初始化 seed
+  `107/117/127`，`150000` real environment steps，共 `3×3=9` 次；
+- E1/E2 核心 `2×2`：`MAPPO-DG`、`RC-A*KD`、`LLMKD`、
+  `RC-A*KD+LLMKD` 各 8 seed，共 32 次；
+- `Fixed-A*KD+LLMKD`、`QMIX-DG`、`RuleKD-v3` 各 8 seed，共 24 次；
+- `ShuffleKD-v3`、`NoOOD-v1`、`NoGoalHint-v1` 各 3 seed，共 9 次；
+- E1/E2 合计 65 次，连同 O2 为 `9+65=74` 次。启发式 A* 不训练，评估和人工干预不计入
+  training-run 数。
+
+O2 的 Fixed/RC 两组除 `c_A_reward` 外保持相同网络、环境、reward、seed、预算、1/16 sampler、
+shadow、EMA、日志和 schedule；MAPPO-DG 提供无 A*KD 退化参照。三组均关闭 LLMKD。Fixed 与
+RC 的 `m_calib` 选中状态数、A* query 数和 shadow 数必须逐 seed
+完全相同，否则是接口失败。主覆盖率定义为：
+
+$$
+coverage_A=\frac{\sum m_{calib}m_A^{valid}}
+{N\times\#\{m_{calib}=1\text{ states}\}}.
+$$
+
+分母包含 dead、lock、mandatory-toggle、at-goal 等 fail-closed agent slots，以反映教师真实可用性；
+另报告排除这些结构性非运动状态的 `motion_eligible_coverage`，但它不能替代 25% gate。三个 RC
+seed 的主覆盖率必须分别不低于 25%，不得用 pooled mean 掩盖失败 seed。
+
+吞吐 AUC 固定在 `x=0,10000,...,150000` 的 real-environment-step 网格。每点的纵轴为截至该点的
+`1000×累计完成任务数/累计 episode steps`，没有已完成 episode 时为 0；在相邻网格点间线性
+插值并以 `x/150000` 归一化后做 trapezoidal AUC。先逐训练 seed 计算，再跨三个匹配 seed 取
+RC 相对 MAPPO-DG 的退化率中位数；中位退化不得超过 10%。
+
+### 13.2 分层日志与污染计数
+
+禁止为每个普通状态写入含完整数组的无界 `teacher_steps.jsonl`。正式 schema 固定为：
+
+- `run_manifest.json`：commit/config/layout/dataset/checkpoint hash、seed、预算、版本、能源、reward、
+  Python/PyTorch/CUDA、日志采样规则；
+- `teacher_step_counts.csv`：每个 real vector step 一行，只含 step/update、real states、
+  `m_calib` selected、A* valid/failure-reason counts、LLM validity/OOD bins、fallback、planner query、
+  shadow/bootstrap/terminal、non-finite 与组件化污染计数；
+- `teacher_events.jsonl`：仅记录全部 calibration-selected states、全部 invalid/failure/non-finite/
+  pollution events，以及其余状态的 1/256 确定性审计样本；样本由 canonical state hash
+  `uint64(SHA256("teacher-audit-v1"||state_hash)[0:16]) mod 256=0` 选取；
+- `updates.csv`：loss、`lambda_A/lambda_L`、有效分母、平均/分位权重、disagreement（诊断）、
+  `DeltaG`、EMA、梯度范数、optimizer/schedule counter；
+- `episodes.csv`：回报、完成任务、episode steps、碰撞、死锁、能量死亡、充电、优先任务完成；
+- `resource_windows.csv`：基线/H4/H12 的计时边界、RSS/CUDA allocated/peak 与 window/repeat。
+
+Fixed 与 RC 必须使用完全相同的日志密度。详细事件中的 reason、路径长度、expanded nodes、
+planning time、shadow return 和 bootstrap 只作诊断，不进入 loss。污染计数按组件分开：A* 的
+priority/yield/reservation/coordinator/reward/Student/LLM/calibration 读取均禁止；LLM 可以读取
+`semantic-view-v3` 中匿名优先级，但禁止读取 A*/reward/Student/calibration/scenario type/ID；
+Student 最终动作路径中的 execution planner query 必须为 0。不同组件不得共用一个模糊的
+`priority_pollution` 总数。
+
+### 13.3 语义对照与诊断消融
+
+正式 LLM 标签唯一链路是
+`semantic-view-v3 -> semantic-prompt-v4-directional-rubric -> DeepSeek -> continuous [0,1]^3`。
+五点 anchors 和方向性因素是量表说明，不是确定性标签生成器；reason 仍只作 audit metadata。
+
+`RuleKD-v3` 是独立规则教师基线。它在与 formal LLM 相同的 800 个 semantic views 上生成三维
+标签，并复用相同 retrieval、整记录 validity 和 OOD reliability；不得把结果注入 LLM prompt。
+其唯一全覆盖优先级如下（schema 非法时整条 invalid）：
+
+1. persistence：`idle -> 0`；否则 `charging or battery<=0.30 -> 0.25`；否则
+   `loaded and delivery -> 1`；否则 `task and priority_rank<=2/25 -> 0.75`；否则
+   `task -> 0.50`；其余 `0.25`；
+2. yielding：close neighbor 定义为 `mask=1` 且 normalized Manhattan distance `<=0.10`；无 close
+   neighbor 为 0。focal 空载且任一 close neighbor 载货为 load disadvantage；focal 无优先任务而
+   邻居有，或双方有且邻居 rank 更小，为 priority disadvantage；两者同时为 1，任一为 0.75，
+   否则 close count `>=2` 为 0.50，其余为 0.25；
+3. risk：`r=min(close_count,3)+I(constrained)+I(dead_blocker)`；`constrained` 指 focal 位于充电/
+   取货站，或位于 highway 且四向相邻 highway 数 `<=2`；`dead_blocker` 指任一 close neighbor dead。
+   `r=0/1/2/3/>=4` 分别映射 `0/0.25/0.50/0.75/1`。
+
+`ShuffleKD-v3` 在五个场景分层内按 scenario hash 排序，以 manifest hash 导出的 `1..n-1` 非零
+循环位移分配 donor，必须断言每条 recipient 的 donor scenario ID 与自身不同；它保持三维联合
+标签分布和 recipient 的 OOD reliability，不允许固定点或仅逐维独立打乱。
+
+`NoOOD-v1` 仅把有效 LLM record 的 `c_OOD` 固定为 1。`NoGoalHint-v1`（旧兼容 alias
+`no-geometric-goal-hint-v1`）把 DirectGoal block 九位归零，其他输入、reward、mask、预算不变；
+它只支持“策略对目标几何提示的敏感性”诊断，不能证明训练贡献或执行期 A* 依赖。执行期无需
+A* 只由 DirectGoal 主方法的 `execution_planner_queries=0`、抛错替身端到端测试及正式性能门支持。
+
+`QMIX-DG` 与 MAPPO 共享 DirectGoal 613D 输入、环境步预算、训练/evaluation seeds、action mask、
+rule safety、reward、能源、final-checkpoint 与 held-out evaluation；禁止结果后单独调参或静默换成
+IPPO/VDN。允许功能 smoke，不允许依据 smoke 性能选择超参数。
+
+### 13.4 正式统计合同
+
+独立统计单位是训练初始化 seed。正式学习组使用 `7/17/27/37/47/57/67/77` 并共享 held-out
+evaluation seeds `200..209 × 20 episodes`。同 seed 的学习组使用配对分析；启发式无训练基线只作
+描述性参照，不参与 seed 级显著性检验。基础设施故障只可同 seed/同配置重跑并保留记录；算法、
+数值和安全失败保留为结果。缺失或损坏且无法重建的 seed 使该确认性比较 No-Go，不得换 seed。
+
+唯一 primary endpoint 为 final-checkpoint
+`completed_tasks_per_1000_steps=1000×sum(completed_tasks)/sum(episode_steps)`，每个训练 seed 先聚合
+全部 200 个 held-out episodes。关键 secondary endpoint 是第 13.1 节 step-normalized throughput
+AUC；team reward、completion rate、碰撞、死锁、能量死亡、充电和优先任务完成均为 secondary/
+safety endpoints。
+
+七个预注册 primary contrasts 为：full RC vs MAPPO-DG、A*KD factorial main effect、LLMKD
+factorial main effect、A*KD×LLMKD interaction、full RC vs Fixed-KD、full RC vs QMIX-DG、full RC
+vs RuleKD-v3。每个 contrast 以 seed 内差值或 factorial contrast 计算双侧 paired t-test，并在这
+七项上执行 Holm family-wise correction。报告未校正 p、Holm-adjusted p、均值差、95% t confidence
+interval 与 paired standardized effect `d_z=mean(diff)/sd(diff)`；零方差时 effect 标为 undefined，
+不得伪造无穷值。另以固定 seed `20260825`、10000 次 seed-level paired bootstrap 报告 percentile
+95% CI 作为小样本敏感性分析。AUC 和其他 secondary endpoints 只报告 95% CI 与效应量，除非 E1
+在看结果前另行冻结检验族。episode 不能被当作训练样本扩大 n。
+
+### 13.5 允许主张、失败降级与输入处置
+
+核心 `2×2` 支持两类教师的主效应与交互；full-vs-Fixed 只支持 Reward Calibration 的增量贡献；
+full-vs-QMIX 支持相同 DirectGoal 合同下的外部 MARL 比较；full-vs-Rule 与 Shuffle 支持 LLM 标签
+来源和状态对应性的证据；NoOOD 只支持 reliability 敏感性；NoGoalHint 只支持目标提示敏感性。
+三维均值替换、置零或干预只能说明 policy sensitivity/reliance，不能单独证明该语义维度在训练中
+产生因果贡献。真正未见拓扑只有在 O3 防泄漏与正式统计通过后才能支持跨拓扑可靠性主张。
+
+任何 Teacher 无效均 fail closed 为零 KD 权重；禁止 Fixed、uniform、旧 2D、NOOP、缓存旧标签、
+缩短 H 或规则标签 fallback。运行/内存 gate、dataset gate、checkpoint gate 或正式统计完整性失败
+时必须按所属阶段 No-Go，不得用较有利结果静默改合同。
+
+两份根目录研究输入的有效内容已映射到第 2–13 节：数据流/现状审计映射第 2–8 节，Pure Motion
+Teacher 映射第 9 节，Reward Calibration 映射第 10 节，三维 LLM/OOD 映射第 11 节，Student 与
+DirectGoal 映射第 12 节，日志/消融/统计/主张映射本节。canonical architecture 是唯一正式方案；
+输入文件不得继续作为并列合同。
+
+### 13.6 O0-F 审核裁决与验证证据
+
+O0-F 对外部建议的裁决为：统计合同、NoGoalHint 更名、74 次总预算、RuleKD 唯一规则、O2
+coverage/AUC、紧凑日志、干预主张边界、无 fixed-point Shuffle、组件化污染计数和 QMIX fairness
+全部采纳。三维语义建议的核心隔离要求全部采纳；“只保留 0/0.5/1”不采纳，因为它会无必要地
+降低已冻结连续量表的分辨率。最终保留五点解释 anchors、允许任意连续值，并加入非确定性的
+方向 rubric。
+
+验证日期为 2026-08-25，使用唯一规范解释器。YAML schema/74-run/7-contrast 断言通过；完整
+`pytest` 为 184 passed（45.52 s）；Flake8、`visualize.py --help`、dynamic-ingress A* evaluation
+help、`git diff --check` 均退出 0；仓库未发现 API key。相对 O0-E commit `17e40e4` 没有 Python
+运行代码、runtime training config、环境、reward、checkpoint 或 seed 修改；唯一 `configs/`
+变更是 owner 明确授权的治理 manifest。两份研究输入已按第 6.1 节哈希映射后移除。
+
+当前 Windows 会话能定位 `rg.exe`，但启动时返回“没有应用程序与此操作关联”；因此本组依照
+Tech Stack 使用 `git grep` 完成只读扫描。该工具环境问题不影响项目代码或上述验证结果。

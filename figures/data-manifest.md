@@ -18,9 +18,9 @@
 
 | Figure | Measures | Required real data | Planned script | Status |
 |---|---|---|---|---|
-| F3 Semantic-label controls | LLM、规则标签；优化路线另含扰乱标签与盲审 | label audit CSV + behavior JSON | `figures/core/plot_semantic_behavior.py` | 待 E1/E3 |
+| F3 Semantic-label controls | 连续三维 LLM、RuleKD-v3、ShuffleKD-v3、NoOOD-v1 与盲审 | label audit CSV + behavior JSON | `figures/core/plot_semantic_behavior.py` | 待 E1/E3 |
 | F4 Optimization topology robustness | 正常环境与 O3 两个真正未见拓扑的性能退化 | optimization robustness JSON | `figures/core/plot_robustness.py` | 仅优化路线，待 O3/E3 |
-| F5 Efficiency | 标准化吞吐AUC、达阈值步数、A*与控制循环运行效率 | AUC CSV + episodes/updates/runtime/summary | `figures/core/plot_efficiency.py` | 待 E3 |
+| F5 Efficiency | 固定10k-step网格吞吐AUC、达阈值步数、A*与控制循环运行效率 | AUC CSV + episodes/updates/resource windows | `figures/core/plot_efficiency.py` | 待 E3 |
 
 稳定路线不生成跨拓扑图，也不得用同图 8-AGV 替代。正式绘图必须使用冻结后的真实数据，
 同时输出 450 DPI PNG 与矢量 SVG。图注只说明

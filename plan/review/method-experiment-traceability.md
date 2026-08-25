@@ -4,15 +4,16 @@
 
 | Contribution / boundary | Method module | Optimization evidence | Stable evidence | Allowed claim before results | Status |
 |---|---|---|---|---|---|
-| 异构双教师 MAPPO | A* 路径/运动教师 + 离线双语义教师 | 核心 2×2，8 seed | 核心 2×2，5 seed | 框架和公平消融设计已定义 | 待 D1/E1 冻结 |
+| 异构双教师 MAPPO | Pure Motion A* + 离线三维语义教师 | 核心 2×2，8 seed | 历史路径教师+二维语义，5 seed | 框架和公平消融设计已定义 | 待 D1/E1 冻结 |
 | A* 教师贡献 | O0 批准的局部教师或 S1 历史路径教师 | O1 纯度、O2 覆盖/AUC、正式主效应 | 历史行为恢复、正式主效应 | 只能描述为路径/运动先验，不称调度 oracle | 待 O0/S1 |
-| LLM 语义教师贡献 | `task_commitment` + `local_assertiveness` | LLMKD 主效应、RuleKD、ShuffleKD、盲审 | LLMKD 主效应、RuleKD | 离线状态相关语义监督；在线调用为 0 | 正式结果待定 |
-| 外部 MARL 竞争力 | QMIX-WP | 8 seed 确认性比较 | 不实施 | 仅优化路线可形成外部算法比较 | 待 E1 |
-| 执行期 A* 依赖 | waypoint、NoWP、规划诊断 | NoWP 3 seed 与运行时审计 | NoWP 3 seed 与运行时审计 | 当前未摆脱执行期 A* | 待 E1/E2 |
+| LLM 语义教师贡献 | `task_persistence/yielding_preference/coordination_risk` | LLMKD 主效应、RuleKD-v3、ShuffleKD-v3、NoOOD、盲审 | 历史 LLMKD 主效应、RuleKD | 离线连续语义监督；在线调用为 0 | 正式结果待定 |
+| 外部 MARL 竞争力 | QMIX-DG | 8 seed 匹配比较 | 不实施 | 仅优化路线可形成外部算法比较 | 待 E1 |
+| Reward Calibration | RC-KD vs Fixed-KD | 8 seed 配对差异 | 不实施 | 只检验 `c_A_reward` 的增量贡献 | 待 E1/E2 |
+| Student 执行期 A* | DirectGoal + planner query instrumentation | query=0、抛错替身、正式性能；NoGoalHint只作敏感性 | 历史 NoWP 诊断 | 优化路线只有证据通过后才允许声称无执行期A* | 待 O1/E1 |
 | 跨拓扑泛化 | O3 两个真正未见拓扑 | evaluation-only、防泄漏、统一接口 | 不实施 | 仅优化路线且结果支持时允许 | 待 O3 |
 | 稳定交付下限 | 旧 Phase 3 A* 行为 | 不适用 | S1 `300–309 × 20` 验收 | 只证明冻结旧环境的可复现下限 | 待 S1 |
 | 充电边界 | 固定规则层 `1.10/0.30/0.80`（稳定路线） | 后续规格冻结 | 完成率/死亡/充电暴露 | 不声称 MAPPO 或 LLM 自主学习充电时机 | 历史选择已归档 |
-| 正式统计 | seed 级聚合、final checkpoint | 核心/基线预算按 8/3 seed | 核心/RuleKD 5 seed、NoWP 3 | 不用 episode 伪增样本，不挑 seed/checkpoint | 待 E1–E3 |
+| 正式统计 | seed 级聚合、final checkpoint | 七 contrasts、Holm、95% CI、paired dz、bootstrap | 核心/RuleKD 5 seed、NoWP 3 | 不用 episode 伪增样本，不挑 seed/checkpoint | 待 E1–E3 |
 
 ## 明确禁止
 

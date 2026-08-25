@@ -1,47 +1,60 @@
-# 优化路线 E1 语义标签双人盲审协议（候选）
-
-本协议源自旧 G3-7，在 D1 选择优化路线且 E1 复核前不属于冻结正式合同；稳定路线不默认
-承担该盲审预算。
+# 优化路线三维语义标签双人盲审协议
 
 ## 1. 目的与边界
 
-本协议审计离线 LLM 双语义标签相对冻结规则标签的合理性，不产生训练监督，也不作为
-LLM 自主决策、因果解释或正式任务性能的替代证据。实际训练标签的400条记录及用于提示词
-调试的状态不得进入盲审样本。
+本协议审计 DeepSeek 基于 `semantic-view-v3` 生成的连续三维标签是否符合冻结语义量表。人工评分
+不产生训练监督，不逐条修改标签，也不用于选择较有利的数据。正式 LLM 链路是
+`semantic-view-v3 -> semantic-prompt-v4-directional-rubric -> DeepSeek -> [0,1]^3`；RuleKD-v3
+是独立对照，不是 LLM 标签的参考答案或生成器。
 
 ## 2. 冻结样本
 
-- 总数：100个状态；抽样随机种子：`20260820`；
-- 五类场景各20个：`normal_transport`、`priority_conflict`、`narrow_corridor_yield`、
-  `low_battery_diversion`、`station_exit_congestion`；
-- 每个状态仅展示脱敏后的结构化场景、任务优先级、局部占用、AGV电量和安全约束；不展示
-  原始观测向量、模型名称、提示词、标签来源或其他评价者答案；
-- 抽样清单、场景哈希、LLM/规则标签和盲审编码表须分别保存。只有在两名评价者提交后才
-  合并编码表。
+- 从 800 条 formal records 以 seed `20260820` 确定性抽取 100 条；五类 provenance 场景各 20：
+  `normal_transport`、`priority_conflict`、`narrow_corridor_yield`、`low_battery_diversion`、
+  `station_exit_congestion`；
+- reviewer 只看脱敏 `semantic-view-v3`、五点量表和 LLM 三维 score/reason；不看模型身份、训练
+  结果、scenario ID、RuleKD label、A*、reward、Student 或另一 reviewer 的答案；
+- `scenario_type` 只用于抽样配额，不展示给 reviewer，也不进入 LLM/OOD；
+- 抽样清单、record hash、盲审编码表分别保存，只有两人提交后才合并。
 
-## 3. 评价者任务
+## 3. 评分任务
 
-两名评价者独立为每个状态给出两个值，均限制在`[0.0, 1.0]`、步长为`0.1`：
+两名 reviewer 独立判断三个连续 score 所在的合理区间，并可记录 `insufficient_context`：
 
-1. `task_commitment`：该AGV继续投入当前已分配任务的合理程度。低分表示死亡、锁定、
-   明显应让行或应返充；高分表示任务安全、优先级合理且继续执行；
-2. `local_assertiveness`：该AGV在不违反硬安全约束前提下保持当前通行意图的合理程度。
-   低分表示窄通道让行、冲突回避或充电站出口让行；高分表示局部空闲且继续通行。
+1. `task_persistence`：继续当前运输任务的合理程度；综合任务是否存在、优先级、载货、电量、
+   进展、中断代价和局部困难；无当前任务时应接近 0；
+2. `yielding_preference`：实际局部交互中主动延迟/让行的倾向；综合载货差异、相对优先级、
+   延迟代价和让行是否能解除瓶颈；它不是 NOOP 或通行权裁决；
+3. `coordination_risk`：冲突、拥堵、死锁或协作失败风险；综合邻居密度、窄道/站点瓶颈、
+   dead/blocking robots、运动约束和开放空间。
 
-评价者必须先阅读同一份评分锚点说明，并可选择`insufficient_context`；该标记不会被替换
-为数值，须单列报告并人工复核。
+量表 anchors 为 `0/0.25/0.50/0.75/1`，仅用于解释从“无依据”到“压倒性依据/近确定风险”的
+语义位置。标签可取任意 `[0,1]` 连续值，不要求落在 anchor 上；reviewer 也不得用确定性规则把
+场景类型直接换算成分数。reason 只用于核对事实与 score 是否一致，不进入 Student、loss 或 OOD。
 
-## 4. 汇总与报告
+## 4. Dataset-level acceptance
 
-- 首先报告两名评价者在每一语义维度上的一致率、加权 Cohen's κ 和
-  `insufficient_context`比例；
-- 若任一维度 κ < 0.60，保留原始分歧并只将盲审作为限制性证据，不汇总为“人工认可”；
-- 对可评分样本，分别报告 LLM 标签和规则标签相对两位评价者均值的 MAE、Spearman 相关，
-  以及按五类场景分层的分歧案例；
-- ShuffleKD 只验证状态—标签配对已按固定随机种子破坏，不与人工“合理性”比较；
-- 所有审计结果为教师质量/机制诊断。LLMKD是否改善任务性能仅由冻结的多seed实验决定。
+盲审开始前冻结以下判据：
 
-## 5. 复现记录
+- critical error 必须为 0：包括 forbidden output、捏造关键事实、score/reason 明显相反、非法值；
+- substantive semantic error 不得超过 `5/100`，且每个场景层不得超过 `2/20`；该错误指任一
+  score 与 reviewer 判断相隔两个或以上 anchor intervals，或 reason 与输入事实/score 实质矛盾；
+- 800 条 overall parser validity 必须不低于 `784/800=98%`，且每层不低于
+  `152/160=95%`；
+- `insufficient_context` 单独报告但不另设可覆盖上述门槛的替代规则；无法判断的记录不能被
+  选择性删除或换样本。
 
-记录抽样程序版本、样本/编码表SHA-256、评价者说明版本、提交时间、缺失条目、排除规则和
-汇总脚本版本。任何补样只能使用同一场景配额和固定替补顺序，不能因标签结果选择样本。
+任一阈值失败时，整个 formal dataset 为 No-Go：返回 O0-D，升级 prompt/schema version，重新执行
+完整 60 条 pilot 并生成新的完整 800 条。禁止逐条改分、只重试坏标签、选择性删除、拼接不同
+版本/fingerprint 或保留较有利子集。formal 生成中 `system_fingerprint` 变化必须暂停并由 owner
+审核；一个正式数据集不得静默混合 backend fingerprint。
+
+## 5. 报告
+
+- 报告每维错误率、anchor-interval 偏差分布、两位 reviewer 一致性、critical error 与
+  insufficient-context 比例；
+- 同时报告三维 Pearson 与 Spearman 相关；任意 `|rho|>=0.80` 只触发人工复核，不自动修改语义、
+  删除标签或影响 OOD 公式；
+- RuleKD-v3 可作为独立方法基线比较，但不得称为人工 ground truth；ShuffleKD 只验证分层
+  derangement 无 fixed point，不参与人工合理性比较；
+- 盲审只支持数据合理性与可审计性主张，不能替代 MAPPO 性能、样本效率或因果贡献证据。

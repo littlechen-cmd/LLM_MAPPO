@@ -8,6 +8,8 @@
   `conda activate py310`；
 - 禁止为本项目创建、重建、升级或修改虚拟环境；
 - UTF-8、LF、四空格缩进，最大行长 89；
+- 文本/文件检索首选已安装的 `rg`；若当前 Windows 会话无法启动该可执行文件，允许使用
+  `git grep` 作为只读替代并在验证记录中说明；
 - 本地 Intel i5、无独显 Huawei MateBook 用于文档、代码开发、静态检查、确定性测试和短
   smoke；
 - A600 服务器用于长训练和长评估，所有长任务由研究所有者人工启动。
@@ -19,7 +21,8 @@
 - PyTorch：MAPPO、QMIX/对照网络、优化器与 checkpoint；
 - Gymnasium 与项目 `rware/`：动态仓储多智能体环境；
 - NumPy：状态、动作偏好、日志聚合与数值处理；
-- A*：运行期 waypoint 与训练期路径/运动教师；
+- A*：优化路线只作训练期 Pure Motion Teacher，Student 执行使用 DirectGoal 且 planner query
+  必须为 0；稳定路线保留历史运行期 waypoint 与路径教师；
 - 离线 JSON/JSONL 标签与近邻检索：优化路线三维、稳定路线历史二维的 LLM 语义教师；
 - CSV、JSON、JSONL 与 TensorBoard：训练、评估、诊断和证据追踪；
 - Matplotlib/Pillow：论文图表与确定性回放；
@@ -40,7 +43,7 @@
 
 ## Git 与双路线隔离
 
-Phase P0 完成前不创建正式双路线分支。P0 必须先：
+Phase P0 已完成，双路线从同一已验证 P0 commit 建立。历史落位步骤为：
 
 1. 盘点并归属当前脏工作区修改；
 2. 形成聚焦 commit；
@@ -68,34 +71,36 @@ Phase P0 完成前不创建正式双路线分支。P0 必须先：
 
 ## 正式实验技术合同
 
-对照术语固定为：
+优化路线对照术语固定为：
 
-- RuleKD：以冻结的确定性规则生成与 LLM 相同维度的语义标签，检验 LLM 教师是否优于廉价
-  规则教师；
-- ShuffleKD：保持语义标签边际分布但打乱状态—标签对应，只作状态相关性负对照；
-- NoWP：保持 actor 输入宽度但将 waypoint 槽固定为零，同时关闭 waypoint reward 与 A*KL，
-  诊断执行期 A* waypoint 依赖。
+- RuleKD-v3：在同一 800 条 semantic views 上用冻结规则独立生成三维标签，并复用相同 retrieval、
+  validity 与 OOD；规则不得进入正式 LLM prompt 或标签链路；
+- ShuffleKD-v3：在预注册场景分层内对三维联合标签做确定性无 fixed-point derangement，只作
+  状态—标签对应性负对照；
+- NoOOD-v1：只将有效 LLM label 的 OOD reliability 置 1；
+- NoGoalHint-v1：保持 613D 输入但把 DirectGoal geometry block 九位清零，只诊断目标几何提示
+  敏感性；不得称为执行期 A* 消融。
 
 ### 优化路线
 
-- 核心 `2×2`：8 个匹配训练 seed；
-- QMIX-WP：8 个匹配训练 seed；
-- RuleKD：8 个匹配训练 seed；
-- ShuffleKD：3 个诊断训练 seed；
-- NoWP：3 个诊断训练 seed；
+- 核心 `2×2`：每组 8 个匹配训练 seed，共 32 次；
+- O2 校准：`MAPPO-DG/Fixed-AStarKD/RC-AStarKD × 107/117/127`，三组均关闭 LLMKD，共 9 次；
+- QMIX-DG、RuleKD-v3、Fixed-A*KD+LLMKD：各 8 次；
+- ShuffleKD-v3、NoOOD-v1、NoGoalHint-v1：各 3 次；
+- 优化路线全部学习运行总计 74 次，其中 E1/E2 正式/诊断预算为 65 次；
 - `Heuristic-Dispatcher+A*`：无训练；
 - 包含两个真正未见拓扑；
 - 不包含同图 8-AGV 压力场景；
 - 两个未见拓扑的具体评估组、episode 数、聚合与统计规则由 O0 和后续协议 feature spec
   冻结，但不得删除上述必需对照。
-- 正式训练 seed 固定为 `7/17/27/37/47/57/67/77`；ShuffleKD 与 NoWP 使用其中
+- 正式训练 seed 固定为 `7/17/27/37/47/57/67/77`；三个诊断组使用其中
   `7/17/27` 三个诊断 seed。
 
 ### 稳定路线
 
 - 核心 `2×2`：5 个匹配训练 seed；
 - RuleKD：5 个匹配训练 seed；
-- NoWP：3 个诊断训练 seed；
+- NoWP：3 个诊断训练 seed（稳定路线历史 waypoint 合同下保留旧名称）；
 - `Heuristic-Dispatcher+A*`：无训练；
 - 不包含 QMIX、ShuffleKD、未见拓扑或 8-AGV 压力场景；
 - 稳定验收使用 `300–309 × 20 episodes`；

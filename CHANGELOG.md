@@ -5,6 +5,16 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O0-F freezes compact teacher/effect logs, the 9-run O2 gate, the
+  65-run E1/E2 evidence matrix, a 74-run total budget, seven seed-level primary
+  contrasts, Holm correction, confidence intervals, effect sizes, and claim limits.
+- Changed: Optimization semantics now use a continuous three-score DeepSeek rubric;
+  deterministic RuleKD-v3 is isolated as a baseline, ShuffleKD-v3 is a stratified
+  fixed-point-free derangement, and the old optimization NoWP group is renamed
+  NoGoalHint to avoid misrepresenting execution-time A* evidence.
+- Changed: Synchronized the Python/tool contract, P0 experiment protocol, governance
+  manifest, label-audit protocol, Roadmap, TASKS, figure/table manifests, and
+  traceability matrix; mapped and removed the two untracked proposal inputs.
 - Added: O0-E freezes the 613D DirectGoal physical observation, 61D three-score
   semantic branch, detached late-fusion Student, motion-only prior loss,
   environment-step linear teacher schedule, strict 3D checkpoint isolation, and

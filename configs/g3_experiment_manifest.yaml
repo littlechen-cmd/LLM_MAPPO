@@ -1,23 +1,40 @@
-schema_version: 3
-status: p0_dual_route_predecision
+schema_version: 4
+status: o0_f_delivery_pending_owner_review
+document_role: governance_manifest_not_runtime_training_config
+canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:
-  - P0 baseline integration and dual branch creation
-  - O0 optimization A-star teacher design approval or S1 stable restoration acceptance
+  - O0-G zero-deviation owner approval
+  - O1 implementation and static validation
+  - O2 owner-run calibration Go
+  - O3 unseen-topology freeze
   - D1 single-route decision
   - E1 selected-route protocol freeze
 
 code:
-  branch: feature/phase4-parallel-cuda
-  preparation_base_commit: 18d52f04865ed3629ba5f37c4f01794d3eeb0a2d
-  frozen_commit: null
+  branch: codex/o0-astar-teacher-redesign
+  p0_base_commit: 6fcb7d3
+  frozen_implementation_commit: null
+
+python_environment:
+  interpreter: 'D:\Anaconda3\envs\py310\python.exe'
+  direct_invocation_required: true
+  conda_activate_required: false
+  environment_creation_or_modification: prohibited
 
 route_profiles:
   optimization:
     branch: codex/optimization
     artifact_root: artifacts/optimization
     prerequisites: [O0, O1, O2, O3]
+    observation_schema: direct-goal-observation-v1
+    execution_planner_queries_required: 0
     formal_training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
     diagnostic_training_seeds: [7, 17, 27]
+    o2_training_seeds: [107, 117, 127]
+    energy:
+      battery_cost_scale: 1.1
+      charge_threshold: 0.30
+      charge_release_threshold: 0.8
     unseen_topologies: pending_o3_design_from_scratch
     same_map_eight_agv_stress: prohibited
   stable:
@@ -35,147 +52,201 @@ route_profiles:
       charge_release_threshold: 0.8
     formal_training_seeds: [7, 17, 27, 37, 47]
     diagnostic_training_seeds: [7, 17, 27]
+    runtime_waypoint_dependency: retained_legacy_phase3
     unseen_topologies: prohibited
     same_map_eight_agv_stress: prohibited
 
 astar_teacher_contract:
-  status: route_specific_not_frozen
-  optimization_contract: pending_o0_human_approval
-  stable_contract: pending_s1_historical_behavior_restoration
-  runtime_waypoint_dependency: retained
-  high_level_task_priority_or_charging_decisions: prohibited
+  optimization:
+    version: pure-motion-teacher-v1
+    role: training_only_root_action_conditioned_motion_prior
+    k_motion: 12
+    expansion_budget_per_agent_query: 512
+    action_support: [FORWARD, LEFT, RIGHT]
+    pure_motion_mask_required: true
+    reward_calibration_cannot_change_label_or_validity: true
+    runtime_student_planner_queries: 0
+  stable:
+    status: pending_s1_historical_behavior_restoration
+    runtime_waypoint_dependency: retained
   heuristic_baseline_action_source: AStarExpert.act
 
 offline_llm_dataset:
-  path: artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl
-  records: 400
-  sha256: 9928f5756c1261589946eb3aedf8dc2c1fa6f73f037cd05c31afca0683161797
-  online_calls_during_training_and_evaluation: 0
+  optimization:
+    semantic_view: semantic-view-v3
+    prompt_version: semantic-prompt-v4-directional-rubric
+    labels: [task_persistence, yielding_preference, coordination_risk]
+    score_range: continuous_[0,1]
+    pilot_records: 60
+    formal_records: 800
+    pilot_enters_training: false
+    preferred_model: deepseek-v4-flash
+    conditional_fallback_model: deepseek-v4-pro
+    online_calls_during_training_and_evaluation: 0
+    formal_path: null
+    formal_sha256: null
+  stable:
+    path: artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl
+    records: 400
+    sha256: 9928f5756c1261589946eb3aedf8dc2c1fa6f73f037cd05c31afca0683161797
+    labels: [task_commitment, local_assertiveness]
+    online_calls_during_training_and_evaluation: 0
 
-core_groups:
-  # Compatibility matrix only. E1 must bind each selected-route group to a frozen config.
-  MAPPO-WP:
-    config: configs/g3_core_mappo_wp.yaml
-    artifact_slug: mappo_wp
-    astar_kl: false
-    offline_llm_kd: false
-  MAPPO-WP+A*KD:
-    config: configs/g3_core_mappo_wp_astar_kd.yaml
-    artifact_slug: mappo_wp_astar_kd
-    astar_kl: true
-    offline_llm_kd: false
-  MAPPO-WP+LLMKD:
-    config: configs/g3_core_mappo_wp_llm_kd.yaml
-    artifact_slug: mappo_wp_llm_kd
-    astar_kl: false
-    offline_llm_kd: true
-  MAPPO-WP+A*KD+LLMKD:
-    config: configs/g3_core_mappo_wp_astar_llm_kd.yaml
-    artifact_slug: mappo_wp_astar_llm_kd
-    astar_kl: true
-    offline_llm_kd: true
-
-required_comparisons:
-  QMIX-WP:
-    config: configs/g3_q2_qmix_wp.yaml
-    artifact_slug: qmix_wp
+optimization_learning_groups:
+  MAPPO-DG:
+    role: no_teacher_baseline
+    astar_kd: false
+    llm_kd: false
+    reward_calibration: false
+  RC-AStarKD:
+    role: pure_motion_teacher_only
+    astar_kd: reward_calibrated
+    llm_kd: false
+  Fixed-AStarKD:
+    role: o2_fixed_pure_motion_control_only
+    astar_kd: fixed
+    llm_kd: false
+  LLMKD:
+    role: three_dimensional_semantic_teacher_only
+    astar_kd: false
+    llm_kd: semantic_v3
+  RC-AStarKD+LLMKD:
+    role: full_method
+    astar_kd: reward_calibrated
+    llm_kd: semantic_v3
+  Fixed-AStarKD+LLMKD:
+    role: reward_calibration_control
+    astar_kd: fixed
+    llm_kd: semantic_v3
+  QMIX-DG:
     role: external_marl_baseline
-    training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
-    runtime_waypoint: true
-    astar_kl: false
-    offline_llm_kd: false
-  MAPPO-WP+A*KD+RuleKD:
-    config: configs/g3_q2_rule_kd.yaml
-    artifact_slug: mappo_wp_astar_rule_kd
-    role: semantic_control
-    training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
-    runtime_waypoint: true
-    astar_kl: true
-    offline_llm_kd: rule_v1
-  MAPPO-WP+A*KD+ShuffleKD:
-    config: configs/g3_q2_shuffle_kd.yaml
-    artifact_slug: mappo_wp_astar_shuffle_kd
-    role: diagnostic_semantic_control
+    observation_schema: direct-goal-observation-v1
+  RuleKD-v3:
+    role: deterministic_semantic_teacher_baseline
+    rules_reference: canonical_architecture_section_13_3
+    cannot_generate_or_modify_llm_labels: true
+  ShuffleKD-v3:
+    role: diagnostic_state_label_correspondence_control
     training_seeds: [7, 17, 27]
-    runtime_waypoint: true
-    astar_kl: true
-    offline_llm_kd: shuffled_seed_20260820
+    stratified_joint_label_derangement: true
+    fixed_points: prohibited
     confirmatory: false
-  MAPPO-NoWP:
-    config: configs/g3_q2_mappo_no_wp.yaml
-    artifact_slug: mappo_no_wp
-    role: diagnostic_waypoint_ablation
+  NoOOD-v1:
+    role: diagnostic_ood_reliability_control
     training_seeds: [7, 17, 27]
-    runtime_waypoint: false
-    astar_kl: false
-    offline_llm_kd: false
+    valid_record_ood_weight: 1.0
     confirmatory: false
-  Heuristic-Dispatcher+A*:
-    config: configs/g3_core_mappo_wp.yaml
-    artifact_slug: heuristic_dispatcher_astar
+  NoGoalHint-v1:
+    role: diagnostic_goal_geometry_sensitivity
+    observation_schema: no-geometric-goal-hint-v1
+    training_seeds: [7, 17, 27]
+    execution_planner_queries_required: 0
+    cannot_support_execution_astar_dependency_claim: true
+    confirmatory: false
+  Heuristic-Dispatcher+AStar:
     role: nonlearning_planning_baseline
     training_seeds: []
-    runtime_waypoint: true
     action_source: AStarExpert
-
-semantic_controls:
-  source_dataset: artifacts/phase4_labels/deepseek_medium_5ag_400_v2_repaired_r2.jsonl
-  rule_dataset: artifacts/phase4_labels/g3_rule_kd_v1.jsonl
-  shuffle_dataset: artifacts/phase4_labels/g3_shuffle_kd_seed20260820_v1.jsonl
-  shuffle_seed: 20260820
-  derivation_command: >-
-    python train/derive_phase4_control_labels.py --source <source_dataset>
-    --rule-output <rule_dataset> --shuffle-output <shuffle_dataset> --shuffle-seed 20260820
 
 comparison_fairness:
   shared_environment_contract: true
   shared_action_masks_and_rule_safety: true
   shared_reward_and_energy_configuration: true
   shared_environment_step_budget_rule: true
-  group_specific_tuning_after_g4: prohibited
-  qmix_fallback: IPPO-WP or VDN-WP only if a G4 smoke proves QMIX cannot share the contract
+  matched_training_and_evaluation_seeds: true
+  final_checkpoint_only: true
+  group_specific_tuning_after_results: prohibited
+  qmix_directgoal_observation_required: true
+  qmix_fallback: prohibited
 
 training:
   policy_initialization_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
   diagnostic_policy_initialization_seeds: [7, 17, 27]
-  environment_seed_groups: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
-  g4_pilot_environment_steps: 150000
+  o2_policy_initialization_seeds: [107, 117, 127]
+  o2_environment_steps: 150000
+  o2_auc_grid_environment_steps:
+    start: 0
+    stop: 150000
+    interval: 10000
   formal_environment_steps: null
-  formal_budget_rule: >-
-    One value selected from matched G4 curves and applied to every formal learning group.
+  formal_budget_rule: one_value_frozen_at_E1_and_shared_by_all_learning_groups
   checkpoint_rule: checkpoint_final.pt
+  optimization_run_budget:
+    o2_calibration: 9
+    e1_e2_core_2x2: 32
+    e1_e2_fixed_kd: 8
+    e1_e2_qmix_dg: 8
+    e1_e2_rule_kd: 8
+    e1_e2_three_diagnostics: 9
+    e1_e2_total: 65
+    total_including_o2: 74
+
+o2_gate:
+  groups: [MAPPO-DG, Fixed-AStarKD, RC-AStarKD]
+  llm_kd_in_o2_groups: false
+  coverage_denominator: all_agent_slots_in_calibration_selected_real_states
+  astar_valid_coverage_each_rc_seed_min: 0.25
+  fixed_rc_selected_query_and_shadow_counts_must_match: true
+  auc_y: cumulative_completed_tasks_per_1000_cumulative_episode_steps
+  auc_x: real_environment_steps_divided_by_150000
+  auc_aggregation: per_training_seed_then_median_relative_degradation
+  rc_vs_mappo_dg_median_auc_degradation_max: 0.10
 
 evaluation:
   deterministic_actions: true
   held_out_seeds: [200, 201, 202, 203, 204, 205, 206, 207, 208, 209]
   episodes_per_seed: 20
-  aggregation_unit: training seed
-  paired_across_groups: true
-  input_contract: artifacts/<selected_route>/formal_evaluation/<artifact_slug>/seed_<NNN>/evaluation.json
-  aggregate_output: artifacts/<selected_route>/formal_aggregate
+  aggregation_unit: training_initialization_seed
+  paired_across_learning_groups: true
+  checkpoint: checkpoint_final.pt
   same_map_eight_agv_stress: prohibited
 
 training_logs:
-  input_contract: artifacts/<selected_route>/formal_training/<artifact_slug>/seed_<NNN>/episodes.csv
-  auc_metric: completed_tasks_per_1000_steps_auc
-  auc_definition: >-
-    Step-normalized trapezoidal AUC of pooled completed-tasks-per-1000-episode-steps
-    samples, with the training seed as the independent statistical unit.
+  run_manifest: run_manifest.json
+  compact_step_counts: teacher_step_counts.csv
+  sampled_or_exception_events: teacher_events.jsonl
+  updates: updates.csv
+  episodes: episodes.csv
+  resource_windows: resource_windows.csv
+  ordinary_state_full_array_jsonl: prohibited
+  event_audit_sampler: sha256_mod_256_v1
+  fixed_rc_logging_density_identical: true
+  primary_sample_efficiency_metric: completed_tasks_per_1000_steps_auc
 
 analysis:
   primary_utility_metric: completed_tasks_per_1000_steps
   primary_sample_efficiency_metric: completed_tasks_per_1000_steps_auc
-  safety_constraints:
-    - mean_collisions_per_episode
-    - mean_energy_deaths_per_episode
+  secondary_metrics:
+    - team_reward
+    - completion_rate
+    - collisions
+    - terminal_deadlocks
+    - energy_deaths
+    - charging_exposure
+    - priority_task_completion
+  # Five registered comparison categories contain seven flattened primary contrasts.
   confirmatory_comparisons:
-    - full_method_vs_mappo_wp
-    - astar_kd_main_effect
-    - llm_kd_main_effect
-    - full_method_vs_qmix_wp
-    - full_method_vs_rule_kd
-  multiple_testing: Holm within the frozen five-comparison family
+    - category: core_factorial
+      contrasts: [astar_kd_main_effect, llm_kd_main_effect, astar_x_llm_interaction]
+    - category: full_vs_baseline
+      contrasts: [full_rc_vs_mappo_dg]
+    - category: reward_calibration
+      contrasts: [full_rc_vs_fixed_kd]
+    - category: external_marl
+      contrasts: [full_rc_vs_qmix_dg]
+    - category: semantic_teacher_source
+      contrasts: [full_rc_vs_rule_kd_v3]
+  flattened_confirmatory_contrast_count: 7
+  primary_test: two_sided_paired_t_test
+  multiple_testing: Holm_across_seven_primary_contrasts
+  confidence_interval: 95_percent_t_interval
+  effect_size: paired_dz
+  bootstrap_sensitivity:
+    resamples: 10000
+    seed: 20260825
+    interval: percentile_95_percent
   diagnostic_groups_do_not_support_significance_claims: true
+  episode_pseudoreplication: prohibited
 
 label_audit:
   held_out_state_count: 100
@@ -187,40 +258,24 @@ label_audit:
     low_battery_diversion: 20
     station_exit_congestion: 20
   independent_raters: 2
+  labels: [task_persistence, yielding_preference, coordination_risk]
   scoring_increment: 0.1
   protocol: plan/label-audit-protocol.md
 
 energy:
-  core_candidate:
-    status: selected_by_g2_3
+  stable_frozen:
     battery_cost_scale: 1.1
     charge_threshold: 0.30
     charge_release_threshold: 0.8
-    selection_evidence:
-      training_episodes: 200
-      diagnostic_held_out_seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-      episodes_per_seed: 20
-      task_completion_rate: 1.0
-      completed_tasks_per_1000_steps: 113.45981560653655
-      episodes_with_charging_rate: 0.20
-      mean_energy_deaths_per_episode: 0.0
-      boundary: fixed rule-layer charging; no autonomous-charging claim
-    rejected_intermediate:
-      battery_cost_scale: 1.1
-      charge_threshold: 0.25
-      charge_release_threshold: 0.8
-      completed_tasks_per_1000_steps: 115.46586934186071
-      episodes_with_charging_rate: 0.01
-      mean_energy_deaths_per_episode: 0.005
-      rejection_reason: insufficient held-out charging exposure and one energy death
-  historical_diagnostic_stress:
-    role: nonformal_until_e1_explicitly_selected
-    battery_cost_scale: 1.2
-    charge_threshold: 0.2
+  optimization:
+    status: retained_g2_3_core_contract
+    battery_cost_scale: 1.1
+    charge_threshold: 0.30
     charge_release_threshold: 0.8
 
 failure_policy:
-  infrastructure_error: rerun same seed and unchanged config from scratch
-  numerical_or_safety_failure: retain and report as an outcome; do not silently retry
-  finalization_permission_error: repair artifacts only after hash/content validation
-  missing_or_corrupt_evidence: mark run invalid and report; replacement uses same preregistered seed
+  infrastructure_error: rerun_same_seed_and_unchanged_config_with_record
+  algorithm_numerical_or_safety_failure: retain_and_report_as_outcome
+  missing_or_corrupt_seed: comparison_no_go_unless_same_seed_evidence_is_rebuilt
+  teacher_invalid: zero_kd_weight_fail_closed
+  prohibited_fallbacks: [Fixed-KD, uniform, old_2D, NOOP_teacher, cached_old_label, shorter_horizon]

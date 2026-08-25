@@ -4,47 +4,48 @@
 
 ### 1.1 治理与文档
 
-- [ ] canonical architecture 存在于
+- [x] canonical architecture 存在于
   `docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md`，已纳入 Git 且是唯一正式
   架构方案；
-- [ ] 两份根目录研究输入均按记录哈希完成逐项映射并移除，不存在长期未跟踪或并列正式版本；
-- [ ] canonical architecture、requirements、plan、validation、三份宪章、Roadmap、TASKS 与
+- [x] 两份根目录研究输入均按记录哈希完成逐项映射并移除，不存在长期未跟踪或并列正式版本；
+- [x] canonical architecture、requirements、plan、validation、三份宪章、Roadmap、TASKS 与
   CHANGELOG 对三维语义、Reward Calibration、H=12 和阶段边界完全一致；
-- [ ] canonical architecture 不含 `TBD`、`TODO`、未决候选、占位参数或“实现者自行选择”；
-- [ ] O0 没有修改 Python 运行代码、配置、reward、环境、训练 seed 或稳定路线合同；
+- [x] canonical architecture 不含 `TBD`、`TODO`、未决候选、占位参数或“实现者自行选择”；
+- [x] O0 没有修改 Python 运行代码、runtime training config、reward、环境、训练 seed 或稳定路线
+  合同；O0-F 仅按 owner 明确授权修订治理 manifest；
 - [ ] O0-A 至 O0-F 各自拥有聚焦 commit、对应 CHANGELOG、验证证据和研究所有者继续批准，
   不存在跨人工检查点预做或混合提交；
 - [ ] 研究所有者已书面批准唯一架构，O0 才可标记 complete。
 
 ### 1.2 Pure Motion Teacher
 
-- [ ] 教师输入/输出、root-action-conditioned cost、min-max 归一化、`tau_motion=1.0` Boltzmann
+- [x] 教师输入/输出、root-action-conditioned cost、min-max 归一化、`tau_motion=1.0` Boltzmann
   prior、共享 budget、确定性、cache、有效掩码和 fail-closed 合同精确冻结；
-- [ ] purity 矩阵证明任务/优先级/充电/parking/yield/预约优先权/coordinator/reward/LLM/Student/
+- [x] purity 矩阵证明任务/优先级/充电/parking/yield/预约优先权/coordinator/reward/LLM/Student/
   calibration 都不能参与标签生成；
-- [ ] `TOGGLE_LOAD`、非法动作及无有效 continuation 的 root 概率质量必须为零；三个 root 不得
+- [x] `TOGGLE_LOAD`、非法动作及无有效 continuation 的 root 概率质量必须为零；三个 root 不得
   启动独立完整 A*，必须共享单次 bounded search 的总 512-expansion budget；没有任何有限 root
   cost 时逐机器人 mask=0；
-- [ ] reward calibration 只评价已经生成的标签，不能改变标签内容、validity 或规划过程；
-- [ ] 搜索质量指标只记录，不存在连续 `c_A_search`、search entropy、path-length confidence、
+- [x] reward calibration 只评价已经生成的标签，不能改变标签内容、validity 或规划过程；
+- [x] 搜索质量指标只记录，不存在连续 `c_A_search`、search entropy、path-length confidence、
   Student disagreement 或其他优化乘子；论文不把 planning cost 表述为 RL Q-value。
 
 ### 1.3 Reward Calibration
 
-- [ ] 完整 fork schema 覆盖真实状态、动态入库、全部 RNG、adapter 状态、metrics、wrapper、
+- [x] 完整 fork schema 覆盖真实状态、动态入库、全部 RNG、adapter 状态、metrics、wrapper、
   cache 隔离、canonical hash round-trip 和真实 rollout 零污染；
-- [ ] paired shadows 从相同状态/外部随机状态开始，使用 deterministic Student、Pure Teacher
+- [x] paired shadows 从相同状态/外部随机状态开始，使用 deterministic Student、Pure Teacher
   argmax、A* 分支当前状态的 Student fallback、相同 mask 规则、分支局部 mask 和按事件寻址的
   common-random-number stream；
-- [ ] H=12、return、terminal、detached bootstrap、handoff-to-Student 和团队权重×逐机器人 mask
+- [x] H=12、return、terminal、detached bootstrap、handoff-to-Student 和团队权重×逐机器人 mask
   的数学合同唯一且量纲一致；单边 terminal 后另一分支继续且只有未终止 H-step 末态 bootstrap；
-- [ ] `calibration-sampler-v1` 精确实现 1/16 deterministic selection；Fixed/RC 共用
+- [x] `calibration-sampler-v1` 精确实现 1/16 deterministic selection；Fixed/RC 共用
   `m_calib(t)`、shadow、日志、EMA 与 sampling density，未选择状态两组 A* KD 均为 0，唯一优化
   差异为 `c_A_reward`；
-- [ ] EMA `0.99/1e-3/64`、Welford 初始化、exponential mean/variance、先计算后更新、顺序、
+- [x] EMA `0.99/1e-3/64`、Welford 初始化、exponential mean/variance、先计算后更新、顺序、
   `[0,1]` 截断、非有限 No-Go、严格恢复和 RC 初始化前零权重均精确冻结；
-- [ ] disagreement 不参与权重，calibration 不反传 Critic/A*，shadow 不污染 real rollout；
-- [ ] H=12 runtime `3×` gate 和持续 memory growth 具有 A600/12-worker、16/128 vector-step、5-repeat、
+- [x] disagreement 不参与权重，calibration 不反传 Critic/A*，shadow 不污染 real rollout；
+- [x] H=12 runtime `3×` gate 和持续 memory growth 具有 A600/12-worker、16/128 vector-step、5-repeat、
   2+10-window、`max(64 MiB,5%)` 与 `rho>=0.80` 的可执行判定式；
   H=4 只作诊断，不能通过降 horizon 通过 O1。
 
@@ -68,11 +69,15 @@
 - [x] 新三维网络的 shape、梯度边界、late fusion、semantic detach、Motion Prior loss 与 PPO
   所有权精确冻结；
 - [x] `λ_A(t)`/`λ_L(t)` schedule 为所有相关组共同的预注册确定算法；
-- [ ] Fixed-KD 和 RC-KD 共用 `m_calib`、shadow/EMA/logging 且只在 `c_A_reward` 上有优化差异，
+- [x] Fixed-KD 和 RC-KD 共用 `m_calib`、shadow/EMA/logging 且只在 `c_A_reward` 上有优化差异，
   O2 三诊断 seed 已登记但未运行；
 - [x] 三维 checkpoint 从新初始化并与历史一维/二维严格隔离，loader/metadata/EMA 恢复无歧义；
 - [x] 无 Teacher 派生物理观测和 waypoint 兼容边界完整；执行期无需 A* 仍是后续证据条件主张；
-- [ ] 每项 O0 后允许主张均有合同依据，所有性能/泛化/收敛/部署主张保持禁止。
+- [x] 每项 O0 后允许主张均有合同依据，所有性能/泛化/收敛/部署主张保持禁止。
+- [x] 总预算 74、O2 覆盖率/AUC 分母与聚合、紧凑日志、RuleKD-v3、无 fixed-point ShuffleKD、
+  NoOOD、NoGoalHint、QMIX-DG fairness 和七项正式统计 contrast 均唯一冻结；
+- [x] 正式 LLM prompt 使用方向性 rubric 但仍输出连续三维标签；RuleKD 不参与 prompt、formal
+  label 或人工 ground truth；
 
 ## 2. 审查方法
 
@@ -104,7 +109,8 @@ D:\Anaconda3\envs\py310\python.exe eval/evaluate_dynamic_ingress_astar.py --help
 - O0 阶段/唯一 spec/文档链接一致性检查；
 - canonical architecture 的 `TBD|TODO|placeholder` 扫描；
 - 旧二维术语与新三维术语的活动文档扫描；
-- 运行代码和配置相对 O0 基线的零差异检查；
+- 运行代码和 runtime training config 相对 O0 基线的零差异检查；治理 manifest 的 owner-authorized
+  O0-F 一致性修订单独审计；
 - 根目录未跟踪研究输入在 canonical 内容映射完成后的不存在性检查；
 - 所有公式字段在日志/checkpoint/dataset schema 中的一一映射检查。
 
@@ -117,5 +123,6 @@ D:\Anaconda3\envs\py310\python.exe eval/evaluate_dynamic_ingress_astar.py --help
 - [ ] `TASKS.md` 的 O0 只由核心架构师在证据审查后标记完成；
 - [ ] `CHANGELOG.md` 已按每个完成任务组同步；
 - [ ] O0-A 至 O0-F 的逐组人工审核记录完整，且每组批准时间早于下一组首个 commit；
-- [ ] 没有运行代码、标签、训练、长评估、O3 拓扑或稳定路线修改混入 O0；
+- [ ] 没有运行代码、runtime training config、标签、训练、长评估、O3 拓扑或稳定路线修改混入
+  O0；治理 manifest 仅含文档合同；
 - [ ] 分支工作树干净，commit 聚焦且未 push/merge，交由研究所有者发布。

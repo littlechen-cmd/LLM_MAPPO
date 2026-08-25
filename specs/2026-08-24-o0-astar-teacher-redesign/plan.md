@@ -77,24 +77,24 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
   calibration 不反传 Critic/A*；
 - [x] 冻结所有对照共用的 `λ_A(t)`/`λ_L(t)` 精确 schedule、恢复语义和日志，禁止按结果调整；
 - [x] 冻结不含 waypoint/desired-direction/teacher-trajectory 的物理观测替代合同、旧 waypoint
-  兼容边界、NoWP 验证门和“执行期无需 A*”条件主张；
+  兼容边界、NoGoalHint 诊断门和“执行期无需 A*”条件主张；
 - [x] 冻结三维 checkpoint metadata、strict loader、旧一维/二维历史加载与禁止权重填充迁移；
 - [x] 列出 O1 所需模块边界和依赖顺序，但不写实现代码、伪造类名或提前修改配置。
 
 ## Task group O0-F：日志、消融、论文主张与 canonical architecture
 
-- [ ] 冻结每步/每更新/每 episode 的教师覆盖、validity、OOD、paired return、bootstrap、`ΔG`、
+- [x] 冻结每步/每更新/每 episode 的教师覆盖、validity、OOD、paired return、bootstrap、`ΔG`、
   EMA、权重、disagreement、fallback、耗时、内存、污染计数和失败原因 schema；
-- [ ] 冻结 Reward-Calibrated KD 与 Fixed-KD 的唯一差异，登记 O2 三诊断 seed，明确不自动改变
+- [x] 冻结 Reward-Calibrated KD 与 Fixed-KD 的唯一差异，登记 O2 三诊断 seed，明确不自动改变
   E1 正式预算；
-- [ ] 冻结 Pure Teacher、LLM reliability、三维 semantic、NoWP、Fixed-KD 和失败降级所需消融及
+- [x] 冻结 Pure Teacher、LLM reliability、三维 semantic、NoGoalHint、Fixed-KD 和失败降级所需消融及
   各组允许/禁止论文主张；
-- [ ] 将全部批准合同整合进
+- [x] 将全部批准合同整合进
   `docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md`，不得含 TBD/TODO、未选
   候选、矛盾公式或依赖未跟踪文件的有效条款；
-- [ ] 建立两份研究输入→canonical architecture 内容映射，确认无有效内容丢失后移除两个根目录
+- [x] 建立两份研究输入→canonical architecture 内容映射，确认无有效内容丢失后移除两个根目录
   未跟踪输入，保证 canonical architecture 是唯一正式方案；
-- [ ] 同步三份宪章、Roadmap、TASKS 和 CHANGELOG，并完成方法—代码现状—后续实验—论文主张
+- [x] 同步三份宪章、Roadmap、TASKS 和 CHANGELOG，并完成方法—代码现状—后续实验—论文主张
   一致性审计。
 
 ## Task group O0-G：零偏差复核与研究所有者人工门
