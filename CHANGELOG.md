@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O1-A introduces versioned DirectGoal and NoGoalHint physical observations,
+  zero planner-query instrumentation, and regression coverage while preserving the
+  legacy waypoint schema as the default.
 - Changed: The research owner gave final written approval to the complete O0 contract;
   O0 is closed and O1 role-alignment implementation is now the active phase.
 - Added: O0-G records the zero-deviation architecture audit and freezes the sole O1

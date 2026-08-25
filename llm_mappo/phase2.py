@@ -8,6 +8,12 @@ import numpy as np
 
 import rware  # noqa: F401 - importing registers the dynamic environment.
 from llm_mappo.planner import AStarPlanner
+from llm_mappo.optimization_observation import (
+    ObservationSchema,
+    PlannerQueryCounter,
+    build_direct_goal_observation,
+    build_no_goal_hint_observation,
+)
 from rware.warehouse import Action
 
 
@@ -125,8 +131,17 @@ class Phase2Warehouse:
     task_completion_target: Optional[int] = None
     include_priority_features: bool = False
     render_mode: Optional[str] = None
+    observation_schema: ObservationSchema = field(
+        default=ObservationSchema.LEGACY_WAYPOINT_V1,
+        kw_only=True,
+    )
     _env: gym.Env = field(init=False, repr=False)
-    _planner: AStarPlanner = field(init=False, repr=False)
+    _planner: Optional[AStarPlanner] = field(init=False, default=None, repr=False)
+    _planner_query_counter: PlannerQueryCounter = field(
+        init=False,
+        default_factory=PlannerQueryCounter,
+        repr=False,
+    )
     _raw_observations: Sequence[np.ndarray] = field(init=False, repr=False)
     _metrics: EpisodeMetrics = field(init=False, repr=False)
     _last_progress_step: int = field(init=False, default=0, repr=False)
@@ -141,6 +156,10 @@ class Phase2Warehouse:
     _charging_active: set[int] = field(init=False, default_factory=set, repr=False)
 
     def __post_init__(self) -> None:  # noqa: C901
+        try:
+            self.observation_schema = ObservationSchema(self.observation_schema)
+        except ValueError as error:
+            raise ValueError("Unsupported observation_schema.") from error
         if self.n_agents < 1:
             raise ValueError("Phase 2 requires at least one AGV.")
         if self.waypoint_reward < 0.0:
@@ -163,6 +182,13 @@ class Phase2Warehouse:
             raise ValueError("request_queue_size must be positive when provided.")
         if self.task_completion_target is not None and self.task_completion_target < 1:
             raise ValueError("task_completion_target must be positive when provided.")
+        if (
+            self.observation_schema != ObservationSchema.LEGACY_WAYPOINT_V1
+            and (self.priority_schedule is not None or self.include_priority_features)
+        ):
+            raise ValueError(
+                "Optimization observation schemas require the frozen 613D layout."
+            )
         make_options = {
             "disable_env_checker": True,
             "n_agents": self.n_agents,
@@ -179,7 +205,8 @@ class Phase2Warehouse:
         if self.render_mode is not None:
             make_options["render_mode"] = self.render_mode
         self._env = gym.make(self.env_id, **make_options)
-        self._planner = AStarPlanner()
+        if self.observation_schema == ObservationSchema.LEGACY_WAYPOINT_V1:
+            self._planner = AStarPlanner()
 
     @property
     def env(self):
@@ -194,7 +221,13 @@ class Phase2Warehouse:
     def metrics(self) -> EpisodeMetrics:
         return self._metrics
 
+    @property
+    def planner_query_counter(self) -> PlannerQueryCounter:
+        """Return per-episode planner instrumentation for execution audits."""
+        return self._planner_query_counter
+
     def reset(self, seed: Optional[int] = None) -> np.ndarray:
+        self._planner_query_counter.reset()
         self._raw_observations, info = self._env.reset(seed=seed)
         target = (
             int(info["task_completion_target"])
@@ -310,34 +343,8 @@ class Phase2Warehouse:
         rows = []
         for index, agent in enumerate(warehouse.agents):
             target, target_kind = self._target_for_agent(agent.id)
-            waypoint = ()
-            if self.include_waypoint_features:
-                waypoint = self._planner.plan(warehouse, agent.id, target).waypoints
-            if len(waypoint) > 1:
-                next_point = waypoint[1]
-                desired_direction = self._planner._direction_between(
-                    waypoint[0], next_point
-                )
-            elif self.include_waypoint_features:
-                next_point = target
-                desired_direction = None
-            else:
-                next_point = (agent.x, agent.y)
-                desired_direction = None
-            dx = (next_point[0] - agent.x) / max(width - 1, 1)
-            dy = (next_point[1] - agent.y) / max(height - 1, 1)
             direction_features = np.zeros(4, dtype=np.float32)
             direction_features[agent.dir.value] = 1.0
-            desired_direction_features = np.zeros(4, dtype=np.float32)
-            waypoint_relation_features = np.zeros(3, dtype=np.float32)
-            if desired_direction is not None:
-                desired_direction_features[desired_direction.value] = 1.0
-                if desired_direction == agent.dir:
-                    waypoint_relation_features[0] = 1.0
-                elif self._planner._turn(agent.dir, right=False) == desired_direction:
-                    waypoint_relation_features[1] = 1.0
-                else:
-                    waypoint_relation_features[2] = 1.0
             own = np.asarray(
                 [
                     agent.x / max(width - 1, 1),
@@ -364,20 +371,121 @@ class Phase2Warehouse:
             global_features = self._global_features(agent.id)
             raw = np.asarray(self._raw_observations[index], dtype=np.float32)
             rows.append(
-                np.concatenate(
-                    (
-                        raw,
-                        own,
-                        direction_features,
-                        [dx, dy],
-                        desired_direction_features,
-                        waypoint_relation_features,
-                        nearby,
-                        global_features,
-                    )
+                self._build_observation_row(
+                    warehouse,
+                    agent.id,
+                    target,
+                    raw,
+                    own,
+                    direction_features,
+                    nearby,
+                    global_features,
+                    width,
+                    height,
                 )
             )
         return np.stack(rows).astype(np.float32, copy=False)
+
+    def _build_observation_row(
+        self,
+        warehouse,
+        agent_id: int,
+        target: Tuple[int, int],
+        raw: np.ndarray,
+        own: np.ndarray,
+        direction_features: np.ndarray,
+        nearby: np.ndarray,
+        global_features: np.ndarray,
+        width: int,
+        height: int,
+    ) -> np.ndarray:
+        agent = warehouse.agents[agent_id - 1]
+        if self.observation_schema == ObservationSchema.DIRECT_GOAL_V1:
+            return build_direct_goal_observation(
+                raw,
+                own,
+                direction_features,
+                (target[0] - agent.x) / max(width - 1, 1),
+                (target[1] - agent.y) / max(height - 1, 1),
+                nearby,
+                global_features,
+            )
+        if self.observation_schema == ObservationSchema.NO_GEOMETRIC_GOAL_HINT_V1:
+            return build_no_goal_hint_observation(
+                raw,
+                own,
+                direction_features,
+                nearby,
+                global_features,
+            )
+        return self._build_legacy_observation_row(
+            warehouse,
+            agent_id,
+            target,
+            raw,
+            own,
+            direction_features,
+            nearby,
+            global_features,
+            width,
+            height,
+        )
+
+    def _build_legacy_observation_row(
+        self,
+        warehouse,
+        agent_id: int,
+        target: Tuple[int, int],
+        raw: np.ndarray,
+        own: np.ndarray,
+        direction_features: np.ndarray,
+        nearby: np.ndarray,
+        global_features: np.ndarray,
+        width: int,
+        height: int,
+    ) -> np.ndarray:
+        if self._planner is None:
+            raise RuntimeError("Legacy waypoint schema requires an A* planner.")
+        agent = warehouse.agents[agent_id - 1]
+        waypoint = ()
+        if self.include_waypoint_features:
+            self._planner_query_counter.record_query()
+            waypoint = self._planner.plan(warehouse, agent_id, target).waypoints
+        if len(waypoint) > 1:
+            next_point = waypoint[1]
+            desired_direction = self._planner._direction_between(
+                waypoint[0], next_point
+            )
+        elif self.include_waypoint_features:
+            next_point = target
+            desired_direction = None
+        else:
+            next_point = (agent.x, agent.y)
+            desired_direction = None
+        dx = (next_point[0] - agent.x) / max(width - 1, 1)
+        dy = (next_point[1] - agent.y) / max(height - 1, 1)
+        desired_direction_features = np.zeros(4, dtype=np.float32)
+        waypoint_relation_features = np.zeros(3, dtype=np.float32)
+        if desired_direction is not None:
+            desired_direction_features[desired_direction.value] = 1.0
+            if desired_direction == agent.dir:
+                waypoint_relation_features[0] = 1.0
+            elif self._planner._turn(agent.dir, right=False) == desired_direction:
+                waypoint_relation_features[1] = 1.0
+            else:
+                waypoint_relation_features[2] = 1.0
+        return np.concatenate(
+            (
+                raw,
+                own,
+                direction_features,
+                [dx, dy],
+                desired_direction_features,
+                waypoint_relation_features,
+                nearby,
+                global_features,
+            )
+        )
 
     def _target_for_agent(
         self,
