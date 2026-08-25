@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Changed: Windows ripgrep searches must directly invoke the WinGet Links
+  executable; bare `rg` and repair or diagnosis of the Codex WindowsApps copy are
+  prohibited.
 - Added: O0-F freezes compact teacher/effect logs, the 9-run O2 gate, the
   65-run E1/E2 evidence matrix, a 74-run total budget, seven seed-level primary
   contrasts, Holm correction, confidence intervals, effect sizes, and claim limits.

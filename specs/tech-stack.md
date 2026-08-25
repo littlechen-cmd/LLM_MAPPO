@@ -8,13 +8,19 @@
   `conda activate py310`；
 - 禁止为本项目创建、重建、升级或修改虚拟环境；
 - UTF-8、LF、四空格缩进，最大行长 89；
-- 文本/文件检索首选已安装的 `rg`；若当前 Windows 会话无法启动该可执行文件，允许使用
-  `git grep` 作为只读替代并在验证记录中说明；
 - 本地 Intel i5、无独显 Huawei MateBook 用于文档、代码开发、静态检查、确定性测试和短
   smoke；
 - A600 服务器用于长训练和长评估，所有长任务由研究所有者人工启动。
 
 选择理由：保持现有项目和历史 checkpoint 的兼容性，避免在论文后期引入无关运行时迁移。
+
+## Text Search Environment
+
+- Windows 上禁止直接调用裸 `rg`。Codex Desktop 可能将其解析到
+  `C:\Program Files\WindowsApps` 下集成 shell 无法执行的 bundled executable；
+- 所有基于 ripgrep 的仓库检索必须直接调用：
+  `C:\Users\28016\AppData\Local\Microsoft\WinGet\Links\rg.exe`；
+- 禁止尝试修复、重装或诊断 Codex bundled `WindowsApps\...\rg.exe`。
 
 ## 核心框架
 
