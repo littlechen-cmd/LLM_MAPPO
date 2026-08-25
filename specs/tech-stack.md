@@ -19,7 +19,7 @@
 - Windows 上禁止直接调用裸 `rg`。Codex Desktop 可能将其解析到
   `C:\Program Files\WindowsApps` 下集成 shell 无法执行的 bundled executable；
 - 所有基于 ripgrep 的仓库检索必须直接调用：
-  `C:\Users\28016\AppData\Local\Microsoft\WinGet\Links\rg.exe`；
+  `C:\Users\28016\bin\rg.exe`；
 - 禁止尝试修复、重装或诊断 Codex bundled `WindowsApps\...\rg.exe`。
 
 ## 核心框架

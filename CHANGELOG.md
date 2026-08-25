@@ -5,7 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
-- Changed: Windows ripgrep searches must directly invoke the WinGet Links
+- Fixed: Replaced the non-executable WinGet Links ripgrep target with the verified
+  `C:\Users\28016\bin\rg.exe` executable path.
+- Changed: Windows ripgrep searches must directly invoke the canonical approved
   executable; bare `rg` and repair or diagnosis of the Codex WindowsApps copy are
   prohibited.
 - Added: O0-F freezes compact teacher/effect logs, the 9-run O2 gate, the
