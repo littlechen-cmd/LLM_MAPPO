@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O1-D adds strict three-score semantic parsing, `semantic-view-v3` 61D
+  encoding, validity-only offline retrieval, truncated-exponential OOD reliability,
+  and a zero-network owner-only label validation CLI.
 - Added: O1-C implements the deterministic `pure-motion-astar-v1` Teacher with a
   shared bounded search, root-conditioned soft motion prior, exact-query cache, and
   fail-closed per-robot results.
