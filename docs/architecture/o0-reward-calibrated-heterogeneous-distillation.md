@@ -2,9 +2,9 @@
 
 ## 1. 文档状态与审计基线
 
-本文是优化路线唯一 canonical architecture。O0-A 至 O0-E 已逐组获研究所有者批准；第 13 节
-整合 O0-F 的日志、消融、统计、主张和跨文档一致性合同，当前等待 O0-F 人工交付审核。批准前
-不得进入 O0-G 或实现阶段。
+本文是优化路线唯一 canonical architecture。O0-A 至 O0-F 已逐组获研究所有者批准；第 14 节
+记录 O0-G 零偏差复核和 O1 实施交接。当前停在 O0 最终研究所有者书面批准门；批准前不得把
+O0 标记完成、进入 O1、生成 pilot/formal 标签或修改运行时代码。
 
 - 代码审计基线：P0 最终 commit `6fcb7d3`；
 - 规格分支：`codex/o0-astar-teacher-redesign`；
@@ -1755,5 +1755,65 @@ help、`git diff --check` 均退出 0；仓库未发现 API key。相对 O0-E co
 运行代码、runtime training config、环境、reward、checkpoint 或 seed 修改；唯一 `configs/`
 变更是 owner 明确授权的治理 manifest。两份研究输入已按第 6.1 节哈希映射后移除。
 
-当前 Windows 会话能定位 `rg.exe`，但启动时返回“没有应用程序与此操作关联”；因此本组依照
-Tech Stack 使用 `git grep` 完成只读扫描。该工具环境问题不影响项目代码或上述验证结果。
+O0-F 交付后，Windows 文本搜索入口已修复并冻结为
+`C:\Users\28016\bin\rg.exe`；后续审计必须直接调用该文件，不使用 bare `rg`。
+
+## 14. O0-G：零偏差复核、O1 交接与最终人工门
+
+### 14.1 零偏差结论
+
+O0-G 从头复核 requirements、plan、validation 和本 canonical architecture。O0-A 至 O0-F 冻结
+合同之间不存在公式、量纲、输入所有权或失败策略冲突，也没有遗留候选、实现者自行选择项或
+未冻结的正式参数。复核确认以下边界必须原样进入 O1：
+
+- Pure Motion Teacher 只产生逐机器人运动先验；`K_motion=12` 与共享 512-expansion budget
+  不得被 Reward Calibration 或训练性能改写；
+- Reward Calibration 只缩放整条有效 A* 标签；`H_reward=12`、1/16 sampler、两分支状态语义、
+  EMA `0.99/1e-3/64` 和 H=12 的 `3×` runtime/memory No-Go 均保持唯一；
+- 三维语义只使用 `semantic-view-v3` 61D、整记录 validity 与共享截断指数 OOD reliability；
+  reason、disagreement 和 reward calibration 均不得进入语义 target；
+- Student 固定为 DirectGoal 613D 物理分支加 61D 语义分支，三维 checkpoint 从新架构初始化；
+  `lambda_A(t)` 与 `lambda_L(t)` 使用同一 `linear-env-step-v1`；
+- O2/E1/E2 证据预算、对照、日志、统计和允许主张均以第 13 节为唯一依据，O1 不得新增或
+  删除实验组，也不得通过超参数搜索改变合同。
+
+`TBD|TODO|placeholder|实现者自行选择` 扫描只命中 validation/plan 中描述该禁止项的审计文字；
+活动优化合同中的历史 1D/2D/NoWP 仅用于现状、禁止 fallback 或稳定路线隔离说明，不构成优化
+路线正式语义。相对 P0 基线 `6fcb7d3` 的变更仅包含文档和治理 manifest，没有 Python 运行代码、
+runtime training config、环境、reward、checkpoint、训练 seed 或稳定路线实现。治理 manifest 是
+`governance_manifest_not_runtime_training_config`，不能由训练入口读取。
+
+字段映射复核覆盖：Pure Motion query/result/cache/diagnostics，calibration snapshot/sampler/return/
+EMA，61D semantic record/OOD/reliability，613D+61D Student/checkpoint，紧凑日志与七个正式统计
+contrast。所有优化量均有唯一生产者、消费者、序列化位置和 fail-closed 处理；不存在额外
+`c_A_search`、consistency、逐维 semantic mask、Fixed-KD warm start 或旧标签迁移通道。
+
+### 14.2 O1 唯一实施交接
+
+O1 的唯一实施任务包为
+`plan/task-package/o1-role-alignment-implementation.md`。该任务包冻结模块边界、接口、实现顺序、
+测试先行步骤、短 smoke、提交边界和研究所有者运行的 A600 基准命令。若任务包与本文冲突，
+以本文为准并返回 O0-G 由研究所有者裁决；实现者不得自行选择替代方案。
+
+O1 本地工作只允许短单元/集成测试和单次短 smoke，不得生成 60/800 标签、启动 O2 训练、执行
+长评估、搜索 KL/schedule/EMA/OOD 参数或静默缩短 H。A600 的 12-worker H=4/H=12 开销与内存
+基准只由研究所有者运行；Codex 只分析其产物。
+
+### 14.3 最终书面批准门
+
+O0-G 交付不等于 O0 自动完成。研究所有者必须在本次交付后明确书面批准以下整体：唯一
+canonical architecture、Pure Motion A* 合同、Reward Calibration 与 EMA、OOD 公式、三维数据
+合同、Student/schedule/checkpoint、H=12 runtime/memory gate、证据预算/消融/统计和允许主张。
+获得该批准后，才可在单独的收口动作中标记 O0 complete、同步 Roadmap/TASKS/CHANGELOG 并进入
+O1；批准前这些状态必须保持 pending。
+
+### 14.4 O0-G 验证证据
+
+验证日期为 2026-08-25。使用 `D:\Anaconda3\envs\py310\python.exe` 完整运行 pytest，结果为
+`184 passed in 45.37s`；Flake8、`visualize.py --help`、dynamic-ingress A* evaluation help 和
+`git diff --check` 均退出 0。`C:\Users\28016\bin\rg.exe --version` 返回 ripgrep 15.2.0。
+
+治理 manifest 通过 YAML 解析且状态为 `o0_g_final_owner_approval_pending`；canonical/spec/O1 任务
+包链接全部存在；相对 P0 基线的运行代码与 runtime training config 差异为零；仓库凭据样式扫描
+未发现 API key。最终提交只包含 canonical architecture、O1 文档任务包、feature-spec checklist、
+治理 manifest 状态和 CHANGELOG，不包含运行代码、标签、artifact、训练或评估结果。

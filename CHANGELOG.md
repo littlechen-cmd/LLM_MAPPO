@@ -5,6 +5,11 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-25
 
+- Added: O0-G records the zero-deviation architecture audit and freezes the sole O1
+  implementation task package, including module interfaces, TDD order, short smoke,
+  strict legacy isolation, and the owner-only A600 runtime/memory gate command.
+- Changed: O0-A through O0-F are recorded as individually approved; O0 remains pending
+  until the research owner gives final written approval of the complete frozen contract.
 - Fixed: Replaced the non-executable WinGet Links ripgrep target with the verified
   `C:\Users\28016\bin\rg.exe` executable path.
 - Changed: Windows ripgrep searches must directly invoke the canonical approved

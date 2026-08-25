@@ -1,5 +1,5 @@
 schema_version: 4
-status: o0_f_delivery_pending_owner_review
+status: o0_g_final_owner_approval_pending
 document_role: governance_manifest_not_runtime_training_config
 canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:

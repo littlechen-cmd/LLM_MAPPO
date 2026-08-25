@@ -99,12 +99,12 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
 
 ## Task group O0-G：零偏差复核与研究所有者人工门
 
-- [ ] 从头复核 requirements、plan、validation 和 canonical architecture，清除所有可由 O1
+- [x] 从头复核 requirements、plan、validation 和 canonical architecture，清除所有可由 O1
   实现者自行选择的参数、接口、公式、错误处理、命令或验收解释；
-- [ ] 逐项核对 O0 验收矩阵、纯度矩阵、污染计数、数学量纲、checkpoint、日志、消融和正式
+- [x] 逐项核对 O0 验收矩阵、纯度矩阵、污染计数、数学量纲、checkpoint、日志、消融和正式
   参数预注册；
-- [ ] 提供 O1 架构任务包，明确实现顺序、测试先行、短 smoke、owner-run A600 基准命令和禁止
+- [x] 提供 O1 架构任务包，明确实现顺序、测试先行、短 smoke、owner-run A600 基准命令和禁止
   长任务；
 - [ ] 取得研究所有者对 canonical architecture、EMA 参数、OOD 公式、三维数据合同、schedule、
   H=12 runtime/memory gate、消融和允许主张的书面批准；
-- [ ] 批准前不得标记 O0 complete、进入 O1、生成正式标签或修改运行代码。
+- [x] 截至 O0-G 交付，批准前未标记 O0 complete、未进入 O1、未生成标签且未修改运行代码。

@@ -13,7 +13,7 @@
 - [x] canonical architecture 不含 `TBD`、`TODO`、未决候选、占位参数或“实现者自行选择”；
 - [x] O0 没有修改 Python 运行代码、runtime training config、reward、环境、训练 seed 或稳定路线
   合同；O0-F 仅按 owner 明确授权修订治理 manifest；
-- [ ] O0-A 至 O0-F 各自拥有聚焦 commit、对应 CHANGELOG、验证证据和研究所有者继续批准，
+- [x] O0-A 至 O0-F 各自拥有聚焦 commit、对应 CHANGELOG、验证证据和研究所有者继续批准，
   不存在跨人工检查点预做或混合提交；
 - [ ] 研究所有者已书面批准唯一架构，O0 才可标记 complete。
 
@@ -113,6 +113,11 @@ D:\Anaconda3\envs\py310\python.exe eval/evaluate_dynamic_ingress_astar.py --help
   O0-F 一致性修订单独审计；
 - 根目录未跟踪研究输入在 canonical 内容映射完成后的不存在性检查；
 - 所有公式字段在日志/checkpoint/dataset schema 中的一一映射检查。
+
+O0-G 最终交付还必须确认唯一 O1 任务包为
+`plan/task-package/o1-role-alignment-implementation.md`，其中固定模块接口、测试先行顺序、短
+smoke、禁止长任务和 owner-only A600 命令。O0-G 交付时只允许保留“研究所有者最终书面批准”
+相关条目为未完成；不得提前更新 Roadmap/TASKS 的 O0 complete 状态。
 
 ## 4. Merge criteria
 
