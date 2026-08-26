@@ -5,6 +5,15 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-26
 
+- Added: Root `terminology.md` aligns planning, topology, hashing, experiment-isolation
+  and multi-teacher concepts using plain-language explanations, professional definitions
+  and their project-specific implications.
+- Changed: Replanned optimization dependencies so O3 topology/interface work can run
+  while O1 waits for the owner-only A600 gate; O2 remains blocked and unseen-topology
+  performance remains deferred until E2 after D1.
+- Added: The unique O3 feature spec freezes two 5-AGV evaluation-only loaded-transport
+  topologies, explicit files and IDs, dual hashes, graph certificates, owner map-preview
+  approval, code-level leakage guards, and non-performance validation boundaries.
 - Added: The O1 owner-only A600 gate now runs the frozen baseline/H4/H12
   comparison with matching rollout updates, fresh repeat processes, persistent-memory
   windows, fail-closed CUDA checks, and complete machine-readable evidence artifacts.

@@ -1,11 +1,11 @@
-schema_version: 4
-status: o1_implementation_in_progress
+schema_version: 5
+status: o1_a600_gate_pending_o3_specification_in_progress
 document_role: governance_manifest_not_runtime_training_config
 canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:
-  - O1 implementation and static validation
+  - O1 owner-run A600 runtime and memory gate
   - O2 owner-run calibration Go
-  - O3 unseen-topology freeze
+  - O3 evaluation-only topology and interface freeze
   - D1 single-route decision
   - E1 selected-route protocol freeze
 
@@ -35,7 +35,23 @@ route_profiles:
       battery_cost_scale: 1.1
       charge_threshold: 0.30
       charge_release_threshold: 0.8
-    unseen_topologies: pending_o3_design_from_scratch
+    unseen_topologies:
+      status: specification_in_progress
+      specification: specs/2026-08-26-o3-unseen-topologies
+      work_may_parallelize_with_o1_a600_wait: true
+      evaluation_only: true
+      learned_policy_access_before_d1: prohibited
+      training_label_ood_or_selection_use: prohibited
+      performance_evaluation_phase: E2_after_D1
+      layout_semantics: loaded_transport_highway_bottlenecks
+      n_agents: 5
+      grid_size: [24, 20]
+      shelf_cells: 144
+      goals: 2
+      explicit_charging_stations: 8
+      environment_ids:
+        - llm-mappo-o3-unseen-narrow-passage-5ag-v1
+        - llm-mappo-o3-unseen-central-cross-5ag-v1
     same_map_eight_agv_stress: prohibited
   stable:
     branch: codex/stable
@@ -194,6 +210,8 @@ o2_gate:
 
 evaluation:
   deterministic_actions: true
+  o3_performance_requires_d1_optimization_route_selection: true
+  o3_performance_for_route_or_parameter_selection: prohibited
   held_out_seeds: [200, 201, 202, 203, 204, 205, 206, 207, 208, 209]
   episodes_per_seed: 20
   aggregation_unit: training_initialization_seed

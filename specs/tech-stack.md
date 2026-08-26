@@ -126,6 +126,8 @@ Phase P0 已完成，双路线从同一已验证 P0 commit 建立。历史落位
 ## 文档治理
 
 - `specs/mission.md`、`specs/tech-stack.md`、`specs/roadmap.md` 是新的唯一项目宪章；
+- 根 `terminology.md` 是研究所有者与实施者的 canonical 概念对齐入口；新方案首次引入重要术语时
+  必须同步补充“通俗解释、专业定义、本项目作用”，汇报时优先使用通俗解释；
 - 根 `CONSTITUTION.md` 在 P0 条款迁移审计完成后删除；
 - 根 `TASKS.md` 保留为当前实施任务清单；
 - 根 `CHANGELOG.md` 保留，并随每个完成任务同步更新；

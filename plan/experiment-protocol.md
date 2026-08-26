@@ -28,7 +28,7 @@ P0 已完成；本文件保留双路线共同治理边界，并记录 O0-F 对�
 | artifact | `artifacts/optimization/` | `artifacts/stable/` |
 | A* | O0 Pure Motion Teacher；Student planner query=0 | S1 恢复旧 Phase 3 waypoint 行为 |
 | LLM | 三维连续标签、validity×OOD | 历史二维标签 |
-| 环境 | O3 核心环境与两个真正未见拓扑 | 3 AGV、目标 9、动态入库 |
+| 环境 | 既有 canonical core environment + O3 两个 evaluation-only 未见拓扑 | 3 AGV、目标 9、动态入库 |
 | 能源 | 保持 G2-3 核心合同 `1.10/0.30/0.80` | `1.10/0.30/0.80` |
 | 泛化 | 仅在 O3 与正式结果支持时主张 | 禁止跨拓扑/规模泛化主张 |
 
@@ -37,10 +37,12 @@ artifact。稳定路线预备训练只能写入 `artifacts/stable/predecision/`�
 
 ## 4. D1 前允许工作
 
-- 优化路线：O0 设计、O1 短验证、owner-run O2 校准与 O3 未见拓扑冻结；
+- 优化路线：O0 设计、O1 本地验证与 owner-run A600 门禁、门禁通过后的 O2 校准，以及可与
+  O1 门禁等待并行的 O3 拓扑/接口冻结；
 - 稳定路线：S1 实现和 owner-run 验收；满足 Roadmap 条件时可执行隔离的 S2；
-- 不使用正式评估 seed `200–209`，不执行同图 8-AGV 压力实验，也不让 O3 布局参与训练、
-  校准或超参数选择。
+- 不使用 held-out evaluation seeds `200–209`，不执行同图 8-AGV 压力实验，也不让 O3 布局
+  参与训练、标签生成、OOD reference、校准、路线或超参数选择；D1 前禁止加载学习策略查看
+  O3 性能。
 
 O2 固定为 `MAPPO-DG/Fixed-AStarKD/RC-AStarKD × 107/117/127 × 150000 steps`，三组均关闭
 LLMKD，共 9 次。覆盖率以全部
@@ -49,7 +51,7 @@ calibration-selected agent slots 为分母，三个 RC seed 各自必须 `>=25%`
 
 ## 5. D1 与正式训练预算
 
-D1 只依据预注册前置门选择一条路线。优化路线完成 O0–O3 时选择优化路线，否则选择已通过
+D1 只依据预注册前置门选择一条路线。优化路线完成 O0–O3 的非性能前置门时选择优化路线，否则选择已通过
 S1 的稳定路线；两者均未通过时停止。正式评估固定 `200–209 × 20 episodes`、确定性动作与
 final checkpoint。
 

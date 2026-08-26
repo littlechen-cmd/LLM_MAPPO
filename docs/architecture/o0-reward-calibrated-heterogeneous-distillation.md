@@ -1545,7 +1545,8 @@ reward、hard mask、网络和训练预算与对应组匹配。它是三 seed �
 
 1. policy evaluation 与 visualization 的 instrumented planner query count 均为 0；
 2. 把 planner 替换为任何调用即抛错的测试替身后，DirectGoal 与 NoGoalHint 均完成端到端短运行；
-3. DirectGoal 主方法通过 O2、O3 和 E1 对应的冻结性能/接口门；
+3. DirectGoal 主方法通过 O2 性能门、O3 拓扑/接口就绪门与 E1 链路门；真正未见拓扑的性能门
+   仅在 D1 选定优化路线后的 E2 正式评估中执行，禁止用 O3 性能选择路线；
 4. 论文同时说明 Pure Motion A* 仍是训练期 Teacher，启发式 A* baseline 仍独立使用 A*。
 
 O0/O1 只能声称“冻结/实现了面向无 A* Student 执行的 observation contract”，不能声称该方法
@@ -1730,7 +1731,8 @@ interval 与 paired standardized effect `d_z=mean(diff)/sd(diff)`；零方差时
 full-vs-QMIX 支持相同 DirectGoal 合同下的外部 MARL 比较；full-vs-Rule 与 Shuffle 支持 LLM 标签
 来源和状态对应性的证据；NoOOD 只支持 reliability 敏感性；NoGoalHint 只支持目标提示敏感性。
 三维均值替换、置零或干预只能说明 policy sensitivity/reliance，不能单独证明该语义维度在训练中
-产生因果贡献。真正未见拓扑只有在 O3 防泄漏与正式统计通过后才能支持跨拓扑可靠性主张。
+产生因果贡献。真正未见拓扑只有在 O3 防泄漏冻结、E2 独立评估与 E3 正式统计通过后才能支持
+跨拓扑可靠性主张。
 
 任何 Teacher 无效均 fail closed 为零 KD 权重；禁止 Fixed、uniform、旧 2D、NOOP、缓存旧标签、
 缩短 H 或规则标签 fallback。运行/内存 gate、dataset gate、checkpoint gate 或正式统计完整性失败
