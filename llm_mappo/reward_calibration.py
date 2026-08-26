@@ -167,9 +167,10 @@ class RewardCalibrator:
         gamma: float,
         address: dict[str, int],
         horizon: int = 12,
+        diagnostic: bool = False,
     ) -> CalibrationResult:
         """Evaluate frozen Student/A* branches without mutating real rollout state."""
-        if horizon != 12:
+        if horizon != 12 and not (diagnostic and horizon == 4):
             raise ValueError("H=12 is the only formal reward-calibration horizon.")
         if not 0.0 <= gamma <= 1.0:
             raise ValueError("Calibration gamma must be within [0, 1].")

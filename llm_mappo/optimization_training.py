@@ -221,7 +221,7 @@ class OptimizationTrainer:
                     student_adapter=self.student_adapter,
                     teacher_adapter=self.teacher_adapter,
                     student_logits=self._student_logits,
-                    teacher_preferences=self._teacher_batch,
+                    teacher_preferences=self._shadow_teacher_batch,
                     initial_valid_mask=valid,
                     critic_value=self._critic_value,
                     gamma=self.config.gamma,
@@ -382,8 +382,9 @@ class OptimizationTrainer:
         }
 
     def _teacher_batch(
-        self, environment: Phase2Warehouse
+        self, environment: Phase2Warehouse, teacher=None
     ) -> tuple[np.ndarray, np.ndarray]:
+        teacher = teacher or self.teacher
         warehouse = environment.env
         shelf_coordinates = tuple(
             (x, y)
@@ -418,11 +419,17 @@ class OptimizationTrainer:
                     "loaded" if agent.carrying_shelf is not None else "unloaded"
                 ),
             )
-            results.append(self.teacher.query(query))
+            results.append(teacher.query(query))
         return (
             np.stack([result.motion_preferences[1:4] for result in results]),
             np.asarray([result.valid for result in results], dtype=bool),
         )
+
+    def _shadow_teacher_batch(
+        self, environment: Phase2Warehouse
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Use an empty temporary cache for every shadow Teacher query."""
+        return self._teacher_batch(environment, PureMotionTeacher())
 
     def _student_logits(
         self, environment: Phase2Warehouse, observations: np.ndarray

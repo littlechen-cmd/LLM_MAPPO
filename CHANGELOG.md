@@ -3,6 +3,15 @@
 This file records meaningful project engineering and experiment-governance
 changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
+## 2026-08-26
+
+- Added: The O1 owner-only A600 gate now runs the frozen baseline/H4/H12
+  comparison with matching rollout updates, fresh repeat processes, persistent-memory
+  windows, fail-closed CUDA checks, and complete machine-readable evidence artifacts.
+- Fixed: Paired shadow rollouts now use disposable Pure Motion Teacher caches, leaving
+  the real rollout Teacher cache unchanged; H4 remains diagnostic-only while H12 is
+  the sole formal calibration horizon.
+
 ## 2026-08-25
 
 - Added: O1-F composes the isolated optimization runtime, strict functional-smoke

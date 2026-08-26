@@ -33,3 +33,14 @@ def test_environment_teacher_adapter_normalizes_runtime_grid_coordinates(tmp_pat
     assert preferences.shape == (config.n_agents, 3)
     assert valid.shape == (config.n_agents,)
     assert valid.any()
+
+
+def test_shadow_teacher_queries_do_not_write_real_teacher_cache(tmp_path):
+    config = OptimizationTrainingConfig.from_yaml(
+        Path("configs/optimization/o1_functional_smoke.yaml")
+    )
+    trainer = OptimizationTrainer(config, tmp_path)
+    trainer.environment.reset(seed=config.seed)
+    before = len(trainer.teacher._cache)
+    trainer._shadow_teacher_batch(trainer.environment)
+    assert len(trainer.teacher._cache) == before
