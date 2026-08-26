@@ -385,11 +385,11 @@ literal, not “passed locally”.
 
 | Group | Focused tests | Regression/static checks | Commit | Architect approval |
 |---|---|---|---|---|
-| O1-A | pending | pending | pending | pending |
-| O1-B | pending | pending | pending | pending |
-| O1-C | pending | pending | pending | pending |
-| O1-D | pending | pending | pending | pending |
-| O1-E | pending | pending | pending | pending |
-| O1-F | pending | pending | pending | pending |
-| O1-G local | pending | pending | pending | pending |
+| O1-A | `tests/test_optimization_observation.py` | included in 223-test regression | `432e6db` | approved before O1-B |
+| O1-B | `tests/test_optimization_{student,buffer,checkpoint}.py` | included in 223-test regression | `2f777b8` | approved before O1-C |
+| O1-C | `tests/test_pure_motion_teacher.py` | purity search returned no matches | `6aa5ea2` | approved before O1-D |
+| O1-D | `tests/test_semantic_v3.py tests/test_optimization_label_cli.py` | included in 223-test regression | `f563b4e` | approved before O1-E |
+| O1-E | `tests/test_shadow_state.py tests/test_reward_calibration.py` | included in 223-test regression | `d5c62d1` | approved before O1-F |
+| O1-F | 14 focused runner/training/calibration tests | 128-step smoke: 4 updates, 18 calibration calls, planner queries 0 | `7c73626`, `bb403b5` | approved to prepare runner |
+| O1-G local | `223 passed in 49.48s` | Flake8, CLI help, purity search and `git diff --check` passed | `bb403b5` | owner handoff ready |
 | Owner A600 gate | owner-run pending | owner-run pending | artifact hash pending | pending |

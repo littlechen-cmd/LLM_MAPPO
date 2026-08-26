@@ -11,6 +11,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 - Fixed: Paired shadow rollouts now use disposable Pure Motion Teacher caches, leaving
   the real rollout Teacher cache unchanged; H4 remains diagnostic-only while H12 is
   the sole formal calibration horizon.
+- Changed: O1 local implementation and validation are complete; the phase now waits
+  for the research owner to run the frozen A600 runtime and persistent-memory gate.
 
 ## 2026-08-25
 
