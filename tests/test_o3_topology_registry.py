@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 from hashlib import sha256
+import json
+from pathlib import Path
 
 import gymnasium as gym
 import pytest
@@ -106,3 +108,30 @@ def test_evaluation_factory_rejects_unknown_topology():
     """Catch callers silently falling back from an unknown held-out environment."""
     with pytest.raises(ValueError, match="Unknown O3 topology"):
         o3.make_o3_evaluation_environment("unknown-o3-layout")
+
+
+def test_o3_evidence_manifest_matches_registry_and_package_bytes():
+    """Catch evidence claiming IDs or hashes different from executable inputs."""
+    manifest = json.loads(
+        Path("docs/evidence/o3-topology-evidence-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["map_freeze_commit"] == "1e83ee9"
+    assert manifest["registry_implementation_commit"] == "9fb0de5"
+    assert manifest["shared_contract_sha256"] == (
+        "bb6a29bf5da528de787738c055dc73418be9fe849e0ff750283f20feb0954c78"
+    )
+    recorded = {item["environment_id"]: item for item in manifest["topologies"]}
+    assert set(recorded) == set(o3.O3_ENVIRONMENT_IDS)
+    for environment_id in o3.O3_ENVIRONMENT_IDS:
+        spec = o3.get_o3_topology(environment_id)
+        item = recorded[environment_id]
+        assert item["source_sha256"] == spec.source_sha256
+        assert item["effective_layout_hash"] == spec.effective_layout_hash
+        assert tuple(map(tuple, item["charging_stations"])) == (
+            spec.charging_stations
+        )
+        assert sha256(o3.read_o3_layout_bytes(spec)).hexdigest() == (
+            item["source_sha256"]
+        )

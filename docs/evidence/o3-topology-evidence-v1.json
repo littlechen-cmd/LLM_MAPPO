@@ -1,0 +1,102 @@
+{
+  "manifest_version": "o3-topology-evidence-v1",
+  "status": "o3-c-complete-o3-d-pending",
+  "owner_preview_approval_date": "2026-08-27",
+  "map_freeze_commit": "1e83ee9",
+  "registry_implementation_commit": "9fb0de5",
+  "core_reference_layout_hash": "ddcb4f8008b6cc4c1d0f49c93d935cc927e11929999d3ee21578f54c10f282df",
+  "shared_contract": {
+    "actions": 5,
+    "agents": 5,
+    "batch_size_range": [4, 8],
+    "battery_cost_scale": 1.1,
+    "charge_release_threshold": 0.8,
+    "charge_threshold": 0.3,
+    "deadlock_steps": 180,
+    "dynamic_ingress_interval": 40,
+    "goals": 2,
+    "grid_height": 24,
+    "grid_width": 20,
+    "max_steps": 1000,
+    "picking_lock_steps": 3,
+    "request_queue_size": 8,
+    "reward_type": "INDIVIDUAL",
+    "sensor_range": 4,
+    "shelves": 144,
+    "stations": 8,
+    "task_completion_target": 50
+  },
+  "shared_contract_sha256": "bb6a29bf5da528de787738c055dc73418be9fe849e0ff750283f20feb0954c78",
+  "schema_contracts": {
+    "action": {
+      "payload": {
+        "count": 5,
+        "order": ["NOOP", "FORWARD", "LEFT", "RIGHT", "TOGGLE_LOAD"]
+      },
+      "sha256": "7f5d3c283efc0b984d36802af4db9689a56f49a7970edc158fbb88387492d7fc"
+    },
+    "physical": {
+      "payload": {
+        "direct_goal_schema": "direct-goal-observation-v1",
+        "no_goal_hint_schema": "no-geometric-goal-hint-v1",
+        "shape": [5, 613]
+      },
+      "sha256": "2450cb15a223c797c357d6007c33894cc0536d36427ccec13823020e1e8f339c"
+    },
+    "semantic": {
+      "payload": {
+        "schema": "semantic-view-v3",
+        "shape": [5, 61]
+      },
+      "sha256": "756a5393b56c009d5336ea9dec348d5f2c25b3047a889d4419f36818c3d479a9"
+    }
+  },
+  "topologies": [
+    {
+      "environment_id": "llm-mappo-o3-unseen-narrow-passage-5ag-v2",
+      "version": "v2",
+      "usage": "evaluation_only",
+      "resource": "rware/layouts/o3/unseen_narrow_passage_v2.txt",
+      "source_sha256": "0120b104d61bb964baee39e21fcc95c2422ee67894b9c9b9a5c5de60edaff985",
+      "effective_layout_hash": "978751b66589003b10e493e1ba31590f732a4e2cd21b4896548d90d2e81d0132",
+      "charging_stations": [[19, 2], [16, 5], [6, 2], [0, 5], [19, 11], [16, 18], [6, 18], [0, 21]],
+      "certificate": {
+        "kind": "single-width-nine-cell-corridor",
+        "corridor": [[10, 7], [10, 8], [10, 9], [10, 10], [10, 11], [10, 12], [10, 13], [10, 14], [10, 15]],
+        "component_sizes_after_internal_cut": [120, 209]
+      }
+    },
+    {
+      "environment_id": "llm-mappo-o3-unseen-central-cross-5ag-v2",
+      "version": "v2",
+      "usage": "evaluation_only",
+      "resource": "rware/layouts/o3/unseen_central_cross_v2.txt",
+      "source_sha256": "4fc92da618def49e218abbcfaa46c118a65b4830d547dabe81d5b4792b333a14",
+      "effective_layout_hash": "0f9b25f1ddfe42549d97b7426d5d60d0b73ba47833ab9d8d4f7c000a9f81ce8c",
+      "charging_stations": [[19, 0], [19, 23], [0, 0], [0, 23], [19, 4], [19, 19], [0, 4], [0, 19]],
+      "certificate": {
+        "kind": "four-way-central-articulation",
+        "center": [10, 11],
+        "component_sizes_after_center_cut": [72, 85, 86, 92]
+      }
+    }
+  ],
+  "package_verification": {
+    "command": "D:\\Anaconda3\\envs\\py310\\python.exe -m build --wheel --no-isolation",
+    "result": "wheel resource hashes equal source hashes",
+    "narrow_source_sha256": "0120b104d61bb964baee39e21fcc95c2422ee67894b9c9b9a5c5de60edaff985",
+    "central_source_sha256": "4fc92da618def49e218abbcfaa46c118a65b4830d547dabe81d5b4792b333a14"
+  },
+  "invalidation_rule": {
+    "o1_no_go": "retain map bytes, source hashes and graph certificates; invalidate and rerun all O3 interface evidence",
+    "map_byte_change": "raise version and repeat owner preview approval before accepting new hashes"
+  },
+  "prohibited_inputs": {
+    "checkpoint_loaded": false,
+    "optimizer_created": false,
+    "online_llm_called": false,
+    "formal_seeds_used": false,
+    "policy_performance_observed": false
+  },
+  "allowed_claim": "Two evaluation-only topology resources and their construction provenance are frozen; no learned-policy generalization claim is made."
+}

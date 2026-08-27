@@ -31,9 +31,9 @@
 - [x] 先写失败测试，冻结两个环境 ID、evaluation-only usage、资源加载和 source hash fail-closed；
 - [x] 在 `llm_mappo/o3_topologies.py` 实现只读 `TopologySpec`、显式 evaluation factory 与按需注册，
   禁止普通包导入时全局注册 O3；
-- [x] 将 `rware/layouts/o3/*.txt` 纳入 package data；installed resource 验证在 O3-C 收口执行；
+- [x] 将 `rware/layouts/o3/*.txt` 纳入 package data，验证 editable/installed resource bytes 一致；
 - [x] 计算并写入 owner-approved source SHA-256 与 effective layout hash，任一漂移即拒绝构造；
-- [ ] 生成版本化 O3 evidence manifest，记录 commit、IDs、两种 hashes、站点与结构证书。
+- [x] 生成版本化 O3 evidence manifest，记录 commit、IDs、两种 hashes、站点与结构证书。
 
 ## Task group O3-D：确定性、结构、安全与接口验证
 

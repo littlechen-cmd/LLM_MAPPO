@@ -15,6 +15,7 @@ setup(
     long_description_content_type="text/markdown",
     author="LLM-MAPPO contributors",
     packages=find_packages(exclude=["contrib", "docs", "tests"]),
+    package_data={"rware.layouts.o3": ["*.txt"]},
     classifiers=[
         # Indicate who your project is intended for
         "Intended Audience :: Developers",
