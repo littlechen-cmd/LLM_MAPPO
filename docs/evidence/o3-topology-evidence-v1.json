@@ -1,6 +1,6 @@
 {
   "manifest_version": "o3-topology-evidence-v1",
-  "status": "o3-e-complete-o3-f-pending",
+  "status": "o3-a-f-implemented-owner-validation-pending",
   "owner_preview_approval_date": "2026-08-27",
   "map_freeze_commit": "1e83ee9",
   "registry_implementation_commit": "9fb0de5",
@@ -105,6 +105,16 @@
       "semantic/OOD dataset"
     ],
     "config_scan": "no O3 provenance outside the governance manifest"
+  },
+  "o3_f_verification": {
+    "validated_commit": "85118d3",
+    "focused_tests": "34 passed in 8.02s",
+    "full_tests": "257 passed in 52.92s",
+    "flake8": "passed",
+    "visualize_help": "passed",
+    "static_scan": "references classified as registry/guard/test/spec/governance only",
+    "diff_check": "passed with line-ending warnings on preserved owner edits",
+    "learned_policy_performance_observed": false
   },
   "invalidation_rule": {
     "o1_no_go": "retain map bytes, source hashes and graph certificates; invalidate and rerun all O3 interface evidence",

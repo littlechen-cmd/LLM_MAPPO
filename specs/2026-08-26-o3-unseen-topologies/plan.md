@@ -56,12 +56,12 @@
 
 ## Task group O3-F：本地收口与证据交接
 
-- [ ] 运行 O3 focused tests、完整 pytest、Flake8、CLI/static scan 与 `git diff --check`；
-- [ ] 审计 O3 改动未改变 reward、energy、O0 Teacher/Calibration、正式 seeds、预算或稳定路线；
-- [ ] 更新 `TASKS.md`、`CHANGELOG.md`、Roadmap 与 evidence manifest，记录 literal commands/results/
+- [x] 运行 O3 focused tests、完整 pytest、Flake8、CLI/static scan 与 `git diff --check`；
+- [x] 审计 O3 改动未改变 reward、energy、O0 Teacher/Calibration、正式 seeds、预算或稳定路线；
+- [x] 更新 `TASKS.md`、`CHANGELOG.md`、Roadmap 与 evidence manifest，记录 literal commands/results/
   commit/hash；
-- [ ] 提交 owner handoff：已完成范围、文件、测试、风险、禁止主张与工作树状态；
-- [ ] 只将 O3 标记为“拓扑/接口就绪”。不得运行或声称 learned-policy performance。
+- [x] 提交 owner handoff：已完成范围、文件、测试、风险、禁止主张与工作树状态；
+- [x] 只将 O3 标记为“拓扑/接口就绪待 owner 验收”。未运行或声称 learned-policy performance。
 
 下游 learned-policy 工作不属于 O3 task group，统一引用 Roadmap E1/E2：正式必需评估只在
 canonical core topology 执行；O3 探索矩阵由 E1 在查看任何 O3 performance 前冻结为执行或延期。

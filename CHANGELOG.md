@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-27
 
+- Completed: O3-A through O3-F freeze two evaluation-only unseen topologies and
+  pass 34 focused tests, 257 full tests, Flake8, CLI, static leakage, and contract
+  audits; learned-policy performance and the owner readiness decision remain pending.
 - Added: O3-E central fail-closed guards keep both unseen topology IDs and their
   provenance out of Phase 2/3/4 and optimization training, offline label collection,
   and semantic/OOD reference fitting; nine leakage regressions pass.

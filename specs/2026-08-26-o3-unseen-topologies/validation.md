@@ -2,15 +2,15 @@
 
 ## 1. Definition of done
 
-- [ ] 研究所有者批准两张 PNG 预览，ASCII 内容、坐标、version 与双 hash 随后冻结；
-- [ ] 两张地图满足共同静态合同及各自图论证书，环境构造对 hash 漂移 fail closed；
-- [ ] 两个 O3 ID 只能经 evaluation-only 工厂使用，训练/O2/label/OOD 路径明确拒绝；
-- [ ] `9301/9302` 确定性、结构、安全、DirectGoal/NoGoalHint、61D semantic、Pure Teacher、shadow
+- [x] 研究所有者批准两张 PNG 预览，ASCII 内容、坐标、version 与双 hash 随后冻结；
+- [x] 两张地图满足共同静态合同及各自图论证书，环境构造对 hash 漂移 fail closed；
+- [x] 两个 O3 ID 只能经 evaluation-only 工厂使用，训练/O2/label/OOD 路径明确拒绝；
+- [x] `9301/9302` 确定性、结构、安全、DirectGoal/NoGoalHint、61D semantic、Pure Teacher、shadow
   restore 与 zero-planner-query 验证全部通过；
-- [ ] 没有 checkpoint、optimizer、策略性能、正式 seed、在线 LLM、8-AGV 或长任务进入 O3；
-- [ ] evidence manifest 记录 commit、source/effective hashes、IDs、shared contract、证书和验证结果；
-- [ ] 完整回归与静态检查通过，治理文档同步，工作树清洁；
-- [ ] O3 只声明拓扑/接口就绪；canonical core 正式评估与 O3 探索矩阵的 E1 execute/defer 决策
+- [x] 没有 checkpoint、optimizer、策略性能、正式 seed、在线 LLM、8-AGV 或长任务进入 O3；
+- [x] evidence manifest 记录 commit、source/effective hashes、IDs、shared contract、证书和验证结果；
+- [x] 完整回归与静态检查通过，治理文档同步，工作树清洁；
+- [x] O3 只声明拓扑/接口就绪；canonical core 正式评估与 O3 探索矩阵的 E1 execute/defer 决策
   均保持 pending。
 
 ## 2. 人工地图门
@@ -27,31 +27,31 @@ O3-B 必须输出：
 
 ## 3. 结构与哈希验证
 
-- [ ] source bytes 为 UTF-8 无 BOM、LF、末尾单换行、20×24、合法 glyph；
-- [ ] 两图各有 144 shelves、334 ordinary highways、2 goals，highway graph 单连通；
-- [ ] 窄通道证书满足 width=1、length>=6、左右分区与 articulation 合同；
-- [ ] 中央交叉满足中心 degree=4、四臂 length>=3、移除中心得到 4 个作业分量；
-- [ ] 所有货架邻接并可往返 goal，8 stations 唯一/合法/可达且不占关键 cut；
-- [ ] 两个 source hashes、两个 effective hashes 彼此不同且不同于 canonical core layout；
-- [ ] 修改任一 map byte、station 或 expected hash 均使 factory 明确失败。
+- [x] source bytes 为 UTF-8 无 BOM、LF、末尾单换行、20×24、合法 glyph；
+- [x] 两图各有 144 shelves、334 ordinary highways、2 goals，highway graph 单连通；
+- [x] 窄通道证书满足 width=1、length>=6、左右分区与 articulation 合同；
+- [x] 中央交叉满足中心 degree=4、四臂 length>=3、移除中心得到 4 个作业分量；
+- [x] 所有货架邻接并可往返 goal，8 stations 唯一/合法/可达且不占关键 cut；
+- [x] 两个 source hashes、两个 effective hashes 彼此不同且不同于 canonical core layout；
+- [x] 修改任一 map byte、station 或 expected hash 均使 factory 明确失败。
 
 ## 4. 接口与确定性验证
 
-- [ ] 同 topology+seed 两次 reset 的实体、任务、observation、mask 与固定动作短轨迹逐字节一致；
-- [ ] action space=5、mask=`[5,5]`、DirectGoal/NoGoalHint=`[5,613]`、semantic=`[5,61]`；
-- [ ] DirectGoal 与 NoGoalHint 仅在冻结九位 geometry block 存在预期差异；
-- [ ] reward、termination、truncation、info 和规则安全与 core environment schema 相同；
-- [ ] throwing planner 替身下 reset/step 通过，planner query count=0；
-- [ ] Pure Teacher query 和 shadow snapshot 使用 O3 effective hash，restore 后 state/RNG 等价。
+- [x] 同 topology+seed 两次 reset 的实体、任务、observation、mask 与固定动作短轨迹逐字节一致；
+- [x] action space=5、mask=`[5,5]`、DirectGoal/NoGoalHint=`[5,613]`、semantic=`[5,61]`；
+- [x] DirectGoal 与 NoGoalHint 仅在冻结九位 geometry block 存在预期差异；
+- [x] reward、termination、truncation、info 和规则安全与 core environment schema 相同；
+- [x] throwing planner 替身下 reset/step 通过，planner query count=0；
+- [x] Pure Teacher query 和 shadow snapshot 使用 O3 effective hash，restore 后 state/RNG 等价。
 
 ## 5. 防泄漏验证
 
-- [ ] 所有 training config parser 和训练入口拒绝两个 O3 IDs；
-- [ ] label generation、pilot/formal manifests、prompt/scenario 与 OOD reference 不含 O3 ID/hash/path；
-- [ ] O3 测试只出现 `9301/9302`，不出现 `200–209`；
-- [ ] O3 执行路径没有 `torch.load`、optimizer、training loop、online LLM 或 policy performance 输出；
-- [ ] 静态扫描证明旧 rejected drafts 与同图 8-AGV 未重新进入活动实现；
-- [ ] O1 No-Go 失效规则写入 manifest 并有回归覆盖。
+- [x] 所有 training config parser 和训练入口拒绝两个 O3 IDs；
+- [x] label generation、pilot/formal manifests、prompt/scenario 与 OOD reference 不含 O3 ID/hash/path；
+- [x] O3 测试只出现 `9301/9302`，不出现 `200–209`；
+- [x] O3 执行路径没有 `torch.load`、optimizer、training loop、online LLM 或 policy performance 输出；
+- [x] 静态扫描证明旧 rejected drafts 与同图 8-AGV 未重新进入活动实现；
+- [x] O1 No-Go 失效规则写入 manifest 并有回归覆盖。
 
 ## 6. Tests to run
 
@@ -77,9 +77,9 @@ O2、label、prompt、scenario 或 OOD 数据引用均为 No-Go。
 
 ## 7. Merge criteria
 
-- [ ] O3-A 至 O3-F 全部完成；下游性能事项只引用 Roadmap E1/E2，不在 O3 重复建任务组；
-- [ ] owner preview approval、双 hash 与 evidence manifest 均为 literal values；
-- [ ] focused/full/static checks 全通过，`CHANGELOG.md` 与 `TASKS.md` 同 commit 更新；
-- [ ] 没有未提交文件、凭据、artifact、checkpoint 或策略性能结果；
-- [ ] 架构师确认代码、实验合同和允许论文主张一致；
+- [x] O3-A 至 O3-F 全部完成；下游性能事项只引用 Roadmap E1/E2，不在 O3 重复建任务组；
+- [x] owner preview approval、双 hash 与 evidence manifest 均为 literal values；
+- [x] focused/full/static checks 全通过，`CHANGELOG.md` 与 `TASKS.md` 同 commit 更新；
+- [x] 没有未提交文件、凭据、artifact、checkpoint 或策略性能结果；
+- [x] 架构师确认代码、实验合同和允许论文主张一致；
 - [ ] 研究所有者批准 O3“拓扑/接口就绪”，不将其误写为性能通过。
