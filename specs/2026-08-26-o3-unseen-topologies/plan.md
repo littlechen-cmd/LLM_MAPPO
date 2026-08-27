@@ -37,13 +37,13 @@
 
 ## Task group O3-D：确定性、结构、安全与接口验证
 
-- [ ] 使用 test-only seeds `9301/9302` 验证同 seed reset、任务流、固定动作轨迹、observation 与
+- [x] 使用 test-only seeds `9301/9302` 验证同 seed reset、任务流、固定动作轨迹、observation 与
   mask 的逐字节确定性；
-- [ ] 验证 highway 连通、货架邻接/往返可达、目标/充电站合法、窄通道与中央 cut 证书；
-- [ ] 验证 5 动作、`[5,5]` mask、reward/termination/info、安全约束与 canonical 环境一致；
-- [ ] 验证 DirectGoal/NoGoalHint `[5,613]`、semantic-view-v3 `[5,61]`、goal block 与字段顺序；
-- [ ] 在 throwing planner 替身下完成 reset/短 step，断言 planner queries=0；
-- [ ] 验证 Pure Motion Teacher query 与 shadow capture/restore 使用当前 effective hash 且保持 O0
+- [x] 验证 highway 连通、货架邻接/往返可达、目标/充电站合法、窄通道与中央 cut 证书；
+- [x] 验证 5 动作、`[5,5]` mask、reward/termination/info、安全约束与 canonical 环境一致；
+- [x] 验证 DirectGoal/NoGoalHint `[5,613]`、semantic-view-v3 `[5,61]`、goal block 与字段顺序；
+- [x] 在 throwing planner 替身下完成 reset/短 step，断言 planner queries=0；
+- [x] 验证 Pure Motion Teacher query 与 shadow capture/restore 使用当前 effective hash 且保持 O0
   合同；不读取性能指标。
 
 ## Task group O3-E：训练与数据防泄漏

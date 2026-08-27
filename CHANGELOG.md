@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-27
 
+- Added: O3-D verifies byte-deterministic reset and 41-step ingress trajectories for
+  seeds `9301/9302`, 613D/61D interfaces, zero planner queries, Pure Motion Teacher
+  provenance, shadow restore, and shared collision/charging/load safety behavior.
 - Added: O3-C introduces immutable `TopologySpec` metadata, packaged `v2` map
   resources, source/effective hash fail-closed checks, and a temporary-registration
   evaluation factory that leaves held-out IDs unavailable to ordinary `gym.make`.

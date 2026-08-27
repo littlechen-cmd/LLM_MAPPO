@@ -1,6 +1,6 @@
 {
   "manifest_version": "o3-topology-evidence-v1",
-  "status": "o3-c-complete-o3-d-pending",
+  "status": "o3-d-complete-o3-e-pending",
   "owner_preview_approval_date": "2026-08-27",
   "map_freeze_commit": "1e83ee9",
   "registry_implementation_commit": "9fb0de5",
@@ -86,6 +86,13 @@
     "result": "wheel resource hashes equal source hashes",
     "narrow_source_sha256": "0120b104d61bb964baee39e21fcc95c2422ee67894b9c9b9a5c5de60edaff985",
     "central_source_sha256": "4fc92da618def49e218abbcfaa46c118a65b4830d547dabe81d5b4792b333a14"
+  },
+  "o3_d_verification": {
+    "command": "D:\\Anaconda3\\envs\\py310\\python.exe -m pytest tests/test_o3_topology_interfaces.py tests/test_o3_topology_registry.py tests/test_o3_topology_structure.py -q",
+    "result": "25 passed",
+    "test_seeds": [9301, 9302],
+    "fixed_trajectory_steps": 41,
+    "planner_queries": 0
   },
   "invalidation_rule": {
     "o1_no_go": "retain map bytes, source hashes and graph certificates; invalidate and rerun all O3 interface evidence",
