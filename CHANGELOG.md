@@ -8,6 +8,16 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 - Added: O3-E central fail-closed guards keep both unseen topology IDs and their
   provenance out of Phase 2/3/4 and optimization training, offline label collection,
   and semantic/OOD reference fitting; nine leakage regressions pass.
+- Changed: Optimization resource governance now keeps the 65-run formal matrix,
+  reduces O2 from nine to six calibration runs, requires a revised baseline/H12
+  O1 Gate as the fail-fast prefix of the same owner A600 job, and reserves H4 for
+  failure-only diagnostics; runner implementation remains pending.
+- Changed: Canonical-core held-out seeds are now the mandatory fixed-topology
+  robustness evidence; O3 learned-policy performance is an optional, precommitted
+  exploratory stress test with no cross-topology generalization claim.
+- Added: A three-perspective optimization resource replan records the remaining
+  `71` A600 learning runs plus one short CUDA Gate and keeps the formal 65-run
+  training budget unchanged.
 - Added: O3-D verifies byte-deterministic reset and 41-step ingress trajectories for
   seeds `9301/9302`, 613D/61D interfaces, zero planner queries, Pure Motion Teacher
   provenance, shadow restore, and shared collision/charging/load safety behavior.

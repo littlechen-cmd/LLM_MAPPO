@@ -10,7 +10,8 @@
 - [ ] 没有 checkpoint、optimizer、策略性能、正式 seed、在线 LLM、8-AGV 或长任务进入 O3；
 - [ ] evidence manifest 记录 commit、source/effective hashes、IDs、shared contract、证书和验证结果；
 - [ ] 完整回归与静态检查通过，治理文档同步，工作树清洁；
-- [ ] O3 只声明拓扑/接口就绪，E2 性能门仍保持 pending。
+- [ ] O3 只声明拓扑/接口就绪；canonical core 正式评估与 O3 探索矩阵的 E1 execute/defer 决策
+  均保持 pending。
 
 ## 2. 人工地图门
 
@@ -76,7 +77,7 @@ O2、label、prompt、scenario 或 OOD 数据引用均为 No-Go。
 
 ## 7. Merge criteria
 
-- [ ] O3-A 至 O3-F 全部完成；O3-G 保持 E2 pending；
+- [ ] O3-A 至 O3-F 全部完成；下游性能事项只引用 Roadmap E1/E2，不在 O3 重复建任务组；
 - [ ] owner preview approval、双 hash 与 evidence manifest 均为 literal values；
 - [ ] focused/full/static checks 全通过，`CHANGELOG.md` 与 `TASKS.md` 同 commit 更新；
 - [ ] 没有未提交文件、凭据、artifact、checkpoint 或策略性能结果；

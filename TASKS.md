@@ -50,13 +50,18 @@
 - [x] 通过短 smoke，确认目标/优先级/充电改写、协调器污染和非法动作概率质量均为 0；
 - [x] 不启动训练、长评估或 KL 超参数搜索；
 - [x] Codex 冻结并验证 owner-only A600 runtime/memory gate runner 与产物 schema；
-- [ ] 研究所有者在 A600 运行门禁，Codex 审核结果后决定 O1 Go/No-Go。
+- [ ] 按资源修订将常规门禁改为 `baseline/H12`，保留 5 repeats、10 memory windows 与原阈值；
+  H4 仅在 H12 失败后作为诊断，不参与正常 Go；
+- [ ] 将 O1 门禁作为 O2 owner job 的 fail-fast 前缀，产物和 Gate 状态仍保持独立；
+- [ ] 研究所有者在 A600 启动作业，Codex 审核 O1 结果后才允许同一作业进入 O2。
 
 ## O2 — 优化路线校准训练与 Go/No-Go
 
-- [ ] Codex 交付冻结命令和产物 schema；研究所有者在 A600 运行匹配校准；
-- [ ] 运行合同固定为 `MAPPO-DG/Fixed-AStarKD/RC-AStarKD × 107/117/127 × 150000 steps`，三组
-  均关闭 LLMKD；
+- [ ] Codex 交付“先 O1、通过后 O2”的冻结命令和相互隔离的产物 schema；
+- [ ] 运行合同固定为 `MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组均关闭
+  LLMKD，共 6 次；
+- [ ] 在 MateBook 完成 Fixed/RC sampler、query、shadow、EMA、日志与计数等价性的确定性短
+  受控 smoke，不运行 Fixed-AStarKD 长校准；
 - [ ] 审查三个 RC seed 的有效教师覆盖率分别≥25%、无数值/接口失败；
 - [ ] 审查相对 `MAPPO-DG` 的固定 10k-step 网格吞吐 AUC 中位数退化≤10%；
 - [ ] 仅允许一次已定位接口/掩码错误修复；不得按结果调整 KL、seed、预算或阈值。
@@ -69,7 +74,8 @@
 - [ ] 冻结显式地图/坐标合同、哈希、环境 ID、接口和防泄漏协议；
 - [ ] 通过确定性环境、安全、接口 smoke 和哈希审计；
 - [ ] 不实施同图 8-AGV 压力场景，不使用布局参与训练、标签、OOD、路线或参数选择；
-- [ ] O3 不加载学习策略或报告性能；真正未见拓扑性能仅在 D1 后的 E2 评估。
+- [ ] O3 不加载学习策略或报告性能；canonical core held-out seeds 是正式必需证据，O3 性能只可
+  按 E1 预先冻结的非门槛探索矩阵在 E2 执行。
 
 ## S1 — 稳定路线旧 Phase 3 行为恢复
 
@@ -96,13 +102,18 @@
 - [ ] 冻结代码、环境、教师、奖励、seed、预算、checkpoint、日志、失败和统计合同；
 - [ ] 完成所选路线全部必需组的端到端短 smoke；
 - [ ] 优化 E1/E2 预算为 65 次：核心 2×2 32，Fixed-KD/QMIX-DG/RuleKD-v3 各 8，
-  ShuffleKD-v3/NoOOD-v1/NoGoalHint-v1 各 3；连同 O2 共 74 次；
+  ShuffleKD-v3/NoOOD-v1/NoGoalHint-v1 各 3；正式训练规模不变，连同 O2 共 71 次；
+- [ ] 在查看任何 O3 策略性能前冻结探索矩阵为“执行”或“延期”；若执行，唯一矩阵为
+  `MAPPO-DG/RC-AStarKD+LLMKD × 8 training seeds × 2 topologies × 200–209 × 20 episodes`；
 - [ ] 稳定预算：核心 2×2、RuleKD 各 5 seed，NoWP 3；不含 QMIX/Shuffle/未见拓扑/8-AGV。
 
 ## E2 — 正式训练与独立评估
 
 - [ ] 研究所有者在 A600 运行全部长任务，所选路线产物写入其隔离目录；
-- [ ] 正式评估固定 `200–209 × 20`、确定性动作、final checkpoint；
+- [ ] 正式必需评估固定在 canonical core topology 使用 `200–209 × 20`、确定性动作和 final
+  checkpoint；
+- [ ] 仅当 E1 已预先选择执行时，完整运行并报告 O3 探索矩阵；不设最低性能阈值，不得按结果
+  取消、删图、删 seed 或改 checkpoint；
 - [ ] 不在正式结果后切换路线、改配置、替换 seed 或选择最佳 checkpoint；
 - [ ] Codex 与项目工程师按职责分析并交叉审查结果。
 

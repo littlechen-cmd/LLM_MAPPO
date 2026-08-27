@@ -1,10 +1,10 @@
-schema_version: 5
-status: o1_a600_gate_pending_o3_specification_in_progress
+schema_version: 6
+status: o1_resource_amendment_pending_o3_implementation_in_progress
 document_role: governance_manifest_not_runtime_training_config
 canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:
-  - O1 owner-run A600 runtime and memory gate
-  - O2 owner-run calibration Go
+  - O1 revised owner-run baseline/H12 A600 runtime and memory gate
+  - O2 owner-run six-run calibration Go
   - O3 evaluation-only topology and interface freeze
   - D1 single-route decision
   - E1 selected-route protocol freeze
@@ -36,13 +36,14 @@ route_profiles:
       charge_threshold: 0.30
       charge_release_threshold: 0.8
     unseen_topologies:
-      status: specification_in_progress
+      status: implementation_in_progress
       specification: specs/2026-08-26-o3-unseen-topologies
       work_may_parallelize_with_o1_a600_wait: true
       evaluation_only: true
       learned_policy_access_before_d1: prohibited
       training_label_ood_or_selection_use: prohibited
       performance_evaluation_phase: E2_after_D1
+      performance_role: optional_exploratory_stress_test_not_a_gate
       layout_semantics: loaded_transport_highway_bottlenecks
       n_agents: 5
       grid_size: [24, 20]
@@ -175,6 +176,21 @@ comparison_fairness:
   qmix_directgoal_observation_required: true
   qmix_fallback: prohibited
 
+o1_cuda_gate:
+  orchestration: fail_fast_prefix_of_same_owner_a600_job_as_o2
+  logical_gate_and_artifacts_remain_independent: true
+  normal_modes: [baseline, h12]
+  failure_only_diagnostic_mode: h4
+  workers: 12
+  repeats: 5
+  warmup_vector_steps: 16
+  measure_vector_steps: 128
+  memory_warmup_windows: 2
+  memory_measure_windows: 10
+  h12_baseline_runtime_ratio_max: 3.0
+  h4_can_change_gate_result: false
+  o2_launch_requires_o1_gate_pass: true
+
 training:
   policy_initialization_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
   diagnostic_policy_initialization_seeds: [7, 17, 27]
@@ -188,18 +204,22 @@ training:
   formal_budget_rule: one_value_frozen_at_E1_and_shared_by_all_learning_groups
   checkpoint_rule: checkpoint_final.pt
   optimization_run_budget:
-    o2_calibration: 9
+    o2_calibration: 6
     e1_e2_core_2x2: 32
     e1_e2_fixed_kd: 8
     e1_e2_qmix_dg: 8
     e1_e2_rule_kd: 8
     e1_e2_three_diagnostics: 9
     e1_e2_total: 65
-    total_including_o2: 74
+    total_including_o2: 71
 
 o2_gate:
-  groups: [MAPPO-DG, Fixed-AStarKD, RC-AStarKD]
+  groups: [MAPPO-DG, RC-AStarKD]
   llm_kd_in_o2_groups: false
+  fixed_astar_kd_long_calibration_runs: 0
+  fixed_rc_parity_cpu_smoke_required_before_o2: true
+  fixed_rc_parity_fields:
+    [sampler_selection, teacher_queries, shadow_calls, ema_updates, logging_counts]
   coverage_denominator: all_agent_slots_in_calibration_selected_real_states
   astar_valid_coverage_each_rc_seed_min: 0.25
   fixed_rc_selected_query_and_shadow_counts_must_match: true
@@ -210,6 +230,9 @@ o2_gate:
 
 evaluation:
   deterministic_actions: true
+  mandatory_scope: canonical_core_topology_held_out_stochastic_realizations
+  mandatory_claim: fixed_topology_robustness_to_unseen_random_instances
+  cross_topology_generalization_claim: prohibited
   o3_performance_requires_d1_optimization_route_selection: true
   o3_performance_for_route_or_parameter_selection: prohibited
   held_out_seeds: [200, 201, 202, 203, 204, 205, 206, 207, 208, 209]
@@ -218,6 +241,21 @@ evaluation:
   paired_across_learning_groups: true
   checkpoint: checkpoint_final.pt
   same_map_eight_agv_stress: prohibited
+  o3_exploratory_matrix:
+    activation_decision_phase: E1_before_any_o3_policy_performance_access
+    activation_basis: owner_recorded_resource_availability_only
+    default_state: pending_owner_freeze
+    groups: [MAPPO-DG, RC-AStarKD+LLMKD]
+    training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
+    topologies:
+      - llm-mappo-o3-unseen-narrow-passage-5ag-v2
+      - llm-mappo-o3-unseen-central-cross-5ag-v2
+    held_out_seeds: [200, 201, 202, 203, 204, 205, 206, 207, 208, 209]
+    episodes_per_seed: 20
+    minimum_performance_threshold: null
+    confirmatory: false
+    selective_reporting: prohibited
+    if_deferred: no_o3_policy_performance_may_be_run_or_reported
 
 training_logs:
   run_manifest: run_manifest.json

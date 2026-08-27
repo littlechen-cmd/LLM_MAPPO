@@ -11,8 +11,9 @@ O3 只构成“拓扑与评估协议就绪门”，不加载学习策略、不�
 根 `terminology.md`。实现或评审中新引入的重要概念必须先补充该术语表。
 
 O3 可在 O1 等待研究所有者运行 A600 runtime/memory gate 时并行。O1 未通过前 O2 仍被硬阻塞；
-O1、O2、O3 全部通过仍只是进入 D1 的前置条件。真正的未见拓扑性能评估仅在 D1 选择优化路线
-后于 E2 执行。
+O1、O2、O3 全部通过仍只是进入 D1 的前置条件。O3 不构成 D1 性能门。正式必需证据限定为
+canonical core topology 的 held-out-seed 鲁棒性；O3 性能仅可按第 9 节预先冻结的探索性矩阵于
+E2 执行或整体延期。
 
 ## 2. 范围
 
@@ -40,7 +41,8 @@ O1、O2、O3 全部通过仍只是进入 D1 的前置条件。真正的未见拓
 - LLM API 调用、60/800 标签生成、prompt/OOD/Teacher/reward/KL/network 修改；
 - 同图 8-AGV 压力场景、旧 rejected layout、随机布局生成器或结果驱动的地图替换；
 - 新增静态墙、改变 RWARE `X`、`.`、`G` 语义，或声称所有空载 AGV 都被墙式瓶颈限制；
-- 正式 topology×group×seed×episode 评估矩阵；该矩阵在 E1 冻结并于 E2 执行。
+- 任何 learned-policy 性能矩阵；E1 只在未读取 O3 policy performance 的前提下冻结第 9 节
+  探索矩阵为“执行”或“延期”，实际运行只能发生在 E2。
 
 ## 3. 冻结环境合同
 
@@ -163,6 +165,20 @@ commit 上重跑。
 O3 通过只允许声明“两个真正未见的 evaluation-only 载货运输拓扑已经冻结且接口就绪”。不得声明
 策略已经泛化、方法更稳健、场景更困难或达到任何性能水平。
 
+下游正式评估的主合同是 canonical core topology 上的 final checkpoint、held-out seeds
+`200–209 × 20 episodes`；它只支持“固定拓扑下对未见随机实例的鲁棒性”。O3 的下游性能角色
+固定为非确认性探索性压力测试：
+
+- E1 由研究所有者在查看任何 O3 policy performance 前，仅依据可用时间与计算资源记录
+  `execute` 或 `defer`；
+- `execute` 的唯一矩阵为 `MAPPO-DG/RC-AStarKD+LLMKD × 8 training seeds × 2 O3
+  topologies × 200–209 × 20 episodes`，使用 final checkpoint、确定性动作且无最低性能阈值；
+- 一旦选择 `execute`，所有组、训练 seed、拓扑和评估 seed 必须完整运行并报告，失败作为局限性
+  保留；不得选择性删除；
+- 选择 `defer` 后不得运行或报告任何 O3 policy performance，地图只作为版本化未来研究资产；
+- 两种选择都不改变 D1、正式 65 次训练、七个确认性 contrasts 或核心论文主张；禁止声称跨拓扑
+  泛化。
+
 ## 10. 已批准决策
 
 上述范围、依赖、两个拓扑定义、5 AGV/20×24/144 shelves/2 goals/8 stations、显式文件方案、双
@@ -171,6 +187,9 @@ O3 通过只允许声明“两个真正未见的 evaluation-only 载货运输拓
 明确修正为 `144/8`。2026-08-27 在实现前核验发现 canonical core 的实际尺寸为
 `20×24`（width×height），而首版候选图误写为 `24×20`；owner 批准采用保持图论结构不变的
 确定性 90° 旋转，将正式候选提升为 `v2`，避免把纵横比变化引入拓扑对照。
+
+2026-08-27 资源重规划进一步批准：canonical core held-out seeds 是正式必需证据；O3 不再承担
+性能 Gate 或跨拓扑泛化主张，只保留第 9 节预注册的可执行/可延期探索矩阵。
 
 ## 11. Open questions
 

@@ -49,6 +49,10 @@
   2+10-window、`max(64 MiB,5%)` 与 `rho>=0.80` 的可执行判定式；
   H=4 只作诊断，不能通过降 horizon 通过 O1。
 
+2026-08-27 资源重规划修订：正式阈值、workers、repeats 和 windows 不变；常规 Gate 删除 H4，
+H4 仅在 baseline/H12 失败后作为独立诊断。O1 与 O2 可由同一 owner A600 作业编排，但 O1 必须
+先独立通过。O2 从 9 次缩为 6 次，E1/E2 65 次正式训练预算不变。
+
 ### 1.4 三维 LLM 教师
 
 - [x] 三个标签名称、定义、顺序、五点 anchors、范围、整记录 validity、共享 OOD、reason

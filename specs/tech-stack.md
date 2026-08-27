@@ -10,7 +10,9 @@
 - UTF-8、LF、四空格缩进，最大行长 89；
 - 本地 Intel i5、无独显 Huawei MateBook 用于文档、代码开发、静态检查、确定性测试和短
   smoke；
-- A600 服务器用于长训练和长评估，所有长任务由研究所有者人工启动。
+- A600 服务器用于 O1 CUDA runtime/memory 门、O2 校准训练、正式长训练和研究所有者决定放在
+  服务器执行的正式长评估；O3、E1 短验证、标签处理和统计绘图必须在 MateBook/CPU 完成。
+  所有服务器任务仍只由研究所有者人工启动。
 
 选择理由：保持现有项目和历史 checkpoint 的兼容性，避免在论文后期引入无关运行时迁移。
 
@@ -90,15 +92,19 @@ Phase P0 已完成，双路线从同一已验证 P0 commit 建立。历史落位
 ### 优化路线
 
 - 核心 `2×2`：每组 8 个匹配训练 seed，共 32 次；
-- O2 校准：`MAPPO-DG/Fixed-AStarKD/RC-AStarKD × 107/117/127`，三组均关闭 LLMKD，共 9 次；
+- O2 校准：`MAPPO-DG/RC-AStarKD × 107/117/127`，两组均关闭 LLMKD，共 6 次；
+- Fixed/RC 的 sampler、shadow、EMA、日志和计数等价性改由 MateBook 上的确定性短受控 smoke
+  验证；O2 不再运行 3 次 Fixed-AStarKD 长校准；
 - QMIX-DG、RuleKD-v3、Fixed-A*KD+LLMKD：各 8 次；
 - ShuffleKD-v3、NoOOD-v1、NoGoalHint-v1：各 3 次；
-- 优化路线全部学习运行总计 74 次，其中 E1/E2 正式/诊断预算为 65 次；
+- 优化路线全部学习运行总计 71 次，其中 O2 为 6 次，E1/E2 正式/诊断预算保持 65 次；
 - `Heuristic-Dispatcher+A*`：无训练；
-- 包含两个真正未见拓扑；
+- 包含两个真正未见拓扑作为 evaluation-only 探索性压力测试资产；它们不构成正式性能门；
 - 不包含同图 8-AGV 压力场景；
-- 两个未见拓扑的具体评估组、episode 数、聚合与统计规则由 O0 和后续协议 feature spec
-  冻结，但不得删除上述必需对照。
+- canonical core topology 上的 final-checkpoint held-out-seed 评估是正式必需证据。E1 必须在
+  查看任何 O3 策略性能前，依据资源而非结果冻结 O3 探索性矩阵为“执行”或“延期”；若执行，
+  只运行 `MAPPO-DG` 与 `RC-AStarKD+LLMKD` 的 8 个匹配训练 seed、两个拓扑、
+  `200–209 × 20 episodes`，无最低性能阈值且必须完整报告。
 - 正式训练 seed 固定为 `7/17/27/37/47/57/67/77`；三个诊断组使用其中
   `7/17/27` 三个诊断 seed。
 

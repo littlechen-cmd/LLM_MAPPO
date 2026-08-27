@@ -865,8 +865,9 @@ Fixed 继续 KD、把 RC 置零后继续训练或重试到成功。
 
 ### 10.10 H=12 runtime 与 memory No-Go gate
 
-O1 在研究所有者的 A600、冻结 12-worker smoke config 上运行三个 fresh-process 条件：baseline
-（selection/log schema 保留但 shadow engine disabled）、H=4 diagnostic、H=12 formal。每个条件：
+O1 在研究所有者的 A600、冻结 12-worker smoke config 上运行两个常规 fresh-process 条件：
+baseline（selection/log schema 保留但 shadow engine disabled）与 H=12 formal。H=4 不进入常规
+Gate；只有 baseline/H12 Gate 已失败时才允许在独立 diagnostic artifact 中按需运行。每个条件：
 
 - 16 个 vector step warm-up，不计时；
 - 随后 128 个 vector step measured window，包含正常 real collection、相同 PPO update、snapshot/
@@ -894,15 +895,15 @@ persistent = growth > threshold and Spearman rho(window_index, memory) >= 0.80
 
 任一内存序列 persistent，或 H=12 runtime ratio 超过 3.0，或出现持续 branch/cache 对象计数增长，
 O1 必须 No-Go 并返回 O0。不得把 H=4 提升为正式 horizon，不得静默改变 1/16 sampler、workers、
-measured window 或排除耗时组件。H=4 只用于定位成本来自 snapshot、Teacher、environment step 还是
-Critic。
+measured window 或排除耗时组件。Gate 失败后运行 H=4 只用于定位成本来自 snapshot、Teacher、
+environment step 还是 Critic，不能反向改变失败结论；修复后必须重新完整运行 baseline/H12 Gate。
 
 O1 必须实现并由研究所有者运行以下唯一入口；参数默认值也必须与显式值一致：
 
 ```powershell
 D:\Anaconda3\envs\py310\python.exe scripts/benchmark_reward_calibration.py `
   --config configs/optimization/o1_reward_calibration_smoke.yaml `
-  --modes baseline h4 h12 --workers 12 --repeats 5 `
+  --modes baseline h12 --workers 12 --repeats 5 `
   --warmup-vector-steps 16 --measure-vector-steps 128 `
   --memory-warmup-windows 2 --memory-measure-windows 10 `
   --output artifacts/optimization/o1_reward_calibration_gate
@@ -910,7 +911,10 @@ D:\Anaconda3\envs\py310\python.exe scripts/benchmark_reward_calibration.py `
 
 入口必须 fail-closed 校验 CUDA A600、commit/config hash、workers、sampler/crn/EMA version 和所有
 数字参数，并原子写出每次 raw timing/memory/counter JSONL、环境 manifest 与唯一 `summary.json`。
-Codex/工程 AI 只能准备入口与分析结果，不代替研究所有者运行该 A600 基准。
+Codex/工程 AI 只能准备入口与分析结果，不代替研究所有者运行该 A600 基准。O1 Gate 作为同一
+owner A600 作业的 fail-fast 前缀：只有独立 O1 `summary.json` 判定通过后，编排器才能启动 O2；
+两阶段目录、manifest、退出状态和 Gate 语义不得合并。失败诊断如需 H=4，使用同一 runner 的
+`--modes h4` 写入独立 `o1_reward_calibration_h4_diagnostic/`，不得启动 O2。
 
 ### 10.11 固定边界示例
 
@@ -1545,8 +1549,8 @@ reward、hard mask、网络和训练预算与对应组匹配。它是三 seed �
 
 1. policy evaluation 与 visualization 的 instrumented planner query count 均为 0；
 2. 把 planner 替换为任何调用即抛错的测试替身后，DirectGoal 与 NoGoalHint 均完成端到端短运行；
-3. DirectGoal 主方法通过 O2 性能门、O3 拓扑/接口就绪门与 E1 链路门；真正未见拓扑的性能门
-   仅在 D1 选定优化路线后的 E2 正式评估中执行，禁止用 O3 性能选择路线；
+3. DirectGoal 主方法通过 O2 性能门、O3 拓扑/接口就绪门与 E1 链路门；正式必需性能证据来自
+   canonical core topology 的 held-out seeds，O3 不再构成性能门；
 4. 论文同时说明 Pure Motion A* 仍是训练期 Teacher，启发式 A* baseline 仍独立使用 A*。
 
 O0/O1 只能声称“冻结/实现了面向无 A* Student 执行的 observation contract”，不能声称该方法
@@ -1615,21 +1619,23 @@ YML、JSON 运行代码/配置差异为 0；仓库中未发现研究所有者提
 
 ### 13.1 训练预算与 O2 校准门
 
-优化路线全部学习运行共 `74` 次，不得再简称为 65 次：
+优化路线全部学习运行共 `71` 次，其中正式训练预算仍为 65 次：
 
-- O2 校准：`MAPPO-DG`、`Fixed-AStarKD`、`RC-AStarKD` 均关闭 LLMKD，各使用初始化 seed
-  `107/117/127`，`150000` real environment steps，共 `3×3=9` 次；
+- O2 校准：`MAPPO-DG`、`RC-AStarKD` 均关闭 LLMKD，各使用初始化 seed `107/117/127`、
+  `150000` real environment steps，共 `2×3=6` 次；
 - E1/E2 核心 `2×2`：`MAPPO-DG`、`RC-A*KD`、`LLMKD`、
   `RC-A*KD+LLMKD` 各 8 seed，共 32 次；
 - `Fixed-A*KD+LLMKD`、`QMIX-DG`、`RuleKD-v3` 各 8 seed，共 24 次；
 - `ShuffleKD-v3`、`NoOOD-v1`、`NoGoalHint-v1` 各 3 seed，共 9 次；
-- E1/E2 合计 65 次，连同 O2 为 `9+65=74` 次。启发式 A* 不训练，评估和人工干预不计入
+- E1/E2 合计 65 次，连同 O2 为 `6+65=71` 次。启发式 A* 不训练，评估和人工干预不计入
   training-run 数。
 
-O2 的 Fixed/RC 两组除 `c_A_reward` 外保持相同网络、环境、reward、seed、预算、1/16 sampler、
-shadow、EMA、日志和 schedule；MAPPO-DG 提供无 A*KD 退化参照。三组均关闭 LLMKD。Fixed 与
-RC 的 `m_calib` 选中状态数、A* query 数和 shadow 数必须逐 seed
-完全相同，否则是接口失败。主覆盖率定义为：
+MAPPO-DG 提供无 A*KD 退化参照，RC-AStarKD 验证 Reward Calibration 的覆盖率、数值稳定性与
+训练吞吐；两组均关闭 LLMKD。O2 不再启动 Fixed-AStarKD 长校准。Fixed/RC 除
+`c_A_reward` 外的 sampler、Teacher query、shadow、EMA、日志和计数等价性，必须在 MateBook
+确定性短受控 smoke 中对同一状态/随机轨迹逐项相等，否则 O2 不得启动。正式 Reward
+Calibration 的增量比较仍由 E2 的 8-seed `RC-AStarKD+LLMKD` 对
+`Fixed-AStarKD+LLMKD` 提供。主覆盖率定义为：
 
 $$
 coverage_A=\frac{\sum m_{calib}m_A^{valid}}
@@ -1660,7 +1666,8 @@ RC 相对 MAPPO-DG 的退化率中位数；中位退化不得超过 10%。
 - `updates.csv`：loss、`lambda_A/lambda_L`、有效分母、平均/分位权重、disagreement（诊断）、
   `DeltaG`、EMA、梯度范数、optimizer/schedule counter；
 - `episodes.csv`：回报、完成任务、episode steps、碰撞、死锁、能量死亡、充电、优先任务完成；
-- `resource_windows.csv`：基线/H4/H12 的计时边界、RSS/CUDA allocated/peak 与 window/repeat。
+- `resource_windows.csv`：常规 baseline/H12 的计时边界、RSS/CUDA allocated/peak 与
+  window/repeat；失败后的 H4 只能进入独立 diagnostic artifact。
 
 Fixed 与 RC 必须使用完全相同的日志密度。详细事件中的 reason、路径长度、expanded nodes、
 planning time、shadow return 和 bootstrap 只作诊断，不进入 loss。污染计数按组件分开：A* 的
@@ -1705,8 +1712,9 @@ IPPO/VDN。允许功能 smoke，不允许依据 smoke 性能选择超参数。
 
 ### 13.4 正式统计合同
 
-独立统计单位是训练初始化 seed。正式学习组使用 `7/17/27/37/47/57/67/77` 并共享 held-out
-evaluation seeds `200..209 × 20 episodes`。同 seed 的学习组使用配对分析；启发式无训练基线只作
+独立统计单位是训练初始化 seed。正式学习组使用 `7/17/27/37/47/57/67/77`，并在 canonical
+core topology 共享 held-out evaluation seeds `200..209 × 20 episodes`。同 seed 的学习组使用
+配对分析；启发式无训练基线只作
 描述性参照，不参与 seed 级显著性检验。基础设施故障只可同 seed/同配置重跑并保留记录；算法、
 数值和安全失败保留为结果。缺失或损坏且无法重建的 seed 使该确认性比较 No-Go，不得换 seed。
 
@@ -1731,8 +1739,11 @@ interval 与 paired standardized effect `d_z=mean(diff)/sd(diff)`；零方差时
 full-vs-QMIX 支持相同 DirectGoal 合同下的外部 MARL 比较；full-vs-Rule 与 Shuffle 支持 LLM 标签
 来源和状态对应性的证据；NoOOD 只支持 reliability 敏感性；NoGoalHint 只支持目标提示敏感性。
 三维均值替换、置零或干预只能说明 policy sensitivity/reliance，不能单独证明该语义维度在训练中
-产生因果贡献。真正未见拓扑只有在 O3 防泄漏冻结、E2 独立评估与 E3 正式统计通过后才能支持
-跨拓扑可靠性主张。
+产生因果贡献。正式主张只覆盖 canonical core topology 下的未见随机实例鲁棒性，不得表述为
+跨拓扑泛化。O3 只允许作为预先决定是否执行的探索性压力测试：若 E1 在查看任何 O3 policy
+performance 前选择执行，则必须完整报告 `MAPPO-DG/RC-AStarKD+LLMKD × 8 training seeds ×
+2 topologies × 200..209 × 20 episodes`，无最低性能阈值；若 E1 因资源延期，则不得运行或选择性
+报告任何 O3 policy performance。
 
 任何 Teacher 无效均 fail closed 为零 KD 权重；禁止 Fixed、uniform、旧 2D、NOOP、缓存旧标签、
 缩短 H 或规则标签 fallback。运行/内存 gate、dataset gate、checkpoint gate 或正式统计完整性失败
@@ -1745,13 +1756,13 @@ DirectGoal 映射第 12 节，日志/消融/统计/主张映射本节。canonica
 
 ### 13.6 O0-F 审核裁决与验证证据
 
-O0-F 对外部建议的裁决为：统计合同、NoGoalHint 更名、74 次总预算、RuleKD 唯一规则、O2
+O0-F 对外部建议的历史裁决为：统计合同、NoGoalHint 更名、当时的 74 次总预算、RuleKD 唯一规则、O2
 coverage/AUC、紧凑日志、干预主张边界、无 fixed-point Shuffle、组件化污染计数和 QMIX fairness
 全部采纳。三维语义建议的核心隔离要求全部采纳；“只保留 0/0.5/1”不采纳，因为它会无必要地
 降低已冻结连续量表的分辨率。最终保留五点解释 anchors、允许任意连续值，并加入非确定性的
 方向 rubric。
 
-验证日期为 2026-08-25，使用唯一规范解释器。YAML schema/74-run/7-contrast 断言通过；完整
+验证日期为 2026-08-25，使用唯一规范解释器。历史 YAML schema/74-run/7-contrast 断言通过；完整
 `pytest` 为 184 passed（45.52 s）；Flake8、`visualize.py --help`、dynamic-ingress A* evaluation
 help、`git diff --check` 均退出 0；仓库未发现 API key。相对 O0-E commit `17e40e4` 没有 Python
 运行代码、runtime training config、环境、reward、checkpoint 或 seed 修改；唯一 `configs/`
@@ -1798,17 +1809,25 @@ O1 的唯一实施任务包为
 以本文为准并返回 O0-G 由研究所有者裁决；实现者不得自行选择替代方案。
 
 O1 本地工作只允许短单元/集成测试和单次短 smoke，不得生成 60/800 标签、启动 O2 训练、执行
-长评估、搜索 KL/schedule/EMA/OOD 参数或静默缩短 H。A600 的 12-worker H=4/H=12 开销与内存
-基准只由研究所有者运行；Codex 只分析其产物。
+长评估、搜索 KL/schedule/EMA/OOD 参数或静默缩短 H。A600 的 12-worker baseline/H12 开销与
+内存 Gate 只由研究所有者运行；Codex 只分析其产物。H4 仅在该 Gate 失败后进入独立诊断产物。
 
-### 14.3 最终书面批准记录
+### 14.3 2026-08-27 资源重规划批准
+
+研究所有者批准以下结果无关的资源修订：O1 Gate 与 O2 共用一个 owner A600 作业但保持逻辑和
+产物隔离；常规 Gate 删除 H4，失败后才允许 H4 诊断；O2 从 9 次缩为 6 次而 E1/E2 65 次正式
+训练不变；优化路线总学习运行数改为 71。正式必需性能证据限定为 canonical core topology 的
+held-out-seed 鲁棒性，O3 降级为 E1 在查看性能前依据资源选择执行或延期的探索性压力测试，且
+禁止跨拓扑泛化主张。
+
+### 14.4 最终书面批准记录
 
 研究所有者于 2026-08-25 明确书面批准完整 canonical architecture，并授权收口 O0、进入 O1。
 批准范围包括 Pure Motion A* 合同、Reward Calibration 与 EMA、OOD 公式、三维数据合同、
 Student/schedule/checkpoint、H=12 runtime/memory gate、证据预算/消融/统计和允许主张。该批准只
 解除 O1 的启动门，不授权生成 60/800 标签、启动 O2 训练、执行长评估、push 或 merge。
 
-### 14.4 O0-G 验证证据
+### 14.5 O0-G 验证证据
 
 验证日期为 2026-08-25。使用 `D:\Anaconda3\envs\py310\python.exe` 完整运行 pytest，结果为
 `184 passed in 45.37s`；Flake8、`visualize.py --help`、dynamic-ingress A* evaluation help 和

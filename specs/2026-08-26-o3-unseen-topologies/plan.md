@@ -63,8 +63,5 @@
 - [ ] 提交 owner handoff：已完成范围、文件、测试、风险、禁止主张与工作树状态；
 - [ ] 只将 O3 标记为“拓扑/接口就绪”。不得运行或声称 learned-policy performance。
 
-## Task group O3-G：E2 延后事项（本阶段不执行）
-
-- [ ] D1 选择优化路线后，由 E1 冻结 topology×group×seed×episode 正式矩阵；
-- [ ] 研究所有者在 E2 使用 final checkpoints 与 held-out evaluation seeds `200–209 × 20` 运行；
-- [ ] E3 完成统计后，才允许依据证据形成跨拓扑可靠性主张。
+下游 learned-policy 工作不属于 O3 task group，统一引用 Roadmap E1/E2：正式必需评估只在
+canonical core topology 执行；O3 探索矩阵由 E1 在查看任何 O3 performance 前冻结为执行或延期。

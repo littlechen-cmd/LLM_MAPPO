@@ -65,7 +65,7 @@ to O0-G.
 | `train/train_optimization.py` | CLI `main` | Validate YAML and start only the optimization training path |
 | `eval/evaluate_optimization.py` | CLI `main` | Strict optimization checkpoint evaluation and DirectGoal/NoGoalHint sensitivity |
 | `train/collect_optimization_labels.py` | CLI `main` | Owner-only pilot/formal label generation; never imported by runtime training |
-| `scripts/benchmark_reward_calibration.py` | CLI `main` | Run the frozen baseline/H4/H12 runtime and memory gate and write its manifest |
+| `scripts/benchmark_reward_calibration.py` | CLI `main` | Run the frozen baseline/H12 Gate or failure-only H4 diagnostic and write isolated artifacts |
 
 `Phase2Warehouse` receives one new keyword-only
 `observation_schema: ObservationSchema = ObservationSchema.LEGACY_WAYPOINT_V1`.
@@ -362,7 +362,7 @@ local laptop result or silently change workers, repetitions, horizon or windows:
 ```powershell
 & "D:\Anaconda3\envs\py310\python.exe" scripts/benchmark_reward_calibration.py `
   --config configs/optimization/o1_reward_calibration_smoke.yaml `
-  --modes baseline h4 h12 --workers 12 --repeats 5 `
+  --modes baseline h12 --workers 12 --repeats 5 `
   --warmup-vector-steps 16 --measure-vector-steps 128 `
   --memory-warmup-windows 2 --memory-measure-windows 10 `
   --output artifacts/optimization/o1_reward_calibration_gate
@@ -375,8 +375,24 @@ the median H12/baseline runtime ratio and the memory regression inputs.
 
 Go requires median H12/baseline runtime ratio `<=3.0`, no non-finite/interface failure,
 no persistent memory growth above `max(64 MiB,5%)` with Spearman `rho>=0.80`, and no
-monotonic branch/cache object growth. H4 is diagnostic only. Any failure is O1 No-Go
-and returns to O0; H12 may not be shortened.
+monotonic branch/cache object growth. Any failure is O1 No-Go and returns to O0;
+H12 may not be shortened.
+
+The O1 gate is the fail-fast prefix of the owner O2 job. The orchestrator may launch
+O2 only after reading an independently written passing O1 `summary.json`; O1 and O2
+must keep separate directories, manifests and exit states. If baseline/H12 fails, H4
+may be run afterward with `--modes h4` into
+`artifacts/optimization/o1_reward_calibration_h4_diagnostic`, but it cannot change the
+failed Gate. After any approved fix, baseline/H12 must be rerun in full.
+
+### 11.1 Resource-replan implementation amendment (pending)
+
+Update the runner parser and regression tests so the only accepted mode lists are the
+normal Gate `baseline h12` and failure-only diagnostic `h4`. Add an owner orchestrator
+that runs the normal Gate, verifies its required artifacts and `gate_pass=true`, and
+only then launches the six O2 runs. This amendment is planning-only until implemented
+and locally verified; the existing three-mode runner must not be used as evidence for
+the revised Gate.
 
 ## 12. Evidence ledger
 

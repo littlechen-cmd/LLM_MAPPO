@@ -145,13 +145,15 @@ mean/variance。多环境按 `(real_step, env_index)` 更新，禁止按 worker 
 为 0、不计入初始化、不更新 EMA，并作为 O1 No-Go 故障。checkpoint 必须严格保存并恢复 schema、
 count/mean/variance/initialized、sampler、H、decay、minimum scale 和 clipping；禁止缺失时重置。
 
-O1 overhead gate 固定在 A600、12 workers：baseline/H4/H12 各用 16 vector-step warm-up、128 个
-measured vector steps、5 个 fresh-process repeats，计入完整 collection/update、snapshot、shadow、
+O1 overhead gate 固定在 A600、12 workers：常规条件只含 baseline/H12，各用 16 vector-step
+warm-up、128 个 measured vector steps、5 个 fresh-process repeats，计入完整
+collection/update、snapshot、shadow、
 Teacher、Critic、EMA 与内存日志，排除进程启动和磁盘 flush；CUDA 计时边界必须同步。
 `median(H12)/median(baseline)<=3.0`。memory gate 在 2 个 warm-up window 后记录 10 个同长度
 window；CPU RSS 或 CUDA allocated 的末三次中位数较首三次增长超过 `max(64 MiB,5%)` 且
-Spearman `rho>=0.80` 即为持续增长。任一 gate 失败必须返回 O0；H4 只作诊断，不得替代 H12，
-也不得静默修改 1/16 sampler。
+Spearman `rho>=0.80` 即为持续增长。任一 gate 失败必须返回 O0；H4 只允许在常规 Gate 失败后
+写入独立 diagnostic artifact，不得替代 H12 或改变失败结论，也不得静默修改 1/16 sampler。
+O1 Gate 与 O2 共用一个 owner A600 作业，但 O1 产物和状态必须先独立通过，编排器才能启动 O2。
 
 ### 3.4 三维离线 LLM Semantic Teacher
 
@@ -330,7 +332,8 @@ schema 名为 `no-geometric-goal-hint-v1`：保持 613 维但把上述 9 位全�
 预先宣称已经摆脱 A*。启发式 `Heuristic-Dispatcher+A*` 基线仍可独立使用 A*，不等同于 Student
 执行依赖。该主张必须同时满足：Student policy 评估/可视化的 planner query count 为 0；把
 planner 替换为任何调用即抛错的测试替身后 DirectGoal 与 NoGoalHint 都能完成端到端短运行；DirectGoal
-通过 O2/O3/E1 对应冻结性能门；论文明确 A* 仍在训练期提供 Motion Teacher。NoGoalHint 的性能只作
+通过 O2 性能门、O3 拓扑/接口就绪门与 E1 链路门，并在 canonical core held-out seeds 上完成
+正式评估；论文明确 A* 仍在训练期提供 Motion Teacher。NoGoalHint 的性能只作
 诊断，不能单独决定该主张。
 
 新 checkpoint schema 固定为 `o0-student-checkpoint-v1`，只允许在完整 optimizer update 后且
@@ -377,9 +380,11 @@ EMA；共同 sampler/buffer/schedule/log；最后才执行 H=12 smoke 与 owner-
 
 O0-F 必须以 canonical architecture 第 13 节为唯一详细合同，并满足：
 
-- 总学习预算明确为 O2 9 次加 E1/E2 65 次，共 74 次；O2 使用
-  `107/117/127`，正式 8 seed 与诊断 3 seed 保持原预注册集合；
-- O2 的 coverage 分母、10k-step AUC 网格、逐 seed gate 与 Fixed/RC 计数相等式唯一；
+- 总学习预算明确为 O2 6 次加 E1/E2 65 次，共 71 次；O2 使用
+  `MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组关闭 LLMKD；正式 8 seed 与
+  诊断 3 seed 保持原预注册集合；
+- O2 的 coverage 分母、10k-step AUC 网格与逐 seed gate 唯一；Fixed/RC 链路等价性与计数
+  相等式作为 O2 启动前 MateBook 确定性短受控 smoke 合同保留，不运行 Fixed-AStarKD 长校准；
 - 使用 compact per-step counts、selected/failure/deterministic-sample events、update/episode/resource
   日志；禁止普通状态全量数组 JSONL 改变实验运行特征；
 - 正式 LLM 标签保持连续三维；方向 rubric 不是标签规则。RuleKD-v3 是完整、确定、独立的规则

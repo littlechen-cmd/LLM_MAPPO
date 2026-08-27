@@ -30,7 +30,7 @@ P0 已完成；本文件保留双路线共同治理边界，并记录 O0-F 对�
 | LLM | 三维连续标签、validity×OOD | 历史二维标签 |
 | 环境 | 既有 canonical core environment + O3 两个 evaluation-only 未见拓扑 | 3 AGV、目标 9、动态入库 |
 | 能源 | 保持 G2-3 核心合同 `1.10/0.30/0.80` | `1.10/0.30/0.80` |
-| 泛化 | 仅在 O3 与正式结果支持时主张 | 禁止跨拓扑/规模泛化主张 |
+| 泛化 | 正式主张仅限 canonical core topology 的未见随机实例；O3 只作可选探索性压力测试 | 禁止跨拓扑/规模泛化主张 |
 
 共享环境、评估和日志修复只能通过明确、已测试 commit 合并；禁止跨分支复制覆盖或混用
 artifact。稳定路线预备训练只能写入 `artifacts/stable/predecision/`，不得参与 D1 或最终统计。
@@ -44,8 +44,11 @@ artifact。稳定路线预备训练只能写入 `artifacts/stable/predecision/`�
   参与训练、标签生成、OOD reference、校准、路线或超参数选择；D1 前禁止加载学习策略查看
   O3 性能。
 
-O2 固定为 `MAPPO-DG/Fixed-AStarKD/RC-AStarKD × 107/117/127 × 150000 steps`，三组均关闭
-LLMKD，共 9 次。覆盖率以全部
+O1 常规 A600 Gate 只运行 baseline/H12；H4 仅在失败后写入独立诊断产物。O1 与 O2 由同一
+owner 作业 fail-fast 编排，但 O1 必须先以独立产物通过。
+
+O2 固定为 `MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组均关闭 LLMKD，共
+6 次。Fixed/RC 链路计数等价性由 O2 前 MateBook 确定性短受控 smoke 验证。覆盖率以全部
 calibration-selected agent slots 为分母，三个 RC seed 各自必须 `>=25%`；AUC 使用
 `0,10000,...,150000` 网格，RC 相对 MAPPO-DG 的 seed 级退化中位数不得超过 10%。
 
@@ -55,8 +58,8 @@ D1 只依据预注册前置门选择一条路线。优化路线完成 O0–O3 �
 S1 的稳定路线；两者均未通过时停止。正式评估固定 `200–209 × 20 episodes`、确定性动作与
 final checkpoint。
 
-优化路线 E1/E2 为 65 次学习运行：核心 `2×2` 32、Fixed-KD 8、QMIX-DG 8、RuleKD-v3 8、
-ShuffleKD-v3/NoOOD-v1/NoGoalHint-v1 各 3。连同 O2 9 次，优化路线总计 74 次。稳定路线预算
+优化路线 E1/E2 保持 65 次学习运行：核心 `2×2` 32、Fixed-KD 8、QMIX-DG 8、RuleKD-v3 8、
+ShuffleKD-v3/NoOOD-v1/NoGoalHint-v1 各 3。连同 O2 6 次，优化路线总计 71 次。稳定路线预算
 不变：核心 `2×2` 和 RuleKD 各 5 seed，历史 NoWP 3 seed；无 QMIX、Shuffle、未见拓扑或
 8-AGV。启发式 A* 均不训练。
 
@@ -67,6 +70,12 @@ ShuffleKD-v3/NoOOD-v1/NoGoalHint-v1 各 3。连同 O2 9 次，优化路线总计
 paired effect size 与 10000 次 seed-level bootstrap 均以 canonical architecture 第 13.4 节为准。
 Shuffle、NoOOD、NoGoalHint 只支持诊断性主张；三维标签干预只能说明策略敏感性，不能单独证明
 训练贡献。QMIX-DG 必须共享 DirectGoal、环境步、seed、评估、mask、reward、能源和调参预算。
+
+上述正式统计的环境范围固定为 canonical core topology；`200–209 × 20` 只支持固定拓扑下的
+未见随机实例鲁棒性。E1 必须在查看任何 O3 policy performance 前，依据资源把 O3 探索矩阵冻结
+为“执行”或“延期”。执行时只含 `MAPPO-DG/RC-AStarKD+LLMKD × 8 training seeds ×
+2 topologies × 200–209 × 20 episodes`，无最低性能阈值且必须完整报告；延期时不得运行或报告
+任何 O3 policy performance。O3 结果不进入七个确认性 contrasts，也不支持跨拓扑泛化主张。
 
 ## 7. 长任务权限
 

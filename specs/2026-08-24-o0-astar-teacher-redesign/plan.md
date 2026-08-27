@@ -48,7 +48,8 @@ O0-F 每组完成时必须同步本计划与 `CHANGELOG.md`、运行该组验证
   截断、非有限降级、checkpoint 状态和初始化前零权重；参数不得依据训练性能选择；
 - [x] 冻结 calibration 采样时机/频率、日志计数守恒与 Fixed-KD 对照开关，证明开关不改变标签、
   reward、real rollout 或 LLM 分支；
-- [x] 冻结 H=12/H=4 短基准、3× runtime gate 和持续 memory growth 的可执行测量定义；H=12 不
+- [x] 冻结 H=12 正式短基准、3× runtime gate 和持续 memory growth 的可执行测量定义；
+  2026-08-27 资源修订将 H=4 改为失败后诊断；H=12 不
   通过时 O1 必须 No-Go。
 
 ## Task group O0-D：三维 LLM 数据、可靠性与语义边界
