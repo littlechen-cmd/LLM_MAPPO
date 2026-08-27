@@ -15,13 +15,13 @@
 
 ## Task group O3-B：从零设计地图与 owner preview gate
 
-- [ ] 先写失败测试，冻结文件格式、24×20、144 `X`、334 `.`、2 `G`、8 stations 和两个图论
+- [x] 先写失败测试，冻结文件格式、24×20、144 `X`、334 `.`、2 `G`、8 stations 和两个图论
   结构证书；
-- [ ] 仅根据 requirements 第 3–4 节生成两张新 ASCII 地图，不读取、恢复或仿照 P0 rejected
+- [x] 仅根据 requirements 第 3–4 节生成两张新 ASCII 地图，不读取、恢复或仿照 P0 rejected
   drafts；
-- [ ] 生成静态 lint/结构审计摘要与两张 PNG 预览，不创建环境、不加载 checkpoint；
-- [ ] 暂停并交由研究所有者人工审核地图几何；批准前不得进入 O3-C；
-- [ ] owner 批准后记录批准日期、精确坐标合同与地图 version；若拒绝，只按结构意见重做，不得
+- [x] 生成静态 lint/结构审计摘要与两张 PNG 预览，不创建环境、不加载 checkpoint；
+- [x] 暂停并交由研究所有者人工审核地图几何；批准前不得进入 O3-C；
+- [x] owner 于 2026-08-27 批准两张 PNG、精确坐标合同与 `v1` 地图；若拒绝，只按结构意见重做，不得
   使用策略性能选择地图。
 
 ## Task group O3-C：TopologySpec、package data 与双哈希

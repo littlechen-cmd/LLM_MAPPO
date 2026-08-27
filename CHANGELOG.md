@@ -3,6 +3,12 @@
 This file records meaningful project engineering and experiment-governance
 changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
+## 2026-08-27
+
+- Added: O3-B freezes the owner-approved `v1` narrow-passage and central-cross
+  ASCII maps, graph certificates, explicit charging-station coordinates, deterministic
+  PNG previews, and static format/structure regression tests without policy execution.
+
 ## 2026-08-26
 
 - Added: Root `terminology.md` aligns planning, topology, hashing, experiment-isolation
