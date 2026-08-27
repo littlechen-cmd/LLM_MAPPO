@@ -50,8 +50,8 @@ route_profiles:
       goals: 2
       explicit_charging_stations: 8
       environment_ids:
-        - llm-mappo-o3-unseen-narrow-passage-5ag-v1
-        - llm-mappo-o3-unseen-central-cross-5ag-v1
+        - llm-mappo-o3-unseen-narrow-passage-5ag-v2
+        - llm-mappo-o3-unseen-central-cross-5ag-v2
     same_map_eight_agv_stress: prohibited
   stable:
     branch: codex/stable

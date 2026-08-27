@@ -5,7 +5,11 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-27
 
-- Added: O3-B freezes the owner-approved `v1` narrow-passage and central-cross
+- Fixed: O3 map dimensions now match the canonical core at `20×24`
+  (width×height); the owner-approved `v2` maps are deterministic rotations that
+  preserve density and graph certificates without adding aspect ratio as a confound.
+- Added: O3-B records the initial `v1` narrow-passage and central-cross previews,
+  subsequently superseded by the dimension-corrected `v2` maps, together with
   ASCII maps, graph certificates, explicit charging-station coordinates, deterministic
   PNG previews, and static format/structure regression tests without policy execution.
 

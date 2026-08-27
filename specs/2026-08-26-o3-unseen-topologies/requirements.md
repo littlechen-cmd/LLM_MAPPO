@@ -19,11 +19,11 @@ O1、O2、O3 全部通过仍只是进入 D1 的前置条件。真正的未见拓
 ### 2.1 包含
 
 - 两个显式、不可随机再生成的 ASCII 地图：
-  - `rware/layouts/o3/unseen_narrow_passage_v1.txt`；
-  - `rware/layouts/o3/unseen_central_cross_v1.txt`。
+  - `rware/layouts/o3/unseen_narrow_passage_v2.txt`；
+  - `rware/layouts/o3/unseen_central_cross_v2.txt`。
 - 两个唯一环境 ID：
-  - `llm-mappo-o3-unseen-narrow-passage-5ag-v1`；
-  - `llm-mappo-o3-unseen-central-cross-5ag-v1`。
+  - `llm-mappo-o3-unseen-narrow-passage-5ag-v2`；
+  - `llm-mappo-o3-unseen-central-cross-5ag-v2`。
 - 只读 `TopologySpec` 注册表、evaluation-only 环境工厂、地图加载、静态 lint、结构证书、
   source/effective hash 验证和证据 manifest。
 - 确定性 reset/step、动作与观察接口、安全规则、DirectGoal/NoGoalHint、61D semantic view、
@@ -48,7 +48,7 @@ O1、O2、O3 全部通过仍只是进入 D1 的前置条件。真正的未见拓
 
 | 字段 | 冻结值 |
 |---|---:|
-| grid size | `24 × 20`（width × height） |
+| grid size | `20 × 24`（width × height，与 canonical core 一致） |
 | shelf cells | `144` |
 | goals | `2` |
 | agents | `5` |
@@ -165,10 +165,12 @@ O3 通过只允许声明“两个真正未见的 evaluation-only 载货运输拓
 
 ## 10. 已批准决策
 
-上述范围、依赖、两个拓扑定义、5 AGV/24×20/144 shelves/2 goals/8 stations、显式文件方案、双
+上述范围、依赖、两个拓扑定义、5 AGV/20×24/144 shelves/2 goals/8 stations、显式文件方案、双
 哈希、防泄漏、test-only seeds、owner map-preview gate、E2 性能归属与 O1 No-Go 失效规则已由
 研究所有者于 2026-08-26 批准；其中 shelf/station 数量经 canonical runtime 核验后由 owner
-明确修正为 `144/8`。
+明确修正为 `144/8`。2026-08-27 在实现前核验发现 canonical core 的实际尺寸为
+`20×24`（width×height），而首版候选图误写为 `24×20`；owner 批准采用保持图论结构不变的
+确定性 90° 旋转，将正式候选提升为 `v2`，避免把纵横比变化引入拓扑对照。
 
 ## 11. Open questions
 
