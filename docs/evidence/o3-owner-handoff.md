@@ -42,14 +42,15 @@ Reward Calibration, the frozen energy/reward values, formal seeds, training budg
 or stable-route configuration. Test-only seeds are `9301/9302`; held-out evaluation
 seeds `200–209` were not executed.
 
-## Known risks and pending authority
+## Known risks after owner approval
 
 - O1 remains local-complete with the owner-only A600 runtime/memory gate pending; O2
   remains blocked. An O1 No-Go retains map bytes and graph certificates but invalidates
   O3 interface evidence until it is rerun against the corrected interface.
 - The owner-approved resource-governance edits present during O3-F were preserved and
   included in the final documentation sync; they were not mixed into O3 code commits.
-- The owner must explicitly approve the final O3 claim “topology/interface ready.”
+- The owner approved the final O3 claim “topology/interface ready” on 2026-08-27.
+  This approval does not authorize a learned-policy performance claim.
 
 ## Prohibited claims
 

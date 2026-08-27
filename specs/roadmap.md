@@ -61,7 +61,7 @@ O1 未通过前 O2 仍被硬阻塞；O1、O2、O3 与 S1 只在 D1 汇合，不�
 
 ## Phase O3：优化路线真正未见拓扑
 
-- [~] in progress
+- [x] complete（仅表示拓扑/接口就绪，不表示 learned-policy performance 通过）
 - 唯一规格：`specs/2026-08-26-o3-unseen-topologies/`。
 - 目标：建立一个窄通道布局和一个中央瓶颈/交叉通道布局，冻结地图文件、显式坐标合同、哈希、
   环境 ID、统一观测/动作接口和防泄漏协议。

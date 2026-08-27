@@ -82,4 +82,4 @@ O2、label、prompt、scenario 或 OOD 数据引用均为 No-Go。
 - [x] focused/full/static checks 全通过，`CHANGELOG.md` 与 `TASKS.md` 同 commit 更新；
 - [x] 没有未提交文件、凭据、artifact、checkpoint 或策略性能结果；
 - [x] 架构师确认代码、实验合同和允许论文主张一致；
-- [ ] 研究所有者批准 O3“拓扑/接口就绪”，不将其误写为性能通过。
+- [x] 研究所有者于 2026-08-27 批准 O3“拓扑/接口就绪”，且未将其误写为性能通过。

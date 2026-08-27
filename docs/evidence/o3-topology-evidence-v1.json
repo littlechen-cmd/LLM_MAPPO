@@ -1,7 +1,9 @@
 {
   "manifest_version": "o3-topology-evidence-v1",
-  "status": "o3-a-f-implemented-owner-validation-pending",
+  "status": "o3-topology-interface-ready-owner-approved",
   "owner_preview_approval_date": "2026-08-27",
+  "owner_readiness_approval_date": "2026-08-27",
+  "owner_approved_against_commit": "7fb1c99",
   "map_freeze_commit": "1e83ee9",
   "registry_implementation_commit": "9fb0de5",
   "core_reference_layout_hash": "ddcb4f8008b6cc4c1d0f49c93d935cc927e11929999d3ee21578f54c10f282df",
@@ -107,9 +109,9 @@
     "config_scan": "no O3 provenance outside the governance manifest"
   },
   "o3_f_verification": {
-    "validated_commit": "85118d3",
-    "focused_tests": "34 passed in 8.02s",
-    "full_tests": "257 passed in 52.92s",
+    "validated_commit": "7fb1c99",
+    "focused_tests": "34 passed in 8.81s",
+    "full_tests": "257 passed in 50.19s",
     "flake8": "passed",
     "visualize_help": "passed",
     "static_scan": "references classified as registry/guard/test/spec/governance only",

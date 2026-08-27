@@ -61,7 +61,7 @@
 - [x] 更新 `TASKS.md`、`CHANGELOG.md`、Roadmap 与 evidence manifest，记录 literal commands/results/
   commit/hash；
 - [x] 提交 owner handoff：已完成范围、文件、测试、风险、禁止主张与工作树状态；
-- [x] 只将 O3 标记为“拓扑/接口就绪待 owner 验收”。未运行或声称 learned-policy performance。
+- [x] owner 于 2026-08-27 批准“拓扑/接口就绪”。未运行或声称 learned-policy performance。
 
 下游 learned-policy 工作不属于 O3 task group，统一引用 Roadmap E1/E2：正式必需评估只在
 canonical core topology 执行；O3 探索矩阵由 E1 在查看任何 O3 performance 前冻结为执行或延期。
