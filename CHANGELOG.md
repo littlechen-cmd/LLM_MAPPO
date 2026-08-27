@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-27
 
+- Added: O3-C introduces immutable `TopologySpec` metadata, packaged `v2` map
+  resources, source/effective hash fail-closed checks, and a temporary-registration
+  evaluation factory that leaves held-out IDs unavailable to ordinary `gym.make`.
 - Fixed: O3 map dimensions now match the canonical core at `20×24`
   (width×height); the owner-approved `v2` maps are deterministic rotations that
   preserve density and graph certificates without adding aspect ratio as a confound.
