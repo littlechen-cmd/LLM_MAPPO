@@ -139,6 +139,9 @@ class SemanticDatasetV3:
 
     @classmethod
     def from_records(cls, records: Sequence[Mapping]):
+        from llm_mappo.o3_guard import reject_o3_provenance
+
+        reject_o3_provenance(records, context="semantic/OOD dataset")
         valid = [record for record in records if record.get("validity") == 1]
         if not valid:
             return cls(

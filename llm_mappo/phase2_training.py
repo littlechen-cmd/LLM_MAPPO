@@ -20,6 +20,7 @@ from llm_mappo.phase2_expert import (
     collect_expert_episodes,
 )
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
+from llm_mappo.o3_guard import reject_o3_environment
 
 
 @dataclass
@@ -51,6 +52,9 @@ class Phase2TrainingConfig:
     bc_completion_rate_min: float = 0.8
     expert_completion_rate_min: float = 1.0
     ppo: PPOHyperparameters = field(default_factory=PPOHyperparameters)
+
+    def __post_init__(self) -> None:
+        reject_o3_environment(self.env_id, context="Phase 2 training")
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Phase2TrainingConfig":
@@ -133,6 +137,7 @@ def _writer(path: Path):
 
 def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:  # noqa: C901
     """Train MAPPO and persist metrics, configuration, and checkpoints."""
+    reject_o3_environment(config.env_id, context="Phase 2 training")
     set_seed(config.seed, config.torch_num_threads)
     run_dir = Path(config.output_dir) / f"seed_{config.seed:03d}"
     run_dir.mkdir(parents=True, exist_ok=True)

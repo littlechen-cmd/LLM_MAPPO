@@ -1,6 +1,6 @@
 {
   "manifest_version": "o3-topology-evidence-v1",
-  "status": "o3-d-complete-o3-e-pending",
+  "status": "o3-e-complete-o3-f-pending",
   "owner_preview_approval_date": "2026-08-27",
   "map_freeze_commit": "1e83ee9",
   "registry_implementation_commit": "9fb0de5",
@@ -93,6 +93,18 @@
     "test_seeds": [9301, 9302],
     "fixed_trajectory_steps": 41,
     "planner_queries": 0
+  },
+  "o3_e_verification": {
+    "command": "D:\\Anaconda3\\envs\\py310\\python.exe -m pytest tests/test_o3_topology_leakage.py -q",
+    "result": "9 passed",
+    "guarded_paths": [
+      "Phase2 training",
+      "Phase3/4 training",
+      "optimization training",
+      "offline label collection",
+      "semantic/OOD dataset"
+    ],
+    "config_scan": "no O3 provenance outside the governance manifest"
   },
   "invalidation_rule": {
     "o1_no_go": "retain map bytes, source hashes and graph certificates; invalidate and rerun all O3 interface evidence",

@@ -48,11 +48,11 @@
 
 ## Task group O3-E：训练与数据防泄漏
 
-- [ ] 先写失败测试，证明 optimization、Phase 3/4 training、O2 和 label collection 入口拒绝 O3 IDs；
-- [ ] 增加不可由普通布尔 flag 绕过的 evaluation-only guard，并保留训练 core environment 白名单；
-- [ ] 扫描所有训练/O2/60/800 label/prompt/scenario/OOD 配置，证明不含 O3 IDs、hashes 或路径；
-- [ ] 证明 O3 代码路径不创建 optimizer、不加载 checkpoint、不调用在线 LLM、不使用 `200–209`；
-- [ ] 固化 O1 No-Go 后地图证书可保留、接口证据必须重验的 manifest 状态规则。
+- [x] 先写失败测试，证明 optimization、Phase 3/4 training、O2 和 label collection 入口拒绝 O3 IDs；
+- [x] 增加不可由普通布尔 flag 绕过的 evaluation-only guard，并保留训练 core environment 白名单；
+- [x] 扫描所有训练/O2/60/800 label/prompt/scenario/OOD 配置，证明不含 O3 IDs、hashes 或路径；
+- [x] 证明 O3 代码路径不创建 optimizer、不加载 checkpoint、不调用在线 LLM、不使用 `200–209`；
+- [x] 固化 O1 No-Go 后地图证书可保留、接口证据必须重验的 manifest 状态规则。
 
 ## Task group O3-F：本地收口与证据交接
 

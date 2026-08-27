@@ -19,6 +19,7 @@ from llm_mappo.llm_teacher import (
     load_labelled_scenarios,
     write_labelled_scenarios,
 )
+from llm_mappo.o3_guard import reject_o3_environment
 from llm_mappo.phase2 import Phase2Warehouse
 from llm_mappo.phase2_expert import AStarExpert
 from llm_mappo.types import PriorityAdjustment
@@ -97,6 +98,7 @@ def collect_offline_labels(
     checkpoint_path: str | Path | None = None,
 ) -> dict:
     """Collect a deterministic, pre-training label cache from A* rollouts."""
+    reject_o3_environment(env.env_id, context="offline label collection")
     if scenarios_per_seed < 1:
         raise ValueError("scenarios_per_seed must be positive.")
     expert = AStarExpert()
@@ -149,6 +151,7 @@ def collect_stratified_offline_labels(
     checkpoint_path: str | Path | None = None,
 ) -> dict:
     """Collect an auditable mix of natural and controlled semantic scenarios."""
+    reject_o3_environment(env.env_id, context="stratified offline label collection")
     quotas = {name: int(count) for name, count in quotas.items()}
     if set(quotas) != set(SCENARIO_TYPES) or any(count < 1 for count in quotas.values()):
         raise ValueError("Provide a positive quota for every Phase 4 scenario type.")

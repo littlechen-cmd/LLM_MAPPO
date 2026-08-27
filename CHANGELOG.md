@@ -5,6 +5,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-27
 
+- Added: O3-E central fail-closed guards keep both unseen topology IDs and their
+  provenance out of Phase 2/3/4 and optimization training, offline label collection,
+  and semantic/OOD reference fitting; nine leakage regressions pass.
 - Added: O3-D verifies byte-deterministic reset and 41-step ingress trajectories for
   seeds `9301/9302`, 613D/61D interfaces, zero planner queries, Pure Motion Teacher
   provenance, shadow restore, and shared collision/charging/load safety behavior.

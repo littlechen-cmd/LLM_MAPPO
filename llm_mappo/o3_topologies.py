@@ -8,6 +8,7 @@ from typing import Mapping
 
 from gymnasium.envs.registration import register, registry
 
+from llm_mappo.o3_guard import O3_ENVIRONMENT_IDS
 from llm_mappo.optimization_observation import ObservationSchema
 from llm_mappo.phase2 import Phase2Warehouse
 from rware.warehouse import RewardType
@@ -27,10 +28,7 @@ class TopologySpec:
     effective_layout_hash: str
 
 
-_NARROW_ID = "llm-mappo-o3-unseen-narrow-passage-5ag-v2"
-_CENTRAL_ID = "llm-mappo-o3-unseen-central-cross-5ag-v2"
-
-O3_ENVIRONMENT_IDS = (_NARROW_ID, _CENTRAL_ID)
+_NARROW_ID, _CENTRAL_ID = O3_ENVIRONMENT_IDS
 
 O3_TOPOLOGIES: Mapping[str, TopologySpec] = MappingProxyType(
     {

@@ -15,6 +15,7 @@ from llm_mappo.optimization_buffer import (
     OptimizationRolloutBuffer,
 )
 from llm_mappo.optimization_logging import O0RunLogger
+from llm_mappo.o3_guard import reject_o3_environment
 from llm_mappo.optimization_observation import ObservationSchema
 from llm_mappo.optimization_student import O0CentralizedCritic, O0StudentActor
 from llm_mappo.phase2 import Phase2Warehouse
@@ -79,6 +80,7 @@ class OptimizationTrainingConfig:
         return config
 
     def _validate(self) -> None:
+        reject_o3_environment(self.environment_id, context="optimization training")
         frozen = {
             "environment_id": "llm-mappo-medium-3ag-v1",
             "n_agents": 5,

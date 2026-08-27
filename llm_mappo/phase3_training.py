@@ -24,6 +24,7 @@ from llm_mappo.mappo import (
     RolloutBuffer,
 )
 from llm_mappo.phase2 import ACTION_COUNT, Phase2Warehouse
+from llm_mappo.o3_guard import reject_o3_environment
 from llm_mappo.phase2_expert import AStarExpert
 from llm_mappo.phase4 import OfflineSemanticTeacher
 
@@ -71,6 +72,9 @@ class Phase3TrainingConfig:
             engagement_coefficient=0.1,
         )
     )
+
+    def __post_init__(self) -> None:
+        reject_o3_environment(self.env_id, context="Phase 3/4 training")
 
     @property
     def astar_kl_enabled(self) -> bool:
@@ -581,6 +585,7 @@ def _engagement_coefficient(
 
 def train_phase3(config: Phase3TrainingConfig) -> Dict[str, object]:  # noqa: C901
     """Train one Phase 3 architecture ablation on the fixed medium/3-AGV scale."""
+    reject_o3_environment(config.env_id, context="Phase 3/4 training")
     if config.phase in {"3a", "3b"} and config.n_agents != 3:
         raise ValueError("Phase 3a and 3b are fixed to the medium three-AGV setting.")
     if config.phase == "4" and config.n_agents != 5:
