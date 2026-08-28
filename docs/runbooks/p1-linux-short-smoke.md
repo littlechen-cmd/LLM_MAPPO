@@ -9,6 +9,7 @@ P1 证据目录；命令不会终止、暂停或调整其他用户的进程。
 
 ```bash
 cd /home/lzx/llm-a-mappo
+set -euo pipefail
 PYTHON_BIN=/home/lzx/.conda/envs/llm-a-mappo-py310/bin/python
 RUN_ID=p1_smoke_$(date -u +%Y%m%dT%H%M%SZ)
 RUN_DIR=artifacts/optimization/p1_linux_server/$RUN_ID
