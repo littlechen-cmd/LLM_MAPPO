@@ -193,16 +193,16 @@
   holds the lease through Gate completion, and never invokes O2.
 - Go output names the next required phase `O2` and the receipt path; No-Go output names `O0`.
 
-- [ ] Write failing subprocess tests for environment ordering, lock lifetime, wait timeout,
+- [x] Write failing subprocess tests for environment ordering, lock lifetime, wait timeout,
   occupied GPU, child nonzero status, Gate Go/No-Go routing and absence of O2 invocation.
-- [ ] Run focused tests and confirm the launcher is absent.
-- [ ] Implement launcher using `sys.executable` and argument lists, never shell interpolation;
+- [x] Run focused tests and confirm the launcher is absent.
+- [x] Implement launcher using `sys.executable` and argument lists, never shell interpolation;
   propagate SIGINT/SIGTERM as infrastructure interruption and retain artifacts.
-- [ ] Write exact `tmux new -s p1-o1`, attach/detach, status and resume commands using the
+- [x] Write exact `tmux new -s p1-o1`, attach/detach, status and resume commands using the
   canonical interpreter and `/home/lzx/llm-a-mappo`.
-- [ ] Update protocol/manifest so P1 completion mandates O1 next and O1 Go mandates O2;
+- [x] Update protocol/manifest so P1 completion mandates O1 next and O1 Go mandates O2;
   explicitly state that the O2 continuation is implemented in O2, not fabricated by P1.
-- [ ] Run focused tests, Flake8, CLI help and static scans for `kill`, shell execution,
+- [x] Run focused tests, Flake8, CLI help and static scans for `kill`, shell execution,
   A600 paths and ordinary GPU override flags.
 - [ ] Commit with subject `feat: add owner wait-to-O1 launcher`.
 

@@ -188,7 +188,10 @@ o1_cuda_gate:
   execution_environment: linux_optimization_server
   physical_gpu_index: 0
   expected_gpu_name: NVIDIA GeForce RTX 4090
-  orchestration: owner_run_linux_gate_before_separate_o2_phase
+  orchestration: owner_run_p1_wait_to_o1_before_separate_o2_phase
+  launcher: scripts/run_o1_when_available.py
+  launcher_sets_cuda_visible_devices: '0'
+  o2_is_never_invoked_by_p1_launcher: true
   logical_gate_and_artifacts_remain_independent: true
   normal_modes: [baseline, h12]
   failure_only_diagnostic_mode: h4

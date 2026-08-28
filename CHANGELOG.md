@@ -5,6 +5,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-28
 
+- Added: P1-F introduces the owner-only tmux wait-to-O1 launcher, which pins GPU 0 before
+  the benchmark child, retains the lease through the Gate, and only reports the O2 handoff.
 - Added: P1-E makes O1 runtime and memory evidence atomic and identity-bound, permits only
   declared infrastructure recovery, and writes an O2 receipt only after a complete Gate Go.
 - Changed: P1-D makes the normal O1 Linux CUDA Gate baseline/H12-only, isolates H4 as a
