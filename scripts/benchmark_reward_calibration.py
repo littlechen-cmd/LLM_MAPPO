@@ -6,6 +6,7 @@ import gc
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+import io
 import multiprocessing
 import os
 from pathlib import Path
@@ -31,6 +32,14 @@ from llm_mappo.reward_calibration import (
 from llm_mappo.pure_motion_teacher import PureMotionTeacher
 from llm_mappo.shadow_state import ShadowStateAdapter
 from llm_mappo.linux_server_runtime import GpuInfo, MachineSnapshot
+from llm_mappo.linux_server_runtime import replace_state_atomic
+from llm_mappo.run_evidence import (
+    RunIdentity,
+    load_valid_shard,
+    write_new_atomic_text,
+    write_o1_gate_receipt,
+    write_shard,
+)
 
 
 REQUIRED_ARTIFACTS = {
@@ -145,7 +154,15 @@ def _validated_gate_reports(arguments):
         raise RuntimeError("A passing P1 preflight report is required before O1.")
     if environment.get("pass") is not True:
         raise RuntimeError("A passing P1 environment report is required before O1.")
-    return _snapshot_from_preflight(preflight), preflight_hash, environment_hash
+    environment_freeze_hash = environment.get("freeze_sha256")
+    if not isinstance(environment_freeze_hash, str) or not environment_freeze_hash:
+        raise RuntimeError("P1 environment report does not include a freeze hash.")
+    return (
+        _snapshot_from_preflight(preflight),
+        preflight_hash,
+        environment_hash,
+        environment_freeze_hash,
+    )
 
 
 def _torch_probe():
@@ -161,7 +178,9 @@ def _prepare_benchmark(arguments):
     validate_cuda_visibility()
     if not torch.cuda.is_available():
         raise RuntimeError("The O1 runtime gate requires a CUDA-capable owner machine.")
-    snapshot, preflight_hash, environment_hash = _validated_gate_reports(arguments)
+    snapshot, preflight_hash, environment_hash, environment_freeze_hash = (
+        _validated_gate_reports(arguments)
+    )
     binding = validate_cuda_binding(0, snapshot, _torch_probe)
     config_path = Path(arguments.config)
     config = OptimizationTrainingConfig.from_yaml(config_path)
@@ -173,8 +192,29 @@ def _prepare_benchmark(arguments):
     target = next(
         gpu for gpu in snapshot.gpus if gpu.physical_index == binding.physical_gpu_index
     )
+    immutable_machine = {
+        "os_name": snapshot.os_name,
+        "architecture": snapshot.architecture,
+        "cpu_model": snapshot.cpu_model,
+        "cpu_logical_count": snapshot.cpu_logical_count,
+        "physical_gpu_index": binding.physical_gpu_index,
+        "gpu_uuid": binding.uuid,
+        "gpu_pci_bus_id": binding.pci_bus_id,
+        "gpu_name": binding.name,
+        "gpu_total_memory_mib": target.total_memory_mib,
+        "gpu_driver": target.driver_version,
+    }
+    config_hash = sha256(config_path.read_bytes()).hexdigest()
+    identity = RunIdentity(
+        code_commit=commit,
+        config_sha256=config_hash,
+        immutable_machine_sha256=sha256(
+            json.dumps(immutable_machine, sort_keys=True).encode("utf-8")
+        ).hexdigest(),
+        environment_sha256=environment_freeze_hash,
+    )
     common = {
-        "config_hash": sha256(config_path.read_bytes()).hexdigest(),
+        "config_hash": config_hash,
         "code_commit": commit,
         "device": binding.name,
         "physical_gpu_index": binding.physical_gpu_index,
@@ -190,13 +230,55 @@ def _prepare_benchmark(arguments):
         "pytorch": torch.__version__,
         "platform": platform.platform(),
         "preflight_hash": preflight_hash,
-        "environment_freeze_hash": environment_hash,
+        "environment_report_sha256": environment_hash,
+        "environment_freeze_hash": environment_freeze_hash,
+        "immutable_machine_sha256": identity.immutable_machine_sha256,
         "workers": arguments.workers,
         "exit_status": 0,
     }
-    output = Path(arguments.output)
-    output.mkdir(parents=True, exist_ok=True)
-    return config_path, output, common
+    return config_path, Path(arguments.output), common, identity
+
+
+def _initialize_run_directory(output: Path, arguments, identity: RunIdentity) -> None:
+    if arguments.resume:
+        if not output.exists():
+            raise FileNotFoundError("--resume names a missing O1 run directory")
+    elif output.exists():
+        raise FileExistsError("new O1 evidence directory already exists: " + str(output))
+    else:
+        output.mkdir(parents=True)
+    replace_state_atomic(
+        output / "state.json",
+        {"status": "running", "command": arguments.command},
+        identity.to_dict(),
+    )
+
+
+def _load_or_write_shard(
+    path: Path,
+    schema: str,
+    identity: RunIdentity,
+    compute,
+):
+    existing = load_valid_shard(path, identity, schema)
+    if existing is not None:
+        return existing["result"]
+    result = compute()
+    write_shard(path, {"schema": schema, "result": result}, identity)
+    return result
+
+
+def _write_json(path: Path, payload: Mapping[str, object]) -> None:
+    write_new_atomic_text(
+        path,
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+    )
+
+
+def _require_artifacts(output: Path, required) -> None:
+    missing = sorted(name for name in required if not (output / name).is_file())
+    if missing:
+        raise RuntimeError("O1 required artifacts are missing: " + ", ".join(missing))
 
 
 def parse_arguments(arguments=None):
@@ -216,6 +298,7 @@ def parse_arguments(arguments=None):
         command.add_argument("--memory-warmup-windows", type=int, required=True)
         command.add_argument("--memory-measure-windows", type=int, required=True)
         command.add_argument("--output", required=True)
+        command.add_argument("--resume")
 
     gate = commands.add_parser("gate")
     add_common(gate)
@@ -237,6 +320,8 @@ def parse_arguments(arguments=None):
             parser.error("--failed-gate-summary must be readable JSON")
         if failed.get("gate_pass") is not False:
             parser.error("H4 diagnosis requires a failed normal Gate summary")
+    if parsed.resume and Path(parsed.resume).resolve() != Path(parsed.output).resolve():
+        parser.error("--resume must name the same immutable run directory as --output")
     frozen = {
         "workers": 12, "repeats": 5, "warmup_vector_steps": 16,
         "measure_vector_steps": 128, "memory_warmup_windows": 2,
@@ -495,24 +580,31 @@ def analyze_memory_rows(rows):
 
 
 def _write_csv(path, rows):
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
+    stream = io.StringIO(newline="")
+    writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+    writer.writeheader()
+    writer.writerows(rows)
+    write_new_atomic_text(path, stream.getvalue())
 
 
 def run_gate(arguments):
-    config_path, output, common = _prepare_benchmark(arguments)
+    config_path, output, common, identity = _prepare_benchmark(arguments)
+    _initialize_run_directory(output, arguments, identity)
     runtime_rows, branch_rows = [], []
     for mode in arguments.modes:
         for repeat in range(arguments.repeats):
-            result = _spawn(_runtime_child, {
-                "config": str(config_path), "mode": mode,
-                "workers": arguments.workers,
-                "warmup": arguments.warmup_vector_steps,
-                "measure": arguments.measure_vector_steps,
-                "scratch": str(output / "scratch" / f"{mode}_{repeat}"),
-            })
+            result = _load_or_write_shard(
+                output / "shards" / f"runtime_{mode}_{repeat:02d}.json",
+                "o1-runtime-shard-v1",
+                identity,
+                lambda mode=mode, repeat=repeat: _spawn(_runtime_child, {
+                    "config": str(config_path), "mode": mode,
+                    "workers": arguments.workers,
+                    "warmup": arguments.warmup_vector_steps,
+                    "measure": arguments.measure_vector_steps,
+                    "scratch": str(output / "scratch" / f"{mode}_{repeat}"),
+                }),
+            )
             runtime_rows.append({
                 **common, "mode": mode,
                 "horizon": 0 if mode == "baseline" else BenchmarkConfig(mode).horizon,
@@ -531,13 +623,18 @@ def run_gate(arguments):
                 "teacher_objects": result["teacher_objects"],
                 "teacher_cache_entries": result["teacher_cache_entries"],
             })
-    memory = _spawn(_memory_child, {
-        "config": str(config_path), "workers": arguments.workers,
-        "warmup_windows": arguments.memory_warmup_windows,
-        "measure_windows": arguments.memory_measure_windows,
-        "window_steps": arguments.measure_vector_steps,
-        "scratch": str(output / "scratch" / "memory_h12"),
-    })
+    memory = _load_or_write_shard(
+        output / "shards" / "memory_h12.json",
+        "o1-memory-shard-v1",
+        identity,
+        lambda: _spawn(_memory_child, {
+            "config": str(config_path), "workers": arguments.workers,
+            "warmup_windows": arguments.memory_warmup_windows,
+            "measure_windows": arguments.memory_measure_windows,
+            "window_steps": arguments.measure_vector_steps,
+            "scratch": str(output / "scratch" / "memory_h12"),
+        }),
+    )
     memory_rows = [
         {
             **common,
@@ -571,28 +668,38 @@ def run_gate(arguments):
     _write_csv(output / "runtime.csv", runtime_rows)
     _write_csv(output / "memory.csv", memory_rows)
     _write_csv(output / "branch_objects.csv", branch_rows)
-    (output / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
-    )
-    (output / "summary.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    _write_json(output / "manifest.json", manifest)
+    _write_json(output / "summary.json", summary)
+    if summary["gate_pass"]:
+        _require_artifacts(output, REQUIRED_ARTIFACTS)
+        write_o1_gate_receipt(summary, identity, output / "o1_gate_receipt.json")
+    replace_state_atomic(
+        output / "state.json",
+        {"status": "complete", "gate_pass": summary["gate_pass"]},
+        identity.to_dict(),
     )
     return summary
 
 
 def run_diagnostic(arguments):
     """Run isolated H4 diagnostics without producing a new Gate decision."""
-    config_path, output, common = _prepare_benchmark(arguments)
+    config_path, output, common, identity = _prepare_benchmark(arguments)
+    _initialize_run_directory(output, arguments, identity)
     runtime_rows, branch_rows = [], []
     for repeat in range(arguments.repeats):
-        result = _spawn(_runtime_child, {
-            "config": str(config_path),
-            "mode": "h4",
-            "workers": arguments.workers,
-            "warmup": arguments.warmup_vector_steps,
-            "measure": arguments.measure_vector_steps,
-            "scratch": str(output / "scratch" / f"h4_{repeat}"),
-        })
+        result = _load_or_write_shard(
+            output / "shards" / f"runtime_h4_{repeat:02d}.json",
+            "o1-h4-diagnostic-shard-v1",
+            identity,
+            lambda repeat=repeat: _spawn(_runtime_child, {
+                "config": str(config_path),
+                "mode": "h4",
+                "workers": arguments.workers,
+                "warmup": arguments.warmup_vector_steps,
+                "measure": arguments.measure_vector_steps,
+                "scratch": str(output / "scratch" / f"h4_{repeat}"),
+            }),
+        )
         runtime_rows.append({
             **common,
             "mode": "h4",
@@ -631,11 +738,12 @@ def run_diagnostic(arguments):
     }
     _write_csv(output / "runtime.csv", runtime_rows)
     _write_csv(output / "branch_objects.csv", branch_rows)
-    (output / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
-    )
-    (output / "summary.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    _write_json(output / "manifest.json", manifest)
+    _write_json(output / "summary.json", summary)
+    replace_state_atomic(
+        output / "state.json",
+        {"status": "complete", "diagnostic_only": True},
+        identity.to_dict(),
     )
     return summary
 

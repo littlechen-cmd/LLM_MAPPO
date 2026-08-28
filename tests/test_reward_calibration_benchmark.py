@@ -66,6 +66,23 @@ def test_h4_diagnostic_requires_a_failed_normal_gate(tmp_path):
     assert arguments.command == "diagnose-h4"
 
 
+def test_normal_gate_accepts_only_an_explicit_matching_resume_directory(tmp_path):
+    run_dir = tmp_path / "run"
+    arguments = parse_arguments(
+        [
+            "gate", "--config", "configs/optimization/o1_reward_calibration_smoke.yaml",
+            "--preflight-report", str(tmp_path / "preflight.json"),
+            "--environment-report", str(tmp_path / "environment.json"),
+            "--modes", "baseline", "h12", "--workers", "12", "--repeats", "5",
+            "--warmup-vector-steps", "16", "--measure-vector-steps", "128",
+            "--memory-warmup-windows", "2", "--memory-measure-windows", "10",
+            "--output", str(run_dir), "--resume", str(run_dir),
+        ]
+    )
+
+    assert arguments.resume == str(run_dir)
+
+
 def test_gate_requires_all_frozen_artifacts():
     assert REQUIRED_ARTIFACTS == {
         "manifest.json", "runtime.csv", "memory.csv",

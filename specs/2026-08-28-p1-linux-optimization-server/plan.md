@@ -164,15 +164,15 @@
 - `write_o1_gate_receipt(summary, identity, path) -> Mapping` writes only for Gate Go.
 - `verify_o1_gate_receipt(path, expected_identity) -> Mapping` is the future O2 boundary.
 
-- [ ] Write failing tests for atomic no-overwrite, controlled `state.json` replacement,
+- [x] Write failing tests for atomic no-overwrite, controlled `state.json` replacement,
   partial `.tmp`, interrupted repeat reuse, contaminated-shard exclusion, hash mismatch,
   corrupt shard, the exact infrastructure allowlist, algorithm non-resume and receipt rejection.
-- [ ] Run focused tests and confirm failure before implementing evidence helpers.
-- [ ] Implement evidence helpers and migrate each runtime repeat/memory window to an atomic
+- [x] Run focused tests and confirm failure before implementing evidence helpers.
+- [x] Implement evidence helpers and migrate each runtime repeat/memory window to an atomic
   shard; aggregation must be deterministic by mode/repeat/window index.
-- [ ] Add `--resume <run_dir>`; require identical identity and preserve prior failure logs.
-- [ ] Emit receipt only after both gates pass and all required artifacts validate.
-- [ ] Run focused tests, an injected interruption/resume smoke, Flake8 and `git diff --check`.
+- [x] Add `--resume <run_dir>`; require identical identity and preserve prior failure logs.
+- [x] Emit receipt only after both gates pass and all required artifacts validate.
+- [x] Run focused tests, an injected interruption/resume smoke, Flake8 and `git diff --check`.
 - [ ] Commit with subject `feat: make O1 gate evidence resumable`.
 
 ## Task group P1-F — Owner-started wait-to-O1 launcher and O2 handoff
