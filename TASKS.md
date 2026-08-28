@@ -6,7 +6,7 @@
 
 ## 执行边界
 
-- 研究所有者：批准架构、路线决策与正式协议；在 A600 启动全部长训练、长评估和长回放；push；
+- 研究所有者：批准架构、路线决策与正式协议；在批准的服务器启动全部长训练、长评估和长回放；push；
 - Codex：总体推进与核心架构、优化路线实现、跨路线一致性、命令准备和结果分析；
 - 项目工程师 AI：稳定路线 S1/S2 实现、短验证、命令准备和结果分析；不得修改宪章或自行通过 Gate；
 - `codex/optimization` 与 `codex/stable` 共享修复只能通过明确、可追溯、已测试的 commit 合并，
@@ -31,6 +31,20 @@
   `docs/handoffs/stable-route-engineer.md`。本地 `master`、`codex/optimization` 与
   `codex/stable` 按 P0 最终 commit 同 SHA 落位。
 
+## P1 — 优化路线 Linux 服务器执行基础设施（规格已批准）
+
+唯一规格：`specs/2026-08-28-p1-linux-optimization-server/`
+
+- [ ] **P1-A** 同步宪章、Roadmap、协议、manifest、TASKS 与术语，修复 O1 状态误写；
+- [ ] **P1-B** 冻结并验证用户级 Python 3.10.19、Torch 2.10.0+cu128 与依赖约束；
+- [ ] **P1-C** 实现机器 inventory、五次连续空闲预检、48 小时等待与 GPU lease；
+- [ ] **P1-D** 将正常 O1 Gate 修正为 baseline/H12，并把 H4 隔离为失败后诊断；
+- [ ] **P1-E** 实现原子 shard、显式 resume、失败分类与 O1 Go receipt；
+- [ ] **P1-F** 实现 owner-started tmux wait-to-O1 launcher，不启动或伪造 O2；
+- [ ] **P1-G** 完成本地全回归并交付唯一 Linux 安装和短 CUDA smoke 命令；
+- [ ] **P1-H** 研究所有者运行 Linux 短 smoke，Codex 审核后验收 P1；随后必须运行 O1 Gate，
+  O1 Go 后立即进入 O2，设备占用不得用于跳过 Gate。
+
 ## O0 — 优化路线 A* 教师算法与架构重设计（已完成）
 
 唯一规格：`specs/2026-08-24-o0-astar-teacher-redesign/`
@@ -43,17 +57,18 @@
 - [x] 建立并版本化唯一 canonical architecture，完成输入映射与跨文档一致性审计；
 - [x] 取得研究所有者书面批准；批准前未实施代码或训练。
 
-## O1 — 优化路线角色对齐实现与静态验证（等待 A600 门禁）
+## O1 — 优化路线角色对齐实现与静态验证（等待 P1 与 Linux CUDA Gate）
 
 - [x] 仅实现 O0 批准方案，遵循测试先行；
 - [x] 通过教师纯度、action mask、零有效样本、buffer/KL、checkpoint 与完整回归；
 - [x] 通过短 smoke，确认目标/优先级/充电改写、协调器污染和非法动作概率质量均为 0；
 - [x] 不启动训练、长评估或 KL 超参数搜索；
-- [x] Codex 冻结并验证 owner-only A600 runtime/memory gate runner 与产物 schema；
+- [x] Codex 已冻结旧 owner-only CUDA runtime/memory gate runner 与产物 schema；P1 负责 Linux 修订；
+- [ ] P1 Linux 环境、资源预检、GPU 绑定与短 CUDA smoke 通过；
 - [ ] 按资源修订将常规门禁改为 `baseline/H12`，保留 5 repeats、10 memory windows 与原阈值；
   H4 仅在 H12 失败后作为诊断，不参与正常 Go；
 - [ ] 将 O1 门禁作为 O2 owner job 的 fail-fast 前缀，产物和 Gate 状态仍保持独立；
-- [ ] 研究所有者在 A600 启动作业，Codex 审核 O1 结果后才允许同一作业进入 O2。
+- [ ] 研究所有者在 Linux 优化服务器启动等待型作业，Codex 审核 O1 结果后才允许进入 O2。
 
 ## O2 — 优化路线校准训练与 Go/No-Go
 
@@ -68,7 +83,7 @@
 
 ## O3 — 优化路线真正未见拓扑
 
-- [x] 重排依赖：O3 结构工作可与 O1 A600 门禁并行，O2 仍被 O1 阻塞；
+- [x] 重排依赖：O3 结构工作曾与 O1 服务器门禁等待并行，O2 仍被 O1 阻塞；
 - [x] 按唯一规格 `specs/2026-08-26-o3-unseen-topologies/` 从零设计窄通道和中央
   瓶颈/交叉通道两个 evaluation-only 拓扑；
 - [x] 冻结显式地图/坐标合同、哈希、环境 ID、接口和防泄漏协议；
@@ -87,7 +102,7 @@
 
 ## S2 — 稳定路线决策前预备训练（可选）
 
-- [ ] 仅在 S1 通过、优化路线仍处 O1–O3 且 A600 空闲时启动；
+- [ ] 仅在 S1 通过、优化路线仍处 O1–O3 且研究所有者批准的服务器空闲时启动；
 - [ ] 使用预声明非正式 seed，产物写入 `artifacts/stable/predecision/`；
 - [ ] 结果不参与 D1、不进入最终统计；若最终选择稳定路线，E2 必须从头正式运行。
 
@@ -110,7 +125,7 @@
 
 ## E2 — 正式训练与独立评估
 
-- [ ] 研究所有者在 A600 运行全部长任务，所选路线产物写入其隔离目录；
+- [ ] 研究所有者在批准的服务器运行全部长任务，所选路线产物写入其隔离目录；
 - [ ] 正式必需评估固定在 canonical core topology 使用 `200–209 × 20`、确定性动作和 final
   checkpoint；
 - [ ] 仅当 E1 已预先选择执行时，完整运行并报告 O3 探索矩阵；不设最低性能阈值，不得按结果

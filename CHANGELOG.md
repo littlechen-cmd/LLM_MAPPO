@@ -3,6 +3,12 @@
 This file records meaningful project engineering and experiment-governance
 changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
+## 2026-08-28
+
+- Added: The approved P1 specification freezes the optimization route's Ubuntu
+  Python/CUDA environment, shared-server preflight, GPU binding and lease, baseline/H12
+  O1 Gate, diagnostic-only H4 path, resumable evidence, and mandatory P1→O1→O2 order.
+
 ## 2026-08-27
 
 - Validated: The project owner approved O3 topology/interface readiness after a fresh

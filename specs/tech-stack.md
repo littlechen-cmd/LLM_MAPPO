@@ -2,17 +2,20 @@
 
 ## 语言与运行环境
 
-- Python 3.10；项目必须始终使用已有 `py310` 环境；
-- 唯一规范 Python 解释器为 `D:\Anaconda3\envs\py310\python.exe`；所有 Python
-  命令、测试、脚本与训练必须直接调用该解释器，不依赖 `python` 已加入 `PATH`，也不要求
-  `conda activate py310`；
-- 禁止为本项目创建、重建、升级或修改虚拟环境；
+- Python 3.10；Windows 与 Linux 分别使用冻结的项目专属环境；
+- Windows canonical interpreter 为 `D:\Anaconda3\envs\py310\python.exe`；Linux 优化路线
+  canonical interpreter 为 `/home/lzx/.conda/envs/llm-a-mappo-py310/bin/python`；所有命令直接
+  调用对应绝对路径，不依赖 `python` 在 `PATH`，也不要求 `conda activate`；
+- Windows 已有 `py310` 禁止修改；Linux 只允许研究所有者按 P1 runbook 在用户目录一次性创建
+  Python 3.10.19 prefix，禁止修改 `/opt/miniconda3` 共享 base；
 - UTF-8、LF、四空格缩进，最大行长 89；
 - 本地 Intel i5、无独显 Huawei MateBook 用于文档、代码开发、静态检查、确定性测试和短
   smoke；
-- A600 服务器用于 O1 CUDA runtime/memory 门、O2 校准训练、正式长训练和研究所有者决定放在
-  服务器执行的正式长评估；O3、E1 短验证、标签处理和统计绘图必须在 MateBook/CPU 完成。
-  所有服务器任务仍只由研究所有者人工启动。
+- 优化路线服务器为 Ubuntu 22.04.5、双路 EPYC 7542、128 GB RAM、RTX 4090 49140 MiB
+  与 RTX 4080 SUPER 16376 MiB；O1/O2 canonical physical GPU 固定为 index 0 的 RTX 4090；
+- P1 只服务优化路线。目标 GPU 必须通过共享服务器预检与项目 GPU lease；不得抢占、终止或
+  隐藏其他用户进程。O1 Gate、O2、正式长训练和长评估仍只由研究所有者在 tmux 中人工启动；
+- O3、E1 短验证、标签处理和统计绘图仍在 MateBook/CPU 完成。
 
 选择理由：保持现有项目和历史 checkpoint 的兼容性，避免在论文后期引入无关运行时迁移。
 
@@ -122,8 +125,8 @@ Phase P0 已完成，双路线从同一已验证 P0 commit 建立。历史落位
 
 ## 角色与权限
 
-- 研究所有者（用户）：最终批准架构、路线选择、正式协议和论文主张；在 A600 上运行所有长
-  训练与长评估；发布 Git 变更；
+- 研究所有者（用户）：最终批准架构、路线选择、正式协议和论文主张；在批准的服务器上运行
+  所有长训练与长评估；发布 Git 变更；
 - 执行项目负责人兼核心架构师（Codex）：维护总体推进方向，负责优化路线实现、跨路线一致性
   审查、实验命令准备和结果分析；不代替研究所有者启动长任务；
 - 项目工程师 AI：负责稳定路线实现、短验证、实验命令准备和结果分析；不得自行修改宪章、

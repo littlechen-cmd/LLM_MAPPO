@@ -18,13 +18,13 @@
 |---|---|---|---|
 | Phase（阶段） | 一组目标相同、按顺序推进的工作。 | Roadmap 中具有明确范围、前置条件和验收标准的工作单元。 | 例如 O1 负责角色对齐实现，O3 负责未见拓扑就绪。 |
 | Task Group（任务组） | 一个阶段中可以独立检查的一批小任务。 | feature spec 的可提交、可验证实施单元。 | O3-B 完成地图设计并在人工预览门暂停。 |
-| Gate（门禁） | 必须通过的检查点；没通过就不能继续依赖它的工作。 | 预注册的阶段转换条件，包含输入证据、阈值与失败处理。 | O1 A600 runtime/memory gate 未通过时，O2 不能启动。 |
+| Gate（门禁） | 必须通过的检查点；没通过就不能继续依赖它的工作。 | 预注册的阶段转换条件，包含输入证据、阈值与失败处理。 | O1 Linux CUDA runtime/memory gate 未通过时，O2 不能启动。 |
 | Go/No-Go | “可以继续”或“必须停止/返回修改”。 | 根据预注册验收标准作出的二元阶段决策。 | 避免看到结果后临时降低标准。 |
 | Canonical（规范版本） | 当前唯一被认可、大家都应引用的版本。 | 项目中作为权威来源的冻结实现、配置或文档。 | canonical architecture 是方法合同的唯一权威描述。 |
 | Contract（合同） | 事先约定不能随意改变的规则。 | 对输入、输出、参数、行为、数据和失败策略的可验证约束集合。 | `H=12`、能源参数、seed 和 Teacher 边界都是合同。 |
 | Freeze（冻结） | 确认后不再根据结果修改。 | 在指定 commit/版本上固定配置、数据、代码或协议。 | O3 地图批准后不能因为表现太难而换图。 |
 | Preregistration（预注册） | 在看结果前先写清楚怎么做、怎么看。 | 在实验结果生成前固定假设、对照、指标、统计和失败规则。 | 防止按结果挑 seed、阈值或对照组。 |
-| Roadmap（路线图） | 项目各阶段和依赖关系的总览。 | 描述 phase 状态、前置依赖与交付顺序的治理文档。 | 当前允许 O3 与等待 A600 的 O1 并行，但 O2 仍被阻塞。 |
+| Roadmap（路线图） | 项目各阶段和依赖关系的总览。 | 描述 phase 状态、前置依赖与交付顺序的治理文档。 | 当前 P1 是 O1 Linux Gate 和 O2 的服务器基础设施前置。 |
 | Feature Spec（功能规格） | 实施前写清楚“做什么、怎么做、如何验收”。 | 由 requirements、plan、validation 三个文件组成的阶段级规范。 | O3 唯一规格位于 `specs/2026-08-26-o3-unseen-topologies/`。 |
 | Evidence（证据） | 用来证明任务确实完成的文件或结果。 | 可追溯到 commit、配置和命令的测试、日志、哈希、统计或人工批准记录。 | 不能只写“测试通过”，要记录具体命令和结果。 |
 | Manifest（清单） | 记录一次实验或环境到底用了什么。 | 机器可读的配置、版本、hash、seed、设备和产物索引。 | O3 manifest 将固定地图 ID、双哈希和结构证书。 |
@@ -71,7 +71,7 @@
 | Confound（混杂因素） | 除研究因素外同时变化、让结果难以解释的东西。 | 与处理因素和结果同时相关、破坏因果归因的额外差异。 | 把 stations 从 8 改成 5 会让拓扑效果与充电资源效果混在一起。 |
 | Baseline（基线） | 用来回答“相比什么更好”的参照方法。 | 与候选方法共享核心实验合同的比较组。 | MAPPO-DG 是无教师主基线，Fixed-KD 是 RC-KD 的直接对照。 |
 | Runtime Overhead（运行开销） | 新机制让程序慢了多少。 | 相对基线的执行时间增量，常用 ratio 表示。 | O1 要求 H12/baseline 中位运行时间倍数不超过 3。 |
-| Persistent Memory Growth（持续内存增长） | 程序越跑越占内存，可能存在对象没释放。 | 跨固定窗口呈持续上升趋势且超过预注册绝对/相对阈值的内存增长。 | O1 A600 gate 检查 CPU/GPU 内存和 branch/cache 对象。 |
+| Persistent Memory Growth（持续内存增长） | 程序越跑越占内存，可能存在对象没释放。 | 跨固定窗口呈持续上升趋势且超过预注册绝对/相对阈值的内存增长。 | O1 Linux CUDA gate 检查 CPU/GPU 内存和 branch/cache 对象。 |
 | Spearman ρ | 看一个量是否总体持续上升，而不要求线性增长。 | 基于秩的单调相关系数，范围 `[-1,1]`。 | O1 用 `ρ>=0.80` 辅助判定内存是否单调增长。 |
 | Checkpoint | 某个训练时刻保存的模型状态。 | 模型、优化器及训练元数据的版本化快照。 | 正式比较统一使用 final checkpoint，不能挑最好的一次。 |
 | Final Checkpoint | 训练预算结束时的模型。 | 在预注册最终训练步保存的 checkpoint。 | 避免根据评估结果挑选中间模型。 |
@@ -122,7 +122,22 @@
 | ShuffleKD-v3 | 故意打乱状态和标签对应关系。 | 在场景分层内对三维联合标签做无 fixed-point 确定性置换。 | 检验语义标签与具体状态对应是否重要。 |
 | NoOOD-v1 | 不按分布外程度降低 LLM 标签权重。 | 对有效 LLM record 固定 `OOD reliability=1`。 | 诊断 OOD reliability 的作用。 |
 
-## 6. 术语维护规则
+## 6. Linux 服务器执行与资源隔离
+
+| 术语 | 通俗解释 | 专业定义 | 本项目中的作用 |
+|---|---|---|---|
+| Conda Prefix | 放在用户目录里的独立 Python 工具箱。 | 以绝对路径创建、无需激活即可调用的 Conda environment prefix。 | Linux 使用 `/home/lzx/.conda/envs/llm-a-mappo-py310`，不修改共享 base。 |
+| Physical GPU Index | 服务器硬件清单里的显卡编号。 | `nvidia-smi` 在宿主机上给设备分配的 index。 | O1/O2 固定使用 physical GPU 0 的 RTX 4090。 |
+| Logical GPU Index | 某个进程实际能看到的显卡编号。 | 经过 visibility mask 后 CUDA runtime 重新编号的 device ordinal。 | 绑定 physical 0 后，训练进程内部仍写 `cuda:0`。 |
+| `CUDA_VISIBLE_DEVICES` | 告诉程序“只准看哪张显卡”。 | 在 CUDA 初始化前限定可见 physical devices 的环境变量。 | 防止训练误跑到 4080 或占用两张卡。 |
+| Preflight（资源预检） | 开工前检查机器、显卡、内存和磁盘是否真的可用。 | 在产生训练副作用前验证硬件身份、占用、版本、容量和 Git 状态的门禁。 | 其他用户占用 GPU 时返回 No-Go，不抢占资源。 |
+| GPU Lease | 本项目给目标显卡加的一把协作锁。 | 由 `fcntl.flock` 持有的进程生命周期文件锁。 | 防止本项目自己的两个 launcher 同时使用 GPU 0；不能代替外部进程检查。 |
+| Wait-to-run | 先等待资源，满足条件后再执行。 | 按冻结周期采样并要求连续通过，超时即失败的 owner-started orchestration。 | 服务器长期占用时仍能等待执行 O1，但不能降低门槛。 |
+| tmux | SSH 断线后仍能保留命令会话的工具。 | 服务器端 terminal multiplexer。 | owner 手动启动等待或长任务后可以安全断开 SSH。 |
+| Atomic Write（原子写入） | 文件要么完整出现，要么保持旧状态。 | 临时文件 flush/fsync 后以原子 rename/replace 提交。 | 避免断电或中断留下看似正式但不完整的 CSV/JSON。 |
+| Explicit Resume（显式恢复） | 只有明确要求且身份完全一致才续跑。 | 校验 code/config/machine/environment hash 后复用完整 shard 的恢复协议。 | 基础设施中断可恢复，算法失败不能被静默覆盖。 |
+
+## 7. 术语维护规则
 
 1. 方案、任务包或实验协议首次出现研究所有者可能不熟悉的概念时，先更新本文档；
 2. 同一概念只保留一个 canonical 名称；旧称必须标注弃用或历史范围；
