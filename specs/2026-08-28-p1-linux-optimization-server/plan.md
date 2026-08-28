@@ -218,14 +218,14 @@
 - Produces a literal owner installation command block and one short CUDA smoke command;
   does not claim either was run.
 
-- [ ] Run all P1 focused tests, full pytest, full Flake8, every affected CLI `--help`, all
+- [x] Run all P1 focused tests, full pytest, full Flake8, every affected CLI `--help`, all
   YAML/JSON parsers, package build, static secret/process-control/A600 scans and
   `git diff --check`.
-- [ ] Audit the diff against frozen algorithm, environment, reward, energy, teacher, seed,
+- [x] Audit the diff against frozen algorithm, environment, reward, energy, teacher, seed,
   worker, threshold and budget files; record exact changed-file classification.
-- [ ] Write the validation report with commit, commands, results, known risks and prohibited
+- [x] Write the validation report with commit, commands, results, known risks and prohibited
   claims; update TASKS/CHANGELOG without marking P1 complete.
-- [ ] Commit with subject `test: validate P1 Linux runner locally`.
+- [x] Commit with subject `test: validate P1 Linux runner locally`.
 - [ ] Stop and deliver only the environment-install and P1 smoke commands to the owner.
 
 ## Task group P1-H — Owner Linux smoke evidence and P1 decision

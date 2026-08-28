@@ -35,13 +35,13 @@
 
 唯一规格：`specs/2026-08-28-p1-linux-optimization-server/`
 
-- [ ] **P1-A** 同步宪章、Roadmap、协议、manifest、TASKS 与术语，修复 O1 状态误写；
-- [ ] **P1-B** 冻结并验证用户级 Python 3.10.19、Torch 2.10.0+cu128 与依赖约束；
-- [ ] **P1-C** 实现机器 inventory、五次连续空闲预检、48 小时等待与 GPU lease；
-- [ ] **P1-D** 将正常 O1 Gate 修正为 baseline/H12，并把 H4 隔离为失败后诊断；
-- [ ] **P1-E** 实现原子 shard、显式 resume、失败分类与 O1 Go receipt；
-- [ ] **P1-F** 实现 owner-started tmux wait-to-O1 launcher，不启动或伪造 O2；
-- [ ] **P1-G** 完成本地全回归并交付唯一 Linux 安装和短 CUDA smoke 命令；
+- [x] **P1-A** 同步宪章、Roadmap、协议、manifest、TASKS 与术语，修复 O1 状态误写；
+- [x] **P1-B** 冻结并验证用户级 Python 3.10.19、Torch 2.10.0+cu128 与依赖约束；
+- [x] **P1-C** 实现机器 inventory、五次连续空闲预检、48 小时等待与 GPU lease；
+- [x] **P1-D** 将正常 O1 Gate 修正为 baseline/H12，并把 H4 隔离为失败后诊断；
+- [x] **P1-E** 实现原子 shard、显式 resume、失败分类与 O1 Go receipt；
+- [x] **P1-F** 实现 owner-started tmux wait-to-O1 launcher，不启动或伪造 O2；
+- [x] **P1-G** 完成本地全回归并交付唯一 Linux 安装和短 CUDA smoke 命令；
 - [ ] **P1-H** 研究所有者运行 Linux 短 smoke，Codex 审核后验收 P1；随后必须运行 O1 Gate，
   O1 Go 后立即进入 O2，设备占用不得用于跳过 Gate。
 

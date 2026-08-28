@@ -82,7 +82,8 @@ git status --short
 
 ## 7. Owner-run Linux smoke
 
-P1-G must generate the literal commands after implementation. P1-H requires the owner to run:
+P1-G has generated the literal commands in
+`docs/runbooks/p1-linux-short-smoke.md`. P1-H requires the owner to run:
 
 1. environment creation and verification;
 2. one-shot occupied-resource No-Go evidence if GPU 0 is busy;

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-28
+
+- Validated: P1-A through P1-G pass local cross-platform regression, Flake8, CLI, YAML,
+  package-build and active-runtime safety audits; P1 remains in progress pending owner Linux
+  environment and GPU smoke evidence.
+- Added: A literal, owner-only P1 short-smoke runbook captures read-only preflight, five-sample
+  eligibility, CUDA logical-device binding, a 128-step functional smoke and artifact hashes
+  without starting O1 or O2.
+
 This file records meaningful project engineering and experiment-governance
 changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
