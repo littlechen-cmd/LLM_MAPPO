@@ -130,17 +130,17 @@
 - Normal result contains `runtime_gate_pass`, `memory_gate_pass`, and `gate_pass`;
   diagnostic result contains `diagnostic_only=true` and no Gate decision field.
 
-- [ ] Replace parser expectations in tests first: normal baseline/H12 accepted; H4 in normal
+- [x] Replace parser expectations in tests first: normal baseline/H12 accepted; H4 in normal
   mode, wrong order, wrong workers/windows, CPU config, absent preflight receipt and wrong
   CUDA binding rejected; diagnostic requires a real failed normal summary.
-- [ ] Run focused tests and confirm the current baseline/H4/H12 parser fails them.
-- [ ] Split normal and diagnostic argument parsing without changing horizon, worker, repeat,
+- [x] Run focused tests and confirm the current baseline/H4/H12 parser fails them.
+- [x] Split normal and diagnostic argument parsing without changing horizon, worker, repeat,
   window or threshold calculations.
-- [ ] Validate preflight/config/code/environment hashes before creating the output directory;
+- [x] Validate preflight/config/code/environment hashes before creating the output directory;
   force the benchmark child config to `device: cuda` and logical `cuda:0`.
-- [ ] Extend manifest rows with physical index, UUID, PCI, GPU memory, driver, CPU/RAM,
+- [x] Extend manifest rows with physical index, UUID, PCI, GPU memory, driver, CPU/RAM,
   environment-freeze hash and preflight hash.
-- [ ] Run benchmark tests, optimization smoke tests, Flake8 and CLI help; confirm H4 cannot
+- [x] Run benchmark tests, optimization smoke tests, Flake8 and CLI help; confirm H4 cannot
   produce or mutate a Go result.
 - [ ] Commit with subject `fix: align O1 Linux CUDA gate contract`.
 

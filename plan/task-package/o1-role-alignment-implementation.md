@@ -41,7 +41,7 @@ O0-G. Do not choose an alternative locally.
   Roadmap O1 complete until the architect reviews all evidence.
 - After each group, run `git diff --check`, record exact validation results, create one
   focused local commit, and stop for architect approval. Do not push or merge.
-- Long A600 work is owner-only. The implementation must prepare the frozen command and
+- Long Linux server work is owner-only. The implementation must prepare the frozen command and
   output schema, but the implementing agent must not run it.
 
 ## 2. Frozen module and interface map
@@ -351,20 +351,26 @@ git status --short
 3. Produce the owner handoff: task IDs, changed files, exact commands/results, smoke
    artifact path, unresolved checks, known risks, prohibited claims, commit IDs and
    worktree status.
-4. Stop. O1 cannot pass until the owner supplies the A600 benchmark artifact and the
+4. Stop. O1 cannot pass until the owner supplies the Linux benchmark artifact and the
    architect evaluates both runtime and persistent-memory gates.
 
-## 11. Owner-only A600 runtime/memory gate
+## 11. Owner-only Linux CUDA runtime/memory gate
 
-The owner runs exactly the following after O1 local validation. Do not substitute a
-local laptop result or silently change workers, repetitions, horizon or windows:
+After P1 is accepted, the owner uses the P1 wait-to-Gate launcher rather than this
+historical Windows command. The launcher fixes `CUDA_VISIBLE_DEVICES=0`, waits for the
+shared-server preflight, and then invokes the normal Gate below with its generated
+preflight and environment reports. Do not substitute a local laptop result or silently
+change workers, repetitions, horizon or windows:
 
-```powershell
-& "D:\Anaconda3\envs\py310\python.exe" scripts/benchmark_reward_calibration.py `
-  --config configs/optimization/o1_reward_calibration_smoke.yaml `
-  --modes baseline h12 --workers 12 --repeats 5 `
-  --warmup-vector-steps 16 --measure-vector-steps 128 `
-  --memory-warmup-windows 2 --memory-measure-windows 10 `
+```bash
+export CUDA_VISIBLE_DEVICES=0
+/home/lzx/.conda/envs/llm-a-mappo-py310/bin/python scripts/benchmark_reward_calibration.py gate \
+  --config configs/optimization/o1_reward_calibration_smoke.yaml \
+  --preflight-report artifacts/optimization/p1_linux_server/preflight_<timestamp>.json \
+  --environment-report artifacts/optimization/p1_linux_server/environment_report.json \
+  --modes baseline h12 --workers 12 --repeats 5 \
+  --warmup-vector-steps 16 --measure-vector-steps 128 \
+  --memory-warmup-windows 2 --memory-measure-windows 10 \
   --output artifacts/optimization/o1_reward_calibration_gate
 ```
 
@@ -378,12 +384,11 @@ no persistent memory growth above `max(64 MiB,5%)` with Spearman `rho>=0.80`, an
 monotonic branch/cache object growth. Any failure is O1 No-Go and returns to O0;
 H12 may not be shortened.
 
-The O1 gate is the fail-fast prefix of the owner O2 job. The orchestrator may launch
-O2 only after reading an independently written passing O1 `summary.json`; O1 and O2
-must keep separate directories, manifests and exit states. If baseline/H12 fails, H4
-may be run afterward with `--modes h4` into
-`artifacts/optimization/o1_reward_calibration_h4_diagnostic`, but it cannot change the
-failed Gate. After any approved fix, baseline/H12 must be rerun in full.
+O1 and O2 keep separate directories, manifests and exit states. O2 may only begin after
+an independently written passing O1 receipt. If baseline/H12 fails, H4 may be run by
+`diagnose-h4` afterward into `artifacts/optimization/o1_reward_calibration_h4_diagnostic`,
+but it cannot change the failed Gate. After any approved fix, baseline/H12 must be rerun
+in full.
 
 ### 11.1 Resource-replan implementation amendment (pending)
 
@@ -408,4 +413,4 @@ literal, not “passed locally”.
 | O1-E | `tests/test_shadow_state.py tests/test_reward_calibration.py` | included in 223-test regression | `d5c62d1` | approved before O1-F |
 | O1-F | 14 focused runner/training/calibration tests | 128-step smoke: 4 updates, 18 calibration calls, planner queries 0 | `7c73626`, `bb403b5` | approved to prepare runner |
 | O1-G local | `223 passed in 49.48s` | Flake8, CLI help, purity search and `git diff --check` passed | `bb403b5` | owner handoff ready |
-| Owner A600 gate | owner-run pending | owner-run pending | artifact hash pending | pending |
+| Owner Linux CUDA gate | owner-run pending | owner-run pending | artifact hash pending | pending |

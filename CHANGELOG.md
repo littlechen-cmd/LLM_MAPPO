@@ -5,6 +5,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-28
 
+- Changed: P1-D makes the normal O1 Linux CUDA Gate baseline/H12-only, isolates H4 as a
+  failed-Gate diagnostic, and binds evidence to GPU 0, CUDA visibility, preflight and environment reports.
 - Added: P1-C provides fail-closed Linux server inventory, five-sample/48-hour resource
   preflight, project-only GPU lease, immutable artifact writes, and read-only CLI modes.
 - Added: P1-B freezes the Linux Python 3.10.19/cu128 dependency contract, a read-only

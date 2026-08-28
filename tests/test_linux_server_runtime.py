@@ -67,6 +67,7 @@ def test_inventory_maps_uuid_and_external_compute_pid():
 
     assert [gpu.physical_index for gpu in gpus] == [0, 1]
     assert gpus[0].compute_pids == (8123,)
+    assert gpus[0].driver_version == "580.173.02"
     assert gpus[1].compute_pids == ()
 
 

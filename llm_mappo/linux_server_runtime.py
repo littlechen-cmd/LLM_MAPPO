@@ -28,6 +28,7 @@ class GpuInfo:
     total_memory_mib: int
     free_memory_mib: int
     utilization_percent: float
+    driver_version: str = "unknown"
     compute_pids: Tuple[int, ...] = ()
 
 
@@ -96,7 +97,7 @@ def parse_gpu_inventory(text: str) -> Tuple[GpuInfo, ...]:
         for row in csv.reader(io.StringIO(text)):
             if not row:
                 continue
-            if len(row) != 7:
+            if len(row) != 8:
                 raise ValueError("invalid nvidia-smi GPU inventory column count")
             rows.append(
                 GpuInfo(
@@ -107,6 +108,7 @@ def parse_gpu_inventory(text: str) -> Tuple[GpuInfo, ...]:
                     total_memory_mib=int(row[4].strip()),
                     free_memory_mib=int(row[5].strip()),
                     utilization_percent=float(row[6].strip()),
+                    driver_version=row[7].strip(),
                 )
             )
     except (TypeError, ValueError) as error:
@@ -164,7 +166,7 @@ def collect_machine_snapshot(
     gpu_rows = command_runner((
         "nvidia-smi",
         "--query-gpu=index,uuid,pci.bus_id,name,memory.total,memory.free,"
-        "utilization.gpu",
+        "utilization.gpu,driver_version",
         "--format=csv,noheader,nounits",
     ))
     compute_rows = command_runner((

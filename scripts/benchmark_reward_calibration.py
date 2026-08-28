@@ -13,6 +13,7 @@ import platform
 import subprocess
 import time
 import traceback
+from typing import Callable, Mapping
 
 import numpy as np
 import psutil
@@ -29,11 +30,15 @@ from llm_mappo.reward_calibration import (
 )
 from llm_mappo.pure_motion_teacher import PureMotionTeacher
 from llm_mappo.shadow_state import ShadowStateAdapter
+from llm_mappo.linux_server_runtime import GpuInfo, MachineSnapshot
 
 
 REQUIRED_ARTIFACTS = {
     "manifest.json", "runtime.csv", "memory.csv",
     "branch_objects.csv", "summary.json",
+}
+DIAGNOSTIC_ARTIFACTS = {
+    "manifest.json", "runtime.csv", "branch_objects.csv", "summary.json",
 }
 _MIN_GROWTH = 64 * 1024 * 1024
 _MIN_FRACTION = 0.05
@@ -52,24 +57,186 @@ class BenchmarkConfig:
         return 4 if self.condition == "h4" else 12
 
 
+@dataclass(frozen=True)
+class DeviceBinding:
+    """The host GPU identity and the child-visible CUDA device contract."""
+
+    physical_gpu_index: int
+    logical_device: str
+    uuid: str
+    pci_bus_id: str
+    name: str
+
+
+def validate_cuda_binding(
+    expected_physical_index: int,
+    snapshot,
+    torch_probe: Callable[[], Mapping[str, object]],
+) -> DeviceBinding:
+    """Require the frozen physical GPU to appear as logical ``cuda:0``."""
+    target = next(
+        (gpu for gpu in snapshot.gpus if gpu.physical_index == expected_physical_index),
+        None,
+    )
+    if target is None:
+        raise RuntimeError("The frozen physical GPU is missing from the preflight.")
+    probe = torch_probe()
+    if not probe.get("available"):
+        raise RuntimeError("CUDA is unavailable in the benchmark child.")
+    if probe.get("logical_device") != "cuda:0":
+        raise RuntimeError("The benchmark child must use logical cuda:0.")
+    if probe.get("device_name") != target.name:
+        raise RuntimeError("CUDA device name differs from the preflight GPU.")
+    return DeviceBinding(
+        physical_gpu_index=target.physical_index,
+        logical_device="cuda:0",
+        uuid=target.uuid,
+        pci_bus_id=target.pci_bus_id,
+        name=target.name,
+    )
+
+
+def validate_cuda_visibility() -> None:
+    """Require the launcher to mask the child to physical GPU 0 before Torch work."""
+    if os.environ.get("CUDA_VISIBLE_DEVICES") != "0":
+        raise RuntimeError("O1 requires CUDA_VISIBLE_DEVICES=0 before Torch starts.")
+
+
+def _read_json_with_hash(path: Path):
+    content = path.read_bytes()
+    return json.loads(content), sha256(content).hexdigest()
+
+
+def _snapshot_from_preflight(payload):
+    raw_snapshot = payload.get("snapshot")
+    if not isinstance(raw_snapshot, dict):
+        raise RuntimeError("Preflight report does not contain a machine snapshot.")
+    try:
+        gpus = tuple(
+            GpuInfo(
+                **{
+                    **gpu,
+                    "compute_pids": tuple(gpu.get("compute_pids", ())),
+                }
+            )
+            for gpu in raw_snapshot["gpus"]
+        )
+        return MachineSnapshot(
+            os_name=raw_snapshot["os_name"],
+            architecture=raw_snapshot["architecture"],
+            cpu_model=raw_snapshot["cpu_model"],
+            cpu_logical_count=raw_snapshot["cpu_logical_count"],
+            cpu_percent=raw_snapshot["cpu_percent"],
+            available_ram_gib=raw_snapshot["available_ram_gib"],
+            free_disk_gib=raw_snapshot["free_disk_gib"],
+            git_clean=raw_snapshot["git_clean"],
+            gpus=gpus,
+        )
+    except (KeyError, TypeError) as error:
+        raise RuntimeError("Preflight report machine snapshot is malformed.") from error
+
+
+def _validated_gate_reports(arguments):
+    preflight, preflight_hash = _read_json_with_hash(Path(arguments.preflight_report))
+    environment, environment_hash = _read_json_with_hash(
+        Path(arguments.environment_report)
+    )
+    if preflight.get("passed") is not True:
+        raise RuntimeError("A passing P1 preflight report is required before O1.")
+    if environment.get("pass") is not True:
+        raise RuntimeError("A passing P1 environment report is required before O1.")
+    return _snapshot_from_preflight(preflight), preflight_hash, environment_hash
+
+
+def _torch_probe():
+    tensor = torch.zeros(1, device="cuda:0")
+    return {
+        "available": bool(torch.cuda.is_available()),
+        "logical_device": str(tensor.device),
+        "device_name": torch.cuda.get_device_name(0),
+    }
+
+
+def _prepare_benchmark(arguments):
+    validate_cuda_visibility()
+    if not torch.cuda.is_available():
+        raise RuntimeError("The O1 runtime gate requires a CUDA-capable owner machine.")
+    snapshot, preflight_hash, environment_hash = _validated_gate_reports(arguments)
+    binding = validate_cuda_binding(0, snapshot, _torch_probe)
+    config_path = Path(arguments.config)
+    config = OptimizationTrainingConfig.from_yaml(config_path)
+    if config.device != "cuda":
+        raise RuntimeError("The O1 Linux Gate requires a CUDA training configuration.")
+    commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True
+    ).strip()
+    target = next(
+        gpu for gpu in snapshot.gpus if gpu.physical_index == binding.physical_gpu_index
+    )
+    common = {
+        "config_hash": sha256(config_path.read_bytes()).hexdigest(),
+        "code_commit": commit,
+        "device": binding.name,
+        "physical_gpu_index": binding.physical_gpu_index,
+        "logical_device": binding.logical_device,
+        "gpu_uuid": binding.uuid,
+        "gpu_pci_bus_id": binding.pci_bus_id,
+        "gpu_total_memory_mib": target.total_memory_mib,
+        "gpu_free_memory_mib": target.free_memory_mib,
+        "gpu_driver": target.driver_version,
+        "cpu_model": snapshot.cpu_model,
+        "available_ram_gib": snapshot.available_ram_gib,
+        "cuda": str(torch.version.cuda),
+        "pytorch": torch.__version__,
+        "platform": platform.platform(),
+        "preflight_hash": preflight_hash,
+        "environment_freeze_hash": environment_hash,
+        "workers": arguments.workers,
+        "exit_status": 0,
+    }
+    output = Path(arguments.output)
+    output.mkdir(parents=True, exist_ok=True)
+    return config_path, output, common
+
+
 def parse_arguments(arguments=None):
     parser = argparse.ArgumentParser(
         description="Run the frozen owner-only O1 calibration runtime/memory gate."
     )
-    parser.add_argument("--config", required=True)
-    parser.add_argument(
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    def add_common(command):
+        command.add_argument("--config", required=True)
+        command.add_argument("--preflight-report", required=True)
+        command.add_argument("--environment-report", required=True)
+        command.add_argument("--workers", type=int, required=True)
+        command.add_argument("--repeats", type=int, required=True)
+        command.add_argument("--warmup-vector-steps", type=int, required=True)
+        command.add_argument("--measure-vector-steps", type=int, required=True)
+        command.add_argument("--memory-warmup-windows", type=int, required=True)
+        command.add_argument("--memory-measure-windows", type=int, required=True)
+        command.add_argument("--output", required=True)
+
+    gate = commands.add_parser("gate")
+    add_common(gate)
+    gate.add_argument(
         "--modes", choices=("baseline", "h4", "h12"), nargs="+", required=True
     )
-    parser.add_argument("--workers", type=int, required=True)
-    parser.add_argument("--repeats", type=int, required=True)
-    parser.add_argument("--warmup-vector-steps", type=int, required=True)
-    parser.add_argument("--measure-vector-steps", type=int, required=True)
-    parser.add_argument("--memory-warmup-windows", type=int, required=True)
-    parser.add_argument("--memory-measure-windows", type=int, required=True)
-    parser.add_argument("--output", required=True)
+    diagnostic = commands.add_parser("diagnose-h4")
+    add_common(diagnostic)
+    diagnostic.add_argument("--failed-gate-summary", required=True)
     parsed = parser.parse_args(arguments)
-    if parsed.modes != ["baseline", "h4", "h12"]:
-        parser.error("--modes must be exactly: baseline h4 h12")
+    if parsed.command == "gate" and parsed.modes != ["baseline", "h12"]:
+        parser.error("gate --modes must be exactly: baseline h12")
+    if parsed.command == "diagnose-h4":
+        try:
+            failed = json.loads(
+                Path(parsed.failed_gate_summary).read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            parser.error("--failed-gate-summary must be readable JSON")
+        if failed.get("gate_pass") is not False:
+            parser.error("H4 diagnosis requires a failed normal Gate summary")
     frozen = {
         "workers": 12, "repeats": 5, "warmup_vector_steps": 16,
         "measure_vector_steps": 128, "memory_warmup_windows": 2,
@@ -335,22 +502,7 @@ def _write_csv(path, rows):
 
 
 def run_gate(arguments):
-    if not torch.cuda.is_available():
-        raise RuntimeError("The O1 runtime gate requires a CUDA-capable owner machine.")
-    config_path = Path(arguments.config)
-    OptimizationTrainingConfig.from_yaml(config_path)
-    output = Path(arguments.output)
-    output.mkdir(parents=True, exist_ok=True)
-    commit = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], text=True
-    ).strip()
-    common = {
-        "config_hash": sha256(config_path.read_bytes()).hexdigest(),
-        "code_commit": commit, "device": torch.cuda.get_device_name(),
-        "cuda": str(torch.version.cuda), "pytorch": torch.__version__,
-        "platform": platform.platform(),
-        "workers": arguments.workers, "exit_status": 0,
-    }
+    config_path, output, common = _prepare_benchmark(arguments)
     runtime_rows, branch_rows = [], []
     for mode in arguments.modes:
         for repeat in range(arguments.repeats):
@@ -428,8 +580,70 @@ def run_gate(arguments):
     return summary
 
 
+def run_diagnostic(arguments):
+    """Run isolated H4 diagnostics without producing a new Gate decision."""
+    config_path, output, common = _prepare_benchmark(arguments)
+    runtime_rows, branch_rows = [], []
+    for repeat in range(arguments.repeats):
+        result = _spawn(_runtime_child, {
+            "config": str(config_path),
+            "mode": "h4",
+            "workers": arguments.workers,
+            "warmup": arguments.warmup_vector_steps,
+            "measure": arguments.measure_vector_steps,
+            "scratch": str(output / "scratch" / f"h4_{repeat}"),
+        })
+        runtime_rows.append({
+            **common,
+            "mode": "h4",
+            "horizon": 4,
+            "repeat": repeat,
+            "warmup_vector_steps": arguments.warmup_vector_steps,
+            "measure_vector_steps": arguments.measure_vector_steps,
+            "seconds": result["seconds"],
+        })
+        branch_rows.append({
+            **common,
+            "mode": "h4",
+            "horizon": 4,
+            "repeat": repeat,
+            "warmup_vector_steps": arguments.warmup_vector_steps,
+            "measure_vector_steps": arguments.measure_vector_steps,
+            "branch_objects": result["branch_objects"],
+            "teacher_objects": result["teacher_objects"],
+            "teacher_cache_entries": result["teacher_cache_entries"],
+        })
+    failed_summary = Path(arguments.failed_gate_summary)
+    summary = {
+        **common,
+        "diagnostic_only": True,
+        "can_change_gate_result": False,
+        "failed_gate_summary_hash": sha256(failed_summary.read_bytes()).hexdigest(),
+        "h4_runtime_median_seconds": float(
+            np.median([row["seconds"] for row in runtime_rows])
+        ),
+    }
+    manifest = {
+        **common,
+        "config": vars(arguments),
+        "required_artifacts": sorted(DIAGNOSTIC_ARTIFACTS),
+        "diagnostic_only": True,
+    }
+    _write_csv(output / "runtime.csv", runtime_rows)
+    _write_csv(output / "branch_objects.csv", branch_rows)
+    (output / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    (output / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return summary
+
+
 def main():
-    print(json.dumps(run_gate(parse_arguments()), indent=2, sort_keys=True))
+    arguments = parse_arguments()
+    runner = run_gate if arguments.command == "gate" else run_diagnostic
+    print(json.dumps(runner(arguments), indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

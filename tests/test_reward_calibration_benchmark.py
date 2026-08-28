@@ -20,18 +20,50 @@ def test_benchmark_config_rejects_noncanonical_formal_horizon():
         BenchmarkConfig(condition="h8")
 
 
-def test_owner_gate_parser_accepts_the_frozen_a600_command_shape(tmp_path):
+def test_owner_gate_parser_accepts_only_baseline_and_h12(tmp_path):
     arguments = parse_arguments(
         [
+            "gate",
             "--config", "configs/optimization/o1_reward_calibration_smoke.yaml",
-            "--modes", "baseline", "h4", "h12", "--workers", "12",
+            "--preflight-report", str(tmp_path / "preflight.json"),
+            "--environment-report", str(tmp_path / "environment.json"),
+            "--modes", "baseline", "h12", "--workers", "12",
             "--repeats", "5", "--warmup-vector-steps", "16",
             "--measure-vector-steps", "128", "--memory-warmup-windows", "2",
             "--memory-measure-windows", "10", "--output", str(tmp_path),
         ]
     )
     assert arguments.workers == 12
-    assert arguments.modes == ["baseline", "h4", "h12"]
+    assert arguments.modes == ["baseline", "h12"]
+    assert arguments.command == "gate"
+
+    with pytest.raises(SystemExit):
+        parse_arguments(
+            [
+                "gate", "--config", "config.yaml", "--preflight-report", "p.json",
+                "--environment-report", "e.json", "--modes", "baseline", "h4",
+                "--workers", "12", "--repeats", "5", "--warmup-vector-steps", "16",
+                "--measure-vector-steps", "128", "--memory-warmup-windows", "2",
+                "--memory-measure-windows", "10", "--output", str(tmp_path),
+            ]
+        )
+
+
+def test_h4_diagnostic_requires_a_failed_normal_gate(tmp_path):
+    failed = tmp_path / "failed.json"
+    failed.write_text('{"gate_pass": false}', encoding="utf-8")
+    arguments = parse_arguments(
+        [
+            "diagnose-h4", "--config", "configs/optimization/o1_reward_calibration_smoke.yaml",
+            "--preflight-report", str(tmp_path / "preflight.json"),
+            "--environment-report", str(tmp_path / "environment.json"),
+            "--failed-gate-summary", str(failed), "--workers", "12", "--repeats", "5",
+            "--warmup-vector-steps", "16", "--measure-vector-steps", "128",
+            "--memory-warmup-windows", "2", "--memory-measure-windows", "10",
+            "--output", str(tmp_path),
+        ]
+    )
+    assert arguments.command == "diagnose-h4"
 
 
 def test_gate_requires_all_frozen_artifacts():
