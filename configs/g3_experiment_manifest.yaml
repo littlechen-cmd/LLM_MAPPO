@@ -1,9 +1,10 @@
-schema_version: 6
-status: o1_resource_amendment_pending_o3_implementation_in_progress
+schema_version: 7
+status: p1_linux_implementation_in_progress
 document_role: governance_manifest_not_runtime_training_config
 canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:
-  - O1 revised owner-run baseline/H12 A600 runtime and memory gate
+  - P1 Linux optimization-server infrastructure readiness
+  - O1 owner-run Linux baseline/H12 CUDA runtime and memory gate
   - O2 owner-run six-run calibration Go
   - O3 evaluation-only topology and interface freeze
   - D1 single-route decision
@@ -16,16 +17,23 @@ code:
   frozen_implementation_commit: null
 
 python_environment:
-  interpreter: 'D:\Anaconda3\envs\py310\python.exe'
-  direct_invocation_required: true
-  conda_activate_required: false
-  environment_creation_or_modification: prohibited
+  windows:
+    interpreter: 'D:\Anaconda3\envs\py310\python.exe'
+    direct_invocation_required: true
+    conda_activate_required: false
+    environment_creation_or_modification: prohibited
+  linux_optimization:
+    interpreter: /home/lzx/.conda/envs/llm-a-mappo-py310/bin/python
+    direct_invocation_required: true
+    conda_activate_required: false
+    creation: owner_only_user_prefix
+    shared_base_modification: prohibited
 
 route_profiles:
   optimization:
     branch: codex/optimization
     artifact_root: artifacts/optimization
-    prerequisites: [O0, O1, O2, O3]
+    prerequisites: [O0, O1, P1, O2, O3]
     observation_schema: direct-goal-observation-v1
     execution_planner_queries_required: 0
     formal_training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
@@ -177,7 +185,10 @@ comparison_fairness:
   qmix_fallback: prohibited
 
 o1_cuda_gate:
-  orchestration: fail_fast_prefix_of_same_owner_a600_job_as_o2
+  execution_environment: linux_optimization_server
+  physical_gpu_index: 0
+  expected_gpu_name: NVIDIA GeForce RTX 4090
+  orchestration: owner_run_linux_gate_before_separate_o2_phase
   logical_gate_and_artifacts_remain_independent: true
   normal_modes: [baseline, h12]
   failure_only_diagnostic_mode: h4

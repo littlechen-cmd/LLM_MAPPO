@@ -38,17 +38,17 @@
 - Consumes: approved P1 requirements and server inventory.
 - Produces: one canonical P1 dependency and vocabulary contract used by every later task.
 
-- [ ] Add a governance regression that parses Roadmap/TASKS/manifest and asserts
+- [x] Add a governance regression that parses Roadmap/TASKS/manifest and asserts
   `O1 local -> P1 -> O1 CUDA Gate -> O2`, optimization-only scope, owner-run long jobs,
   physical GPU 0 and Linux interpreter.
-- [ ] Run the regression and confirm it fails on the current A600/Windows assumptions and
+- [x] Run the regression and confirm it fails on the current A600/Windows assumptions and
   the incorrect O1 Roadmap status text.
-- [ ] Update the seven governance files, replace optimization-route A600 wording with
+- [x] Update the seven governance files, replace optimization-route A600 wording with
   owner-run Linux CUDA wording, add P1, and preserve every frozen experimental value.
-- [ ] Add terminology entries for Conda prefix, physical/logical GPU index,
+- [x] Add terminology entries for Conda prefix, physical/logical GPU index,
   `CUDA_VISIBLE_DEVICES`, preflight, fail-closed, GPU lease, manifest, atomic write,
   explicit resume, and tmux.
-- [ ] Run the governance regression, YAML parsing, and `git diff --check`; confirm pass.
+- [x] Run the governance regression, YAML parsing, and `git diff --check`; confirm pass.
 - [ ] Commit with subject `docs: define P1 Linux optimization server contract`.
 
 ## Task group P1-B — Reproducible Python/CUDA environment

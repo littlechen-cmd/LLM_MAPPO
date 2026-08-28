@@ -5,6 +5,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-28
 
+- Changed: P1-A aligns the experiment protocol and machine-readable manifest with the
+  owner-run Linux sequence `P1→O1→O2`, physical GPU 0, and separate O2 launch boundary.
 - Added: The approved P1 specification freezes the optimization route's Ubuntu
   Python/CUDA environment, shared-server preflight, GPU binding and lease, baseline/H12
   O1 Gate, diagnostic-only H4 path, resumable evidence, and mandatory P1→O1→O2 order.

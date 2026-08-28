@@ -37,15 +37,16 @@ artifact。稳定路线预备训练只能写入 `artifacts/stable/predecision/`�
 
 ## 4. D1 前允许工作
 
-- 优化路线：O0 设计、O1 本地验证与 owner-run A600 门禁、门禁通过后的 O2 校准，以及可与
-  O1 门禁等待并行的 O3 拓扑/接口冻结；
+- 优化路线：O0 设计、O1 本地验证、P1 Linux 执行基础设施、owner-run Linux CUDA 门禁、门禁
+  通过后的 O2 校准，以及已完成的 O3 拓扑/接口冻结；
 - 稳定路线：S1 实现和 owner-run 验收；满足 Roadmap 条件时可执行隔离的 S2；
 - 不使用 held-out evaluation seeds `200–209`，不执行同图 8-AGV 压力实验，也不让 O3 布局
   参与训练、标签生成、OOD reference、校准、路线或超参数选择；D1 前禁止加载学习策略查看
   O3 性能。
 
-O1 常规 A600 Gate 只运行 baseline/H12；H4 仅在失败后写入独立诊断产物。O1 与 O2 由同一
-owner 作业 fail-fast 编排，但 O1 必须先以独立产物通过。
+P1 通过后必须由 owner 在共享 Linux 服务器启动 O1 常规 CUDA Gate，且只运行 baseline/H12；H4
+仅在失败后写入独立诊断产物。O1 以独立产物通过后，O2 才可由 owner 在单独阶段启动；设备占用
+只能触发等待，不得降低门禁或跳过 P1→O1→O2 顺序。
 
 O2 固定为 `MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组均关闭 LLMKD，共
 6 次。Fixed/RC 链路计数等价性由 O2 前 MateBook 确定性短受控 smoke 验证。覆盖率以全部
@@ -79,5 +80,5 @@ Shuffle、NoOOD、NoGoalHint 只支持诊断性主张；三维标签干预只能
 
 ## 7. 长任务权限
 
-全部长训练、长评估和长回放由研究所有者在 A600 手动启动。Codex 与项目工程师只准备命令、
+全部长训练、长评估和长回放由研究所有者在批准的服务器手动启动。Codex 与项目工程师只准备命令、
 执行短验证并分析产物；任何文档或工程实现都不得把“命令已准备”写成“实验已完成”。
