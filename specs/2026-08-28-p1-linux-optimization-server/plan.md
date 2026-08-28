@@ -66,16 +66,16 @@
 - The report JSON fields are `python`, `torch`, `torch_cuda`, `packages`,
   `editable_project`, `freeze_sha256`, and `pass`.
 
-- [ ] Write failing tests using injected package/version probes for exact Python 3.10.19,
+- [x] Write failing tests using injected package/version probes for exact Python 3.10.19,
   Torch 2.10.0+cu128, CUDA availability, pinned package versions, and wrong-version
   fail-closed behavior.
-- [ ] Run `D:\Anaconda3\envs\py310\python.exe -m pytest tests/test_linux_environment_contract.py -q`
+- [x] Run `D:\Anaconda3\envs\py310\python.exe -m pytest tests/test_linux_environment_contract.py -q`
   and confirm failure because the verifier and constraint file do not exist.
-- [ ] Implement the verifier with dependency injection; keep production collection
+- [x] Implement the verifier with dependency injection; keep production collection
   read-only and never create or modify an environment.
-- [ ] Write the exact owner commands for Conda prefix creation, official cu128 Torch
+- [x] Write the exact owner commands for Conda prefix creation, official cu128 Torch
   installation, constrained editable install, import verification and freeze export.
-- [ ] Run focused tests and Flake8; inspect the runbook for absence of `conda activate`,
+- [x] Run focused tests and Flake8; inspect the runbook for absence of `conda activate`,
   shared-base modification, secrets and unpinned Torch.
 - [ ] Commit with subject `build: freeze Linux py310 CUDA environment`.
 

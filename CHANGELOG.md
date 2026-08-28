@@ -5,6 +5,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-28
 
+- Added: P1-B freezes the Linux Python 3.10.19/cu128 dependency contract, a read-only
+  fail-closed verifier, and the owner-only user-prefix installation runbook.
 - Changed: P1-A aligns the experiment protocol and machine-readable manifest with the
   owner-run Linux sequence `P1→O1→O2`, physical GPU 0, and separate O2 launch boundary.
 - Added: The approved P1 specification freezes the optimization route's Ubuntu

@@ -1,0 +1,16 @@
+# P1 Linux optimization-route environment contract. Torch is installed from the
+# official cu128 index before this constraint file is used for the remaining packages.
+torch==2.10.0+cu128
+numpy==2.2.6
+scipy==1.15.3
+gymnasium==1.2.3
+PyYAML==6.0.3
+psutil==7.2.2
+matplotlib==3.10.9
+networkx==3.4.2
+pyglet==1.5.31
+pytest==9.0.2
+flake8==7.3.0
+tensorboard==2.21.0
+build==1.5.0
+Pillow==12.1.1
