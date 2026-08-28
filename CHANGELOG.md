@@ -5,6 +5,8 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 
 ## 2026-08-28
 
+- Added: P1-C provides fail-closed Linux server inventory, five-sample/48-hour resource
+  preflight, project-only GPU lease, immutable artifact writes, and read-only CLI modes.
 - Added: P1-B freezes the Linux Python 3.10.19/cu128 dependency contract, a read-only
   fail-closed verifier, and the owner-only user-prefix installation runbook.
 - Changed: P1-A aligns the experiment protocol and machine-readable manifest with the

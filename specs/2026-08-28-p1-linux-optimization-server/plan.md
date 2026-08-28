@@ -99,17 +99,17 @@
 - `replace_state_atomic(path: Path, payload: Mapping, identity: RunIdentity) -> None` is
   restricted to `state.json` and rejects an identity change.
 
-- [ ] Write failing parser tests for two GPUs, UUID/index mapping, compute PIDs, malformed
+- [x] Write failing parser tests for two GPUs, UUID/index mapping, compute PIDs, malformed
   `nvidia-smi`, missing commands, wrong GPU, insufficient RAM/disk, dirty Git, CPU overload,
   five-sample reset, 48-hour timeout, and competing project lease.
-- [ ] Run the focused tests and confirm failures name the absent interfaces.
-- [ ] Implement immutable dataclasses and pure parsers first; make all ambiguous or missing
+- [x] Run the focused tests and confirm failures name the absent interfaces.
+- [x] Implement immutable dataclasses and pure parsers first; make all ambiguous or missing
   inventory a failed result with machine-readable reasons.
-- [ ] Implement polling and Linux lease; keep `nvidia-smi` and `psutil` collection behind
+- [x] Implement polling and Linux lease; keep `nvidia-smi` and `psutil` collection behind
   injected boundaries so Windows tests never require a GPU or `fcntl`.
-- [ ] Implement CLI modes `--once` and `--wait`, both writing versioned JSON plus JSONL wait
+- [x] Implement CLI modes `--once` and `--wait`, both writing versioned JSON plus JSONL wait
   samples under `artifacts/optimization/p1_linux_server/`.
-- [ ] Run focused tests, Flake8 and a Windows mocked CLI smoke; confirm no process-control
+- [x] Run focused tests, Flake8 and a Windows mocked CLI smoke; confirm no process-control
   calls other than read-only subprocess queries exist.
 - [ ] Commit with subject `feat: add Linux optimization server preflight`.
 
