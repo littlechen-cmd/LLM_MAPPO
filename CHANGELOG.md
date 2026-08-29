@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-29
+
+- Added: O1 shadow restore failures now report the first mismatching component and field
+  path, expected/actual overall and component hashes, and compact ndarray dtype/shape/hash
+  summaries while preserving fail-closed behavior.
+- Added: An H12 CPU stress regression crosses multiple workers, rollout updates, dynamic
+  ingress and episode reset boundaries without changing the frozen O1 Gate parameters.
+
 ## 2026-08-28
 
 - Fixed: P1 server preflight now parses the Chinese-localized `lscpu` model-name field

@@ -74,6 +74,86 @@ def _canonical_bytes(payload: Dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def _value_hash(value: Any) -> str:
+    return sha256(_canonical_bytes({"value": value})).hexdigest()
+
+
+def _value_summary(value: Any) -> str:
+    if isinstance(value, np.ndarray):
+        contiguous = np.ascontiguousarray(value)
+        return (
+            f"ndarray(dtype={contiguous.dtype.str},shape={list(contiguous.shape)},"
+            f"sha256={sha256(contiguous.tobytes(order='C')).hexdigest()})"
+        )
+    return f"type={type(value).__name__}"
+
+
+def _first_difference(  # noqa: C901
+    expected: Any, actual: Any, path: str
+) -> tuple[str, Any, Any]:
+    if isinstance(expected, np.ndarray) and isinstance(actual, np.ndarray):
+        same = (
+            expected.dtype == actual.dtype
+            and expected.shape == actual.shape
+            and np.array_equal(expected, actual, equal_nan=True)
+        )
+        return ("", None, None) if same else (path, expected, actual)
+    if type(expected) is not type(actual):
+        return path, expected, actual
+    if isinstance(expected, dict):
+        expected_keys = sorted(expected, key=str)
+        actual_keys = sorted(actual, key=str)
+        if expected_keys != actual_keys:
+            return path, expected_keys, actual_keys
+        for key in expected_keys:
+            difference = _first_difference(
+                expected[key], actual[key], f"{path}.{key}" if path else str(key)
+            )
+            if difference[0]:
+                return difference
+        return "", None, None
+    if isinstance(expected, (list, tuple)):
+        if len(expected) != len(actual):
+            return path, len(expected), len(actual)
+        for index, (expected_item, actual_item) in enumerate(zip(expected, actual)):
+            difference = _first_difference(
+                expected_item, actual_item, f"{path}[{index}]"
+            )
+            if difference[0]:
+                return difference
+        return "", None, None
+    if _value_hash(expected) != _value_hash(actual):
+        return path, expected, actual
+    return "", None, None
+
+
+def _restore_mismatch_message(
+    expected: Dict[str, Any], actual: Dict[str, Any], expected_hash: str
+) -> str:
+    actual_hash = sha256(_canonical_bytes(actual)).hexdigest()
+    path, expected_value, actual_value = _first_difference(expected, actual, "")
+    component = path.split(".", 1)[0].split("[", 1)[0] if path else "unknown"
+    components = {}
+    for name in sorted(set(expected) | set(actual)):
+        components[name] = {
+            "expected": _value_hash(expected.get(name)),
+            "actual": _value_hash(actual.get(name)),
+        }
+    return (
+        "Shadow snapshot restore hash mismatch:\n"
+        f"component={component}\n"
+        f"path={path or 'unknown'}\n"
+        f"expected_hash={_value_hash(expected_value)}\n"
+        f"actual_hash={_value_hash(actual_value)}\n"
+        f"expected_detail={_value_summary(expected_value)}\n"
+        f"actual_detail={_value_summary(actual_value)}\n"
+        f"expected_overall_hash={expected_hash}\n"
+        f"actual_overall_hash={actual_hash}\n"
+        "component_hashes="
+        + json.dumps(components, sort_keys=True, separators=(",", ":"))
+    )
+
+
 def _global_rng_guard() -> str:
     """Hash global RNG state without importing it into shadow branches."""
     state: Dict[str, Any] = {
@@ -216,6 +296,21 @@ class ShadowStateAdapter:
     def config_hash(self) -> str:
         return sha256(_canonical_bytes(self._config_payload())).hexdigest()
 
+    def _state_payload(self, address: Dict[str, int] | None = None) -> Dict[str, Any]:
+        active_address = self._active_address if address is None else address
+        return {
+            "schema_version": SHADOW_SCHEMA_VERSION,
+            "code_commit": self.code_commit,
+            "environment_config_hash": self.config_hash(),
+            "layout_hash": self.environment.env.shadow_layout_hash(),
+            "address": copy.deepcopy(active_address),
+            "wrapper": self._export_wrapper_state(),
+            "space_rng": self._export_space_rng_state(),
+            "warehouse": self.environment.env.export_shadow_state(),
+            "adapter": self.environment.export_shadow_state(),
+            "global_rng_guard": _global_rng_guard(),
+        }
+
     def capture(self, **address: int) -> ShadowSnapshotV1:
         required = {
             "run_seed",
@@ -229,19 +324,9 @@ class ShadowStateAdapter:
             raise ValueError("Snapshot address does not match the frozen schema.")
         if self.environment.env.renderer is not None:
             raise ValueError("Training shadow snapshots require a null renderer.")
-        payload = {
-            "schema_version": SHADOW_SCHEMA_VERSION,
-            "code_commit": self.code_commit,
-            "environment_config_hash": self.config_hash(),
-            "layout_hash": self.environment.env.shadow_layout_hash(),
-            "address": {name: int(address[name]) for name in sorted(address)},
-            "wrapper": self._export_wrapper_state(),
-            "space_rng": self._export_space_rng_state(),
-            "warehouse": self.environment.env.export_shadow_state(),
-            "adapter": self.environment.export_shadow_state(),
-            "global_rng_guard": _global_rng_guard(),
-        }
-        self._active_address = copy.deepcopy(payload["address"])
+        canonical_address = {name: int(address[name]) for name in sorted(address)}
+        payload = self._state_payload(canonical_address)
+        self._active_address = copy.deepcopy(canonical_address)
         return ShadowSnapshotV1.create(payload)
 
     def restore(self, snapshot: ShadowSnapshotV1) -> None:
@@ -259,26 +344,20 @@ class ShadowStateAdapter:
         self._import_wrapper_state(copy.deepcopy(payload["wrapper"]))
         self._import_space_rng_state(copy.deepcopy(payload["space_rng"]))
         self._active_address = copy.deepcopy(payload["address"])
-        if self.state_hash() != snapshot.state_hash:
-            raise ValueError("Shadow snapshot restore hash mismatch.")
+        actual = self._state_payload()
+        actual_hash = sha256(_canonical_bytes(actual)).hexdigest()
+        if actual_hash != snapshot.state_hash:
+            raise ValueError(
+                _restore_mismatch_message(
+                    snapshot.payload, actual, snapshot.state_hash
+                )
+            )
 
     def restore_bytes(self, raw: bytes) -> None:
         self.restore(ShadowSnapshotV1.from_bytes(raw))
 
     def state_hash(self) -> str:
-        payload = {
-            "schema_version": SHADOW_SCHEMA_VERSION,
-            "code_commit": self.code_commit,
-            "environment_config_hash": self.config_hash(),
-            "layout_hash": self.environment.env.shadow_layout_hash(),
-            "address": copy.deepcopy(self._active_address),
-            "wrapper": self._export_wrapper_state(),
-            "space_rng": self._export_space_rng_state(),
-            "warehouse": self.environment.env.export_shadow_state(),
-            "adapter": self.environment.export_shadow_state(),
-            "global_rng_guard": _global_rng_guard(),
-        }
-        return sha256(_canonical_bytes(payload)).hexdigest()
+        return sha256(_canonical_bytes(self._state_payload())).hexdigest()
 
     def assert_global_rng_guard(self, snapshot: ShadowSnapshotV1) -> None:
         if _global_rng_guard() != snapshot.payload["global_rng_guard"]:

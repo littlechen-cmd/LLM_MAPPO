@@ -81,6 +81,70 @@ def test_snapshot_rejects_config_mismatch_and_restores_from_bytes():
         ShadowStateAdapter(incompatible, code_commit="test-commit").restore(snapshot)
 
 
+def test_restore_mismatch_reports_first_component_and_array_path(monkeypatch):
+    source = _environment()
+    snapshot = ShadowStateAdapter(source, code_commit="test-commit").capture(
+        run_seed=1,
+        episode_index=0,
+        episode_seed=19,
+        environment_index=0,
+        real_global_step=0,
+        episode_step=0,
+    )
+    target = _environment()
+    adapter = ShadowStateAdapter(target, code_commit="test-commit")
+    original_import = target.import_shadow_state
+
+    def import_then_corrupt(state):
+        original_import(state)
+        observations = list(target._raw_observations)
+        observations[2] = observations[2].copy()
+        observations[2].flat[0] += 1.0
+        target._raw_observations = tuple(observations)
+
+    monkeypatch.setattr(target, "import_shadow_state", import_then_corrupt)
+    with pytest.raises(ValueError) as captured:
+        adapter.restore(snapshot)
+
+    message = str(captured.value)
+    assert "Shadow snapshot restore hash mismatch" in message
+    assert "component=adapter" in message
+    assert "path=adapter.raw_observations[2]" in message
+    assert "expected_hash=" in message
+    assert "actual_hash=" in message
+    assert "expected_detail=ndarray(dtype=" in message
+    assert "shape=" in message
+    assert "sha256=" in message
+    assert "component_hashes=" in message
+
+
+def test_restore_mismatch_keeps_global_rng_guard_diagnostic(monkeypatch):
+    source = _environment()
+    snapshot = ShadowStateAdapter(source, code_commit="test-commit").capture(
+        run_seed=1,
+        episode_index=0,
+        episode_seed=19,
+        environment_index=0,
+        real_global_step=0,
+        episode_step=0,
+    )
+    target = _environment()
+    adapter = ShadowStateAdapter(target, code_commit="test-commit")
+    original_import = target.import_shadow_state
+
+    def import_then_touch_global_rng(state):
+        original_import(state)
+        __import__("random").random()
+
+    monkeypatch.setattr(target, "import_shadow_state", import_then_touch_global_rng)
+    with pytest.raises(ValueError) as captured:
+        adapter.restore(snapshot)
+
+    message = str(captured.value)
+    assert "component=global_rng_guard" in message
+    assert "path=global_rng_guard" in message
+
+
 def test_event_addressed_randomness_has_no_branch_local_counter():
     randomness = EventAddressedRandomness()
     first = randomness.integer(

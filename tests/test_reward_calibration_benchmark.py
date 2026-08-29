@@ -1,9 +1,13 @@
 """The benchmark interface preserves H=12 as the sole formal horizon."""
 
+from dataclasses import replace
+
 import pytest
 
 from scripts.benchmark_reward_calibration import (
+    _advance,
     _Worker,
+    _workers,
     _rho,
     BenchmarkConfig,
     REQUIRED_ARTIFACTS,
@@ -121,3 +125,20 @@ def test_worker_runs_the_shared_optimizer_update_every_32_steps(tmp_path):
     for _ in range(32):
         worker.step("baseline")
     assert worker.update_count == 1
+
+
+def test_h12_cpu_stress_crosses_rollout_ingress_and_reset_boundaries(tmp_path):
+    config = replace(
+        OptimizationTrainingConfig.from_yaml(
+            "configs/optimization/o1_functional_smoke.yaml"
+        ),
+        max_steps=64,
+    )
+    workers = _workers(config, 2, tmp_path)
+
+    _advance(workers, "h12", 96)
+
+    assert [worker.global_step for worker in workers] == [96, 96]
+    assert [worker.update_count for worker in workers] == [3, 3]
+    assert all(worker.episode >= 1 for worker in workers)
+    assert sum(worker.trainer.calibrator.ema.count for worker in workers) > 0
