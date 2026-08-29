@@ -1,6 +1,7 @@
 """The benchmark interface preserves H=12 as the sole formal horizon."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -125,6 +126,34 @@ def test_worker_runs_the_shared_optimizer_update_every_32_steps(tmp_path):
     for _ in range(32):
         worker.step("baseline")
     assert worker.update_count == 1
+
+
+def test_worker_resets_when_deadlock_matches_shadow_terminal_rule(
+    tmp_path, monkeypatch
+):
+    config = OptimizationTrainingConfig.from_yaml(
+        "configs/optimization/o1_functional_smoke.yaml"
+    )
+    worker = _Worker(config, config.seed, tmp_path)
+    transition = SimpleNamespace(
+        observations=worker.observations,
+        team_reward=0.0,
+        terminated=False,
+        truncated=False,
+        metrics=SimpleNamespace(deadlocked=True),
+    )
+    monkeypatch.setattr(worker.trainer.environment, "step", lambda actions: transition)
+    reset_calls = []
+    monkeypatch.setattr(
+        worker,
+        "_reset",
+        lambda: (reset_calls.append(True) or worker.observations),
+    )
+
+    worker.step("baseline")
+
+    assert reset_calls == [True]
+    assert worker.episode == 1
 
 
 def test_h12_cpu_stress_crosses_rollout_ingress_and_reset_boundaries(tmp_path):

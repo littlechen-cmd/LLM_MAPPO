@@ -2,6 +2,9 @@
 
 ## 2026-08-29
 
+- Fixed: The O1 benchmark worker now resets an episode when its existing
+  deadlock metric fires, matching the paired-shadow terminal rule and preventing
+  post-deadlock dynamic-ingress execution from exhausting priority labels.
 - Fixed: O1 shadow restore reconstructs the omitted derived `agent_steps` metric from the
   frozen `episode steps × n_agents` invariant, preserving charging exposure across restore
   without changing the snapshot schema or Reward Calibration contract.

@@ -422,7 +422,11 @@ class _Worker:
             self.buffer = OptimizationRolloutBuffer(trainer.config.n_agents)
             self.rewards = []
             self.update_count += 1
-        if transition.terminated or transition.truncated:
+        if (
+            transition.terminated
+            or transition.truncated
+            or transition.metrics.deadlocked
+        ):
             self.episode += 1
             self.observations = self._reset()
 
