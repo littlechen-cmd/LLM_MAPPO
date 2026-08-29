@@ -2,6 +2,9 @@
 
 ## 2026-08-28
 
+- Fixed: P1 server preflight now parses the Chinese-localized `lscpu` model-name field
+  (`型号名称`) emitted by the shared Linux host, while retaining English parsing and all
+  fail-closed resource checks.
 - Validated: P1-A through P1-G pass local cross-platform regression, Flake8, CLI, YAML,
   package-build and active-runtime safety audits; P1 remains in progress pending owner Linux
   environment and GPU smoke evidence.

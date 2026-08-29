@@ -6,6 +6,7 @@ import pytest
 from llm_mappo.linux_server_runtime import (
     MachineSnapshot,
     ServerPolicy,
+    _cpu_model,
     apply_compute_processes,
     evaluate_preflight,
     gpu_lease,
@@ -35,6 +36,12 @@ def _policy():
         required_python="3.10.19",
         required_torch="2.10.0+cu128",
     )
+
+
+def test_cpu_model_parses_localized_chinese_lscpu_output():
+    output = "架构： x86_64\n型号名称： AMD EPYC 7542 32-Core Processor\n"
+
+    assert _cpu_model(output) == "AMD EPYC 7542 32-Core Processor"
 
 
 def _snapshot():

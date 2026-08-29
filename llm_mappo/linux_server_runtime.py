@@ -149,8 +149,14 @@ def apply_compute_processes(
 
 def _cpu_model(lscpu_output: str) -> str:
     for line in lscpu_output.splitlines():
-        if line.lower().startswith("model name"):
-            return line.split(":", 1)[1].strip()
+        if ":" in line:
+            label, value = line.split(":", 1)
+        elif "：" in line:
+            label, value = line.split("：", 1)
+        else:
+            continue
+        if label.strip().lower() == "model name" or label.strip() == "型号名称":
+            return value.strip()
     raise ValueError("lscpu output does not contain a model name")
 
 
