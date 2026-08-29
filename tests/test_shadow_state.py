@@ -81,6 +81,29 @@ def test_snapshot_rejects_config_mismatch_and_restores_from_bytes():
         ShadowStateAdapter(incompatible, code_commit="test-commit").restore(snapshot)
 
 
+def test_snapshot_restores_derived_charging_exposure_state():
+    source = _environment()
+    source._metrics.steps = 7
+    source._metrics.agent_steps = 21
+    source._metrics.charging_target_steps = 9
+    snapshot = ShadowStateAdapter(source, code_commit="test-commit").capture(
+        run_seed=1,
+        episode_index=0,
+        episode_seed=19,
+        environment_index=0,
+        real_global_step=7,
+        episode_step=7,
+    )
+    target = _environment()
+    target_adapter = ShadowStateAdapter(target, code_commit="test-commit")
+
+    target_adapter.restore(snapshot)
+
+    assert target._metrics.agent_steps == 21
+    assert target._metrics.charging_exposure_rate == pytest.approx(9 / 21)
+    assert target_adapter.state_hash() == snapshot.state_hash
+
+
 def test_restore_mismatch_reports_first_component_and_array_path(monkeypatch):
     source = _environment()
     snapshot = ShadowStateAdapter(source, code_commit="test-commit").capture(

@@ -135,8 +135,16 @@ def test_h12_cpu_stress_crosses_rollout_ingress_and_reset_boundaries(tmp_path):
         max_steps=64,
     )
     workers = _workers(config, 2, tmp_path)
+    for worker in workers:
+        worker.trainer.environment.env.agents[0].battery = 0.10
+        worker.observations = worker.trainer.environment._observations()
 
-    _advance(workers, "h12", 96)
+    _advance(workers, "h12", 48)
+    assert all(
+        worker.trainer.environment.metrics.charging_target_steps > 0
+        for worker in workers
+    )
+    _advance(workers, "h12", 48)
 
     assert [worker.global_step for worker in workers] == [96, 96]
     assert [worker.update_count for worker in workers] == [3, 3]

@@ -340,6 +340,7 @@ class Phase2Warehouse:
         for name, value in state["metrics"].items():
             if name in EpisodeMetrics.__dataclass_fields__:
                 setattr(metrics, name, value)
+        metrics.agent_steps = int(metrics.steps) * self.n_agents
         self._metrics = metrics
         self._last_progress_step = int(state["last_progress_step"])
         self._last_completed = int(state["last_completed"])

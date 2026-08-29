@@ -2,6 +2,9 @@
 
 ## 2026-08-29
 
+- Fixed: O1 shadow restore reconstructs the omitted derived `agent_steps` metric from the
+  frozen `episode steps × n_agents` invariant, preserving charging exposure across restore
+  without changing the snapshot schema or Reward Calibration contract.
 - Added: O1 shadow restore failures now report the first mismatching component and field
   path, expected/actual overall and component hashes, and compact ndarray dtype/shape/hash
   summaries while preserving fail-closed behavior.
