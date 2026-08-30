@@ -2,6 +2,9 @@
 
 ## 2026-08-30
 
+- Added: O2 run manifests now bind each diagnostic or formal artifact to its actual
+  logical device, CUDA availability, device name and PyTorch version; unavailable CUDA
+  causes a fail-closed error before an artifact is created.
 - Added: O2 now saves an identity-bound live environment snapshot at completed PPO
   update boundaries after each 10k-step checkpoint threshold. Interrupted runs can resume
   only from the matching run directory, commit, configuration, seed, optimizer, EMA and

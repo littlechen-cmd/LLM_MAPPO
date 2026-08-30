@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 from typing import Sequence
 
+import torch
+
 from llm_mappo.o2_contract import (
     O2ExperimentConfig,
     O2RunSpec,
@@ -57,6 +59,27 @@ def _code_commit() -> str:
     return result.stdout.strip()
 
 
+def device_provenance(logical_device: str) -> dict:
+    """Record the actual device used by a diagnostic or formal O2 artifact."""
+    if logical_device == "cpu":
+        return {
+            "logical_device": "cpu",
+            "cuda_available": False,
+            "device_name": None,
+            "torch": torch.__version__,
+        }
+    device = torch.device(logical_device)
+    if device.type != "cuda" or not torch.cuda.is_available():
+        raise RuntimeError("O2 CUDA provenance requires an available CUDA device.")
+    index = 0 if device.index is None else device.index
+    return {
+        "logical_device": str(device),
+        "cuda_available": True,
+        "device_name": torch.cuda.get_device_name(index),
+        "torch": torch.__version__,
+    }
+
+
 def run(arguments: argparse.Namespace) -> dict:  # noqa: C901
     config = O2ExperimentConfig.from_yaml(arguments.config)
     o1 = verify_o1_authorization(arguments.o1_run)
@@ -72,6 +95,7 @@ def run(arguments: argparse.Namespace) -> dict:  # noqa: C901
         "o1_code_commit": o1["code_commit"],
         "o1_summary_sha256": o1["summary_sha256"],
     }
+    provenance = device_provenance(arguments.device)
     if arguments.resume:
         directory = Path(arguments.resume)
         manifest = json.loads(
@@ -94,6 +118,7 @@ def run(arguments: argparse.Namespace) -> dict:  # noqa: C901
                 "diagnostic_only": diagnostic_only,
                 "real_env_steps_budget": selected.real_env_steps,
                 "llm_kd": False,
+                "device": provenance,
             },
         )
     trainer = O2Trainer(experiment=config, run=selected, device=arguments.device)
