@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-30
+
+- Validated: P1 Linux readiness and the independent O1 CUDA Gate have passed. The
+  immutable O1 receipt is bound to
+  `artifacts/optimization/o1_cuda_gate/20260829T075212Z_7c305ea2` at commit
+  `7c305ea24cdca34467c2e7e8a5a9d66ba1133d1e`; H12/baseline runtime ratio is
+  `2.880` and the persistent-memory Gate passed.
+- Added: O2 now has a strict machine-readable six-run calibration contract, an
+  identity-bound O1 receipt verifier and a dedicated owner-run implementation plan.
+  The contract fixes the canonical environment, energy values, PPO hyperparameters,
+  zero-semantic O2 interface and prohibitions on LLMKD and Fixed-AStarKD long runs.
+- Changed: Governance records now place O2 in experiment-layer implementation, mark
+  P1/O1 complete, and document direct SSH or `nohup` as the supported owner launch
+  methods rather than `tmux`.
+
 ## 2026-08-29
 
 - Fixed: The O1 benchmark worker now resets an episode when its existing

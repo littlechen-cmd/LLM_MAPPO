@@ -27,7 +27,7 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## Phase P1：优化路线 Linux 服务器执行基础设施
 
-- [~] in progress
+- [x] complete
 - 唯一规格：`specs/2026-08-28-p1-linux-optimization-server/`。
 - 目标：冻结用户级 Python 3.10/CUDA 环境、物理 GPU 绑定、共享服务器预检、等待型 owner
   launcher、O1 baseline/H12 Gate、H4 独立诊断、原子证据和显式恢复链路。
@@ -49,9 +49,11 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## Phase O1：优化路线角色对齐实现与静态验证
 
-- [~] 本地实现完成；等待 P1 与 owner-run Linux CUDA Gate
-- 状态：本地实现、短 smoke 与静态验证已完成；P1 将常规门禁修正为 `baseline/H12`，H4 仅在
-  失败后诊断。研究所有者在 P1 通过后启动等待型 O1 作业；设备占用不会降低或跳过该门禁。
+- [x] complete
+- 状态：本地实现、短 smoke、P1 Linux CUDA smoke 与 owner-run `baseline/H12` Gate 均已通过。
+  Gate artifact 为 `20260829T075212Z_7c305ea2`，commit 为
+  `7c305ea24cdca34467c2e7e8a5a9d66ba1133d1e`，H12/baseline runtime ratio 为 `2.880`，
+  memory Gate 通过；H4 未作为正常 Gate 运行。
 - 目标：只实现 O0 批准的方案，完成确定性教师纯度、action mask、零有效样本、buffer、KL、
   checkpoint 兼容、完整回归和短 smoke。
 - 禁止：训练、长评估、KL 系数搜索、环境/奖励/正式 seed 变更。
@@ -59,7 +61,7 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## Phase O2：优化路线校准训练与 Go/No-Go
 
-- [ ] pending
+- [~] experiment-layer implementation in progress
 - 目标：由研究所有者在 Linux 优化服务器上先通过 O1 门禁，再运行匹配校准训练；O1/O2 产物与
   Gate 状态保持逻辑隔离，Codex 分析日志与结果。
 - 固定组别：`MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组均关闭 LLMKD，共

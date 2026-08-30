@@ -1,10 +1,8 @@
-schema_version: 7
-status: p1_linux_implementation_in_progress
+schema_version: 8
+status: p1_and_o1_gate_passed_o2_implementation_in_progress
 document_role: governance_manifest_not_runtime_training_config
 canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:
-  - P1 Linux optimization-server infrastructure readiness
-  - O1 owner-run Linux baseline/H12 CUDA runtime and memory gate
   - O2 owner-run six-run calibration Go
   - O3 evaluation-only topology and interface freeze
   - D1 single-route decision
@@ -44,7 +42,7 @@ route_profiles:
       charge_threshold: 0.30
       charge_release_threshold: 0.8
     unseen_topologies:
-      status: implementation_in_progress
+      status: complete_topology_interface_ready
       specification: specs/2026-08-26-o3-unseen-topologies
       work_may_parallelize_with_o1_a600_wait: true
       evaluation_only: true
@@ -185,6 +183,11 @@ comparison_fairness:
   qmix_fallback: prohibited
 
 o1_cuda_gate:
+  status: passed
+  passed_run: artifacts/optimization/o1_cuda_gate/20260829T075212Z_7c305ea2
+  passed_code_commit: 7c305ea24cdca34467c2e7e8a5a9d66ba1133d1e
+  passed_h12_baseline_runtime_ratio: 2.879975995219935
+  passed_memory_gate: true
   execution_environment: linux_optimization_server
   physical_gpu_index: 0
   expected_gpu_name: NVIDIA GeForce RTX 4090

@@ -40,10 +40,10 @@
 - [x] **P1-C** 实现机器 inventory、五次连续空闲预检、48 小时等待与 GPU lease；
 - [x] **P1-D** 将正常 O1 Gate 修正为 baseline/H12，并把 H4 隔离为失败后诊断；
 - [x] **P1-E** 实现原子 shard、显式 resume、失败分类与 O1 Go receipt；
-- [x] **P1-F** 实现 owner-started tmux wait-to-O1 launcher，不启动或伪造 O2；
+- [x] **P1-F** 实现 owner-started wait-to-O1 launcher，不启动或伪造 O2；
 - [x] **P1-G** 完成本地全回归并交付唯一 Linux 安装和短 CUDA smoke 命令；
-- [ ] **P1-H** 研究所有者运行 Linux 短 smoke，Codex 审核后验收 P1；随后必须运行 O1 Gate，
-  O1 Go 后立即进入 O2，设备占用不得用于跳过 Gate。
+- [x] **P1-H** 研究所有者已完成 Linux 短 smoke；Codex 审核确认 P1 环境、GPU 绑定与
+  provenance 通过。O1 Gate 结果见 `20260829T075212Z_7c305ea2`。
 
 ## O0 — 优化路线 A* 教师算法与架构重设计（已完成）
 
@@ -57,26 +57,30 @@
 - [x] 建立并版本化唯一 canonical architecture，完成输入映射与跨文档一致性审计；
 - [x] 取得研究所有者书面批准；批准前未实施代码或训练。
 
-## O1 — 优化路线角色对齐实现与静态验证（等待 P1 与 Linux CUDA Gate）
+## O1 — 优化路线角色对齐实现与静态验证（已完成）
 
 - [x] 仅实现 O0 批准方案，遵循测试先行；
 - [x] 通过教师纯度、action mask、零有效样本、buffer/KL、checkpoint 与完整回归；
 - [x] 通过短 smoke，确认目标/优先级/充电改写、协调器污染和非法动作概率质量均为 0；
 - [x] 不启动训练、长评估或 KL 超参数搜索；
 - [x] Codex 已冻结旧 owner-only CUDA runtime/memory gate runner 与产物 schema；P1 负责 Linux 修订；
-- [ ] P1 Linux 环境、资源预检、GPU 绑定与短 CUDA smoke 通过；
-- [ ] 按资源修订将常规门禁改为 `baseline/H12`，保留 5 repeats、10 memory windows 与原阈值；
+- [x] P1 Linux 环境、资源预检、GPU 绑定与短 CUDA smoke 通过；
+- [x] 按资源修订将常规门禁改为 `baseline/H12`，保留 5 repeats、10 memory windows 与原阈值；
   H4 仅在 H12 失败后作为诊断，不参与正常 Go；
-- [ ] 将 O1 门禁作为 O2 owner job 的 fail-fast 前缀，产物和 Gate 状态仍保持独立；
-- [ ] 研究所有者在 Linux 优化服务器启动等待型作业，Codex 审核 O1 结果后才允许进入 O2。
+- [x] 将 O1 门禁作为 O2 owner job 的 fail-fast 前缀，产物和 Gate 状态仍保持独立；
+- [x] 研究所有者已在 Linux 优化服务器完成 Gate，Codex 审核 artifact
+  `artifacts/optimization/o1_cuda_gate/20260829T075212Z_7c305ea2`：commit
+  `7c305ea24cdca34467c2e7e8a5a9d66ba1133d1e`、runtime ratio `2.880`、memory Gate
+  通过。现允许进入 O2。
 
 ## O2 — 优化路线校准训练与 Go/No-Go
 
-- [ ] Codex 交付“先 O1、通过后 O2”的冻结命令和相互隔离的产物 schema；
+- [x] Codex 已交付 receipt-bound O2 runner、紧凑产物 schema、parity smoke 与聚合器；
+  正式运行仍须由研究所有者在服务器执行。
 - [ ] 运行合同固定为 `MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组均关闭
   LLMKD，共 6 次；
-- [ ] 在 MateBook 完成 Fixed/RC sampler、query、shadow、EMA、日志与计数等价性的确定性短
-  受控 smoke，不运行 Fixed-AStarKD 长校准；
+- [x] 在 MateBook 完成 Fixed/RC sampler、query、shadow、EMA、日志与计数等价性的确定性短
+  受控 smoke；64 步中命中 5 次采样且所有链路计数一致，不运行 Fixed-AStarKD 长校准；
 - [ ] 审查三个 RC seed 的有效教师覆盖率分别≥25%、无数值/接口失败；
 - [ ] 审查相对 `MAPPO-DG` 的固定 10k-step 网格吞吐 AUC 中位数退化≤10%；
 - [ ] 仅允许一次已定位接口/掩码错误修复；不得按结果调整 KL、seed、预算或阈值。

@@ -1,5 +1,17 @@
 # 研究进度
 
+## 2026-08-30 — P1/O1 通过，O2 实验层实现中
+
+- 研究所有者已完成 Linux P1 smoke；服务器的 Python、GPU 0 绑定、资源预检与 provenance
+  均通过。
+- O1 CUDA Gate 通过：artifact 为
+  `artifacts/optimization/o1_cuda_gate/20260829T075212Z_7c305ea2`，commit 为
+  `7c305ea24cdca34467c2e7e8a5a9d66ba1133d1e`，H12/baseline runtime ratio 为 `2.880`，
+  memory Gate 通过。因此 O2 不再受 O1 阻塞。
+- O2 处于实现阶段，尚未开始任何 150000-step 正式训练。其唯一矩阵保持
+  `MAPPO-DG/RC-AStarKD × 107/117/127`，每项 150000 个 joint environment transitions；
+  六项正式作业将顺序使用 GPU 0，且只在最终汇总达到覆盖率和吞吐 AUC 门槛后才判为 Go。
+
 ## 2026-08-26 — O1 门禁等待与 O3 并行启动
 
 - P0、O0 已完成；O1 本地实现、223 项回归、短 smoke 与静态验证已完成。

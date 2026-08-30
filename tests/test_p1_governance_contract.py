@@ -19,8 +19,8 @@ def test_p1_governance_freezes_linux_o1_to_o2_sequence():
     assert "P1→O1→O2" in protocol
     assert "A600" not in protocol
 
-    assert manifest["schema_version"] == 7
-    assert manifest["status"] == "p1_linux_implementation_in_progress"
+    assert manifest["schema_version"] == 8
+    assert manifest["status"] == "p1_and_o1_gate_passed_o2_implementation_in_progress"
     assert manifest["route_profiles"]["optimization"]["prerequisites"] == [
         "O0",
         "O1",
@@ -38,3 +38,4 @@ def test_p1_governance_freezes_linux_o1_to_o2_sequence():
     assert gate["physical_gpu_index"] == 0
     assert gate["expected_gpu_name"] == "NVIDIA GeForce RTX 4090"
     assert gate["o2_launch_requires_o1_gate_pass"] is True
+    assert gate["status"] == "passed"

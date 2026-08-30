@@ -48,7 +48,8 @@ P1 通过后必须由 owner 在共享 Linux 服务器启动 O1 常规 CUDA Gate�
 仅在失败后写入独立诊断产物。O1 以独立产物通过后，O2 才可由 owner 在单独阶段启动；设备占用
 只能触发等待，不得降低门禁或跳过 P1→O1→O2 顺序。
 
-唯一 O1 启动入口是 `scripts/run_o1_when_available.py`：它在 owner 的 tmux 会话中完成等待、资源
+唯一 O1 启动入口是 `scripts/run_o1_when_available.py`：它由 owner 在直接 SSH 会话或 `nohup`
+作业中完成等待、资源
 预检、项目 GPU lease、`CUDA_VISIBLE_DEVICES=0` 子进程绑定和 O1 Gate。它只输出 O2 所需 receipt
 或 O0 No-Go，不得自动启动、伪造或预先创建 O2 训练。
 
