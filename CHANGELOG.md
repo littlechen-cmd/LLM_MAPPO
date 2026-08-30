@@ -2,6 +2,10 @@
 
 ## 2026-08-30
 
+- Fixed: O2's frozen dynamic-ingress contract now explicitly starts priorities at
+  `A` and passes that field into its environment. A 1,000-step episode can create
+  26 batches, so the legacy adapter default `B` would exhaust `Z`; the formal
+  configuration now matches the already accepted G2/G3 priority convention.
 - Added: O2 run manifests now bind each diagnostic or formal artifact to its actual
   logical device, CUDA availability, device name and PyTorch version; unavailable CUDA
   causes a fail-closed error before an artifact is created.

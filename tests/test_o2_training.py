@@ -112,6 +112,27 @@ def test_o2_mappo_dg_short_prefix_has_no_teacher_side_effects():
     assert result["semantic_loss"] == 0.0
 
 
+def test_o2_explicitly_starts_dynamic_priorities_at_a():
+    """A full 1,000-step O2 episode can require all 26 A--Z batch labels."""
+    from llm_mappo.o2_contract import O2ExperimentConfig, O2RunSpec
+    from llm_mappo.o2_training import O2Trainer
+
+    experiment = O2ExperimentConfig.from_yaml(
+        ROOT / "configs/optimization/o2_calibration.yaml"
+    )
+    trainer = O2Trainer(
+        experiment=experiment,
+        run=O2RunSpec("MAPPO-DG", 107, 150000),
+        device="cpu",
+    )
+    try:
+        assert trainer.environment.env.initial_priority_label == "A"
+    finally:
+        trainer.environment.close()
+        trainer.student_shadow.close()
+        trainer.teacher_shadow.close()
+
+
 def test_o2_runtime_snapshot_resumes_from_an_empty_update_boundary():
     from llm_mappo.o2_contract import O2ExperimentConfig, O2RunSpec
     from llm_mappo.o2_training import O2Trainer

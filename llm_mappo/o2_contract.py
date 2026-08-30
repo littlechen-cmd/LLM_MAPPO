@@ -26,6 +26,7 @@ _FROZEN_ENVIRONMENT = {
     "n_agents": 5,
     "dynamic_ingress_interval": 40,
     "batch_size_range": [4, 8],
+    "initial_priority_label": "A",
     "queue_size": 8,
     "task_target": 50,
     "max_steps": 1000,

@@ -24,8 +24,10 @@ section 13.1-13.2, `specs/roadmap.md` Phase O2, and `TASKS.md` Phase O2.
 - The only O2 matrix is `MAPPO-DG/RC-AStarKD × 107/117/127 × 150000` real
   environment steps; LLMKD is disabled and Fixed-AStarKD receives no long run.
 - The environment remains the frozen 5-AGV canonical environment with dynamic
-  ingress 40, batch size 4-8, queue 8, task target 50, max steps 1000, deadlock 180,
-  and energy `1.10/0.30/0.80`.
+  ingress 40, batch size 4-8, explicit initial priority label `A`, queue 8, task
+  target 50, max steps 1000, deadlock 180, and energy `1.10/0.30/0.80`. The label
+  must be explicit because an episode can contain at most 26 batches (two initial
+  plus 24 scheduled), requiring the complete `A`--`Z` range.
 - O2 must verify a passing `o1-gate-receipt-v1` and matching O1 summary before
   creating run artifacts.
 - Long training and evaluation are owner-only; local commands use

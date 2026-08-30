@@ -21,6 +21,7 @@ def _config_mapping():
             "n_agents": 5,
             "dynamic_ingress_interval": 40,
             "batch_size_range": [4, 8],
+            "initial_priority_label": "A",
             "queue_size": 8,
             "task_target": 50,
             "max_steps": 1000,
@@ -82,6 +83,11 @@ def test_o2_contract_rejects_any_unknown_or_changed_environment_field():
     changed = _config_mapping()
     changed["environment"]["charge_threshold"] = 0.25
     with pytest.raises(ValueError, match="charge_threshold"):
+        O2ExperimentConfig.from_mapping(changed)
+
+    changed = _config_mapping()
+    changed["environment"]["initial_priority_label"] = "B"
+    with pytest.raises(ValueError, match="initial_priority_label"):
         O2ExperimentConfig.from_mapping(changed)
 
     invalid_type = _config_mapping()

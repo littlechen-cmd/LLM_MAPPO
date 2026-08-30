@@ -627,6 +627,7 @@ class O2Trainer:
             deadlock_steps=int(values["deadlock_steps"]),
             batch_interval=int(values["dynamic_ingress_interval"]),
             batch_size_range=tuple(values["batch_size_range"]),
+            initial_priority_label=str(values["initial_priority_label"]),
             request_queue_size=int(values["queue_size"]),
             task_completion_target=int(values["task_target"]),
             observation_schema=ObservationSchema.DIRECT_GOAL_V1,
