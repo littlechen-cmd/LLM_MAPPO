@@ -77,6 +77,8 @@
 
 - [x] Codex 已交付 receipt-bound O2 runner、紧凑产物 schema、parity smoke 与聚合器；
   正式运行仍须由研究所有者在服务器执行。
+- [x] 已交付单命令 O2 matrix runner：一次 `nohup` 顺序完成 6 个正式 run，按严格身份自动跳过
+  已完成项或恢复唯一合法中断项，全部完成后自动聚合 Gate；不再增加服务器性能测试。
 - [ ] 运行合同固定为 `MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组均关闭
   LLMKD，共 6 次；
 - [x] 在 MateBook 完成 Fixed/RC sampler、query、shadow、EMA、日志与计数等价性的确定性短

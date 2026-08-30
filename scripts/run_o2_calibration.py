@@ -8,14 +8,13 @@ from pathlib import Path
 import subprocess
 from typing import Sequence
 
-import torch
-
 from llm_mappo.o2_contract import (
     O2ExperimentConfig,
     O2RunSpec,
     expand_o2_matrix,
     verify_o1_authorization,
 )
+from llm_mappo.o2_device import device_provenance
 from llm_mappo.o2_evidence import (
     O2EvidenceWriter,
     compute_throughput_grid,
@@ -57,27 +56,6 @@ def _code_commit() -> str:
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     )
     return result.stdout.strip()
-
-
-def device_provenance(logical_device: str) -> dict:
-    """Record the actual device used by a diagnostic or formal O2 artifact."""
-    if logical_device == "cpu":
-        return {
-            "logical_device": "cpu",
-            "cuda_available": False,
-            "device_name": None,
-            "torch": torch.__version__,
-        }
-    device = torch.device(logical_device)
-    if device.type != "cuda" or not torch.cuda.is_available():
-        raise RuntimeError("O2 CUDA provenance requires an available CUDA device.")
-    index = 0 if device.index is None else device.index
-    return {
-        "logical_device": str(device),
-        "cuda_available": True,
-        "device_name": torch.cuda.get_device_name(index),
-        "torch": torch.__version__,
-    }
 
 
 def run(arguments: argparse.Namespace) -> dict:  # noqa: C901

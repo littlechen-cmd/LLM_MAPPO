@@ -2,6 +2,13 @@
 
 ## 2026-08-30
 
+- Added: A single owner-run O2 matrix launcher now executes all six frozen members in
+  order, isolates each member in a child process, skips matching completed evidence,
+  resumes one valid interrupted checkpoint, prevents concurrent duplicate launchers and
+  automatically writes the aggregate Gate result. No additional server-performance
+  qualification is required after the accepted P1, O1 and O2 smoke evidence.
+- Changed: Linux long-job guidance now uses owner-started `nohup` with logs under
+  `/home/lzx/` and no longer assumes `tmux` is installed.
 - Fixed: O2's frozen dynamic-ingress contract now explicitly starts priorities at
   `A` and passes that field into its environment. A 1,000-step episode can create
   26 batches, so the legacy adapter default `B` would exhaust `Z`; the formal

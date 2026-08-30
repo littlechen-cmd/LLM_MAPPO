@@ -42,9 +42,13 @@ section 13.1-13.2, `specs/roadmap.md` Phase O2, and `TASKS.md` Phase O2.
   observations and have semantic loss fixed to zero. MAPPO-DG makes zero Teacher
   queries, shadow calls and EMA updates; only RC-AStarKD invokes calibration.
 - Checkpoints occur every `10000` transitions and resume only when code commit,
-  configuration and seed match exactly. The six formal runs execute sequentially on
-  physical GPU 0 after the P1 preflight/lease; a completed run does not make O2 Go
-  until the aggregate analyzer passes.
+  configuration and seed match exactly. One owner matrix launcher executes all six
+  formal runs sequentially on physical GPU 0, skips matching completed members,
+  resumes the unique matching interrupted member and automatically invokes the
+  aggregate analyzer. A completed run does not make O2 Go until that analyzer passes.
+- P1 readiness, the O1 CUDA Gate and the two group smoke checks are sufficient server
+  qualification. O2 must not add another performance benchmark, resource experiment or
+  repeated manual preflight merely to decide whether this server is adequate.
 - O2 artifacts live only below `artifacts/optimization/o2_calibration/`; ordinary
   logs never contain full state or Teacher arrays.
 - No source under `llm_mappo/mappo.py`, `llm_mappo/environment.py`,
@@ -168,6 +172,33 @@ section 13.1-13.2, `specs/roadmap.md` Phase O2, and `TASKS.md` Phase O2.
 - [x] Run analysis tests and confirm failure because the analyzer is absent.
 - [x] Implement deterministic aggregation without reading held-out seeds or O3 results.
 - [x] Run all O2 tests, the relevant O0/O1 regression set, Flake8 and `git diff --check`.
-- [ ] Commit the implementation, then provide exact Git bundle transfer commands and one
+- [x] Commit the implementation, then provide exact Git bundle transfer commands and one
   owner-only Linux `nohup` command using `/home/lzx/llm-a-mappo`, physical GPU 0 and logs
   under `/home/lzx/`.
+
+### Task 6: Single-command formal matrix orchestration
+
+**Files:**
+- Create: `scripts/run_o2_matrix.py`
+- Create: `llm_mappo/o2_device.py`
+- Test: `tests/test_o2_matrix.py`
+- Modify: `scripts/run_o2_calibration.py`, `TASKS.md`, `specs/tech-stack.md`,
+  `CHANGELOG.md`
+
+**Interface:**
+- CLI: `run_o2_matrix.py --config ... --o1-run ... --output-root ... --device cuda:0`.
+- Produces one identity-bound `formal_<commit>_<config>` directory containing the six
+  child runs, `matrix_manifest.json`, `matrix_state.json` and `o2_gate_summary.json`.
+
+- [x] Expose one formal owner entry point with no per-run selector and no smoke override.
+- [x] Execute the exact frozen matrix in order while keeping every member in an isolated
+  child process on logical `cuda:0` / physical GPU 0.
+- [x] Skip one matching complete member, resume one matching running member only when its
+  update-boundary checkpoint exists, and fail closed on failed, duplicate or ambiguous
+  evidence.
+- [x] Hold a matrix-wide advisory lock so two owner launchers cannot duplicate formal
+  runs; an identical command after interruption reuses the same identity-bound directory.
+- [x] Automatically run the existing aggregate analyzer after all six members complete
+  and persist the final Gate outcome in the matrix state.
+- [x] Validate locally with deterministic CLI/action/command tests only; do not add
+  server-performance experiments or another qualification smoke.
