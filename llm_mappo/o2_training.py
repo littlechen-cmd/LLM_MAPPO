@@ -363,14 +363,16 @@ class O2Trainer:
         self.teacher_adapter = ShadowStateAdapter(
             self.teacher_shadow, code_commit="o2-v1"
         )
+        self._runtime: dict[str, Any] | None = None
 
-    def run(
+    def run(  # noqa: C901
         self,
         max_steps: int | None = None,
         *,
         on_step: Callable[[dict[str, Any]], None] | None = None,
         on_update: Callable[[dict[str, Any]], None] | None = None,
         on_episode: Callable[[dict[str, Any]], None] | None = None,
+        on_checkpoint: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Run a bounded prefix; caller marks any prefix diagnostic-only in evidence."""
         target_steps = (
@@ -378,26 +380,38 @@ class O2Trainer:
         )
         if target_steps < 1 or target_steps > self.run_spec.real_env_steps:
             raise ValueError("O2 run length must be within its frozen step budget.")
-        observations = self.environment.reset(seed=self.run_spec.seed)
-        self.student_shadow.reset(seed=self.run_spec.seed)
-        self.teacher_shadow.reset(seed=self.run_spec.seed)
+        if self._runtime is None:
+            observations = self.environment.reset(seed=self.run_spec.seed)
+            self.student_shadow.reset(seed=self.run_spec.seed)
+            self.teacher_shadow.reset(seed=self.run_spec.seed)
+            episode_index = 0
+            episode_step = 0
+            updates = 0
+            episodes = 0
+            cumulative_completed_tasks = 0
+            cumulative_episode_steps = 0
+            counts = self._empty_counts()
+            latest_metrics: dict[str, float | bool | int] = {}
+        else:
+            self.environment.reset(seed=self.run_spec.seed)
+            self.student_shadow.reset(seed=self.run_spec.seed)
+            self.teacher_shadow.reset(seed=self.run_spec.seed)
+            self._restore_rng(self._runtime["rng"])
+            self.real_adapter.restore_bytes(self._runtime["snapshot"])
+            observations = self.environment._observations()
+            episode_index = int(self._runtime["episode_index"])
+            episode_step = int(self._runtime["episode_step"])
+            updates = int(self._runtime["updates"])
+            episodes = int(self._runtime["episodes"])
+            cumulative_completed_tasks = int(
+                self._runtime["cumulative_completed_tasks"]
+            )
+            cumulative_episode_steps = int(self._runtime["cumulative_episode_steps"])
+            counts = dict(self._runtime["counts"])
+            latest_metrics = dict(self._runtime["latest_metrics"])
         rollout = O2Rollout(self.experiment.environment["n_agents"])
-        episode_index = 0
-        episode_step = 0
-        updates = 0
-        episodes = 0
-        cumulative_completed_tasks = 0
-        cumulative_episode_steps = 0
-        counts = {
-            "teacher_queries": 0,
-            "calibration_selected": 0,
-            "calibration_selected_agent_slots": 0,
-            "valid_teacher_selected_slots": 0,
-            "shadow_calls": 0,
-            "ema_updates": 0,
-        }
-        latest_metrics: dict[str, float | bool | int] = {}
-        for step in range(target_steps):
+        for step in range(self.schedule.global_env_steps, target_steps):
+            update_metrics = None
             masks = self.environment.action_masks()
             actions, log_probs, value = self._stochastic_actions(observations, masks)
             preferences, valid = self._teacher_batch(self.environment)
@@ -456,13 +470,6 @@ class O2Trainer:
                 if not update_metrics["finite"]:
                     raise RuntimeError("O2 PPO update reported non-finite metrics.")
                 updates += 1
-                if on_update is not None:
-                    on_update(
-                        {
-                            "real_env_steps": self.schedule.global_env_steps,
-                            **update_metrics,
-                        }
-                    )
                 rollout = O2Rollout(self.experiment.environment["n_agents"])
             if done:
                 episodes += 1
@@ -483,6 +490,35 @@ class O2Trainer:
                 )
             else:
                 episode_step += 1
+            if update_metrics is not None:
+                update_record = {
+                    "real_env_steps": self.schedule.global_env_steps,
+                    **update_metrics,
+                }
+                if on_update is not None:
+                    on_update(update_record)
+                self._runtime = self._capture_runtime(
+                    episode_index=episode_index,
+                    episode_step=episode_step,
+                    updates=updates,
+                    episodes=episodes,
+                    cumulative_completed_tasks=cumulative_completed_tasks,
+                    cumulative_episode_steps=cumulative_episode_steps,
+                    counts=counts,
+                    latest_metrics=latest_metrics,
+                )
+                if on_checkpoint is not None:
+                    on_checkpoint(self.runtime_state())
+        self._runtime = self._capture_runtime(
+            episode_index=episode_index,
+            episode_step=episode_step,
+            updates=updates,
+            episodes=episodes,
+            cumulative_completed_tasks=cumulative_completed_tasks,
+            cumulative_episode_steps=cumulative_episode_steps,
+            counts=counts,
+            latest_metrics=latest_metrics,
+        )
         return {
             "group": self.run_spec.group,
             "seed": self.run_spec.seed,
@@ -494,6 +530,90 @@ class O2Trainer:
             "latest_episode_metrics": latest_metrics,
             **counts,
         }
+
+    def runtime_state(self) -> dict[str, Any]:
+        """Return an update-boundary live-environment snapshot for exact resume."""
+        if self._runtime is None:
+            raise RuntimeError(
+                "O2 runtime state is unavailable before the first update."
+            )
+        return dict(self._runtime)
+
+    def restore_runtime_state(self, state: dict[str, Any]) -> None:
+        """Restore only a snapshot captured at an empty-rollout update boundary."""
+        required = {
+            "schema", "snapshot", "schedule_state", "episode_index",
+            "episode_step",
+            "updates", "episodes", "cumulative_completed_tasks",
+            "cumulative_episode_steps", "counts", "latest_metrics", "rng",
+        }
+        if set(state) != required or state.get("schema") != "o2-runtime-v1":
+            raise ValueError("O2 runtime state is incompatible.")
+        schedule = state["schedule_state"]
+        if int(schedule["total_env_steps"]) != self.run_spec.real_env_steps:
+            raise ValueError("O2 runtime schedule does not match the frozen run.")
+        self.schedule.global_env_steps = int(schedule["global_env_steps"])
+        self._runtime = dict(state)
+
+    def restore_calibration_state(self, state: dict[str, Any] | None) -> None:
+        if self.calibrator is None:
+            if state is not None:
+                raise ValueError("MAPPO-DG cannot restore calibration state.")
+            return
+        if state is None:
+            raise ValueError("RC-AStarKD resume requires calibration state.")
+        ema = self.calibrator.ema
+        frozen = {
+            "decay": ema.decay,
+            "minimum_scale": ema.minimum_scale,
+            "initialization_sample_count": ema.initialization_sample_count,
+        }
+        if any(state.get(name) != value for name, value in frozen.items()):
+            raise ValueError("O2 calibration state violates the frozen EMA contract.")
+        for name in ("count", "mean", "m2", "variance", "initialized"):
+            setattr(ema, name, state[name])
+
+    def _capture_runtime(self, **values: Any) -> dict[str, Any]:
+        address = {
+            "run_seed": self.run_spec.seed,
+            "episode_index": int(values["episode_index"]),
+            "episode_seed": self.run_spec.seed + int(values["episode_index"]),
+            "environment_index": 0,
+            "real_global_step": self.schedule.global_env_steps,
+            "episode_step": int(values["episode_step"]),
+        }
+        return {
+            "schema": "o2-runtime-v1",
+            "snapshot": self.real_adapter.capture(**address).to_bytes(),
+            "schedule_state": self.schedule.state_dict(),
+            "rng": self._rng_state(),
+            **values,
+        }
+
+    @staticmethod
+    def _empty_counts() -> dict[str, int]:
+        return {
+            "teacher_queries": 0,
+            "calibration_selected": 0,
+            "calibration_selected_agent_slots": 0,
+            "valid_teacher_selected_slots": 0,
+            "shadow_calls": 0,
+            "ema_updates": 0,
+        }
+
+    @staticmethod
+    def _rng_state() -> dict[str, Any]:
+        return {
+            "python": random.getstate(),
+            "numpy": np.random.get_state(),
+            "torch": torch.get_rng_state(),
+        }
+
+    @staticmethod
+    def _restore_rng(state: dict[str, Any]) -> None:
+        random.setstate(state["python"])
+        np.random.set_state(state["numpy"])
+        torch.set_rng_state(state["torch"])
 
     def _new_environment(self) -> Phase2Warehouse:
         values = self.experiment.environment

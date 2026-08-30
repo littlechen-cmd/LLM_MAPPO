@@ -117,9 +117,10 @@ section 13.1-13.2, `specs/roadmap.md` Phase O2, and `TASKS.md` Phase O2.
   compact schema, forbidden full arrays, 0..150000/10000 throughput grid, and terminal
   checkpoints.
 - [x] Run focused tests and confirm the new evidence/checkpoint interfaces are absent.
-- [ ] Integrate update-boundary periodic checkpoint/resume into the owner runner. The
-  compact checkpoint primitives, identity validation and RNG restoration are implemented,
-  but a resumed run must still restore the live environment/episode state before formal use.
+- [x] Integrate update-boundary periodic checkpoint/resume into the owner runner. The
+  runner restores the identity-bound live environment/episode snapshot, optimizer, EMA
+  and RNG state before taking the next step; checkpoint thresholds are honored at the
+  first completed PPO update boundary after each 10k-step threshold.
 - [x] Run focused evidence/checkpoint tests and `git diff --check`.
 
 ### Task 4: Fixed/RC parity smoke and owner CLI

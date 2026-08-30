@@ -64,6 +64,17 @@ class O2EvidenceWriter:
         (path / "teacher_events.jsonl").touch()
         return cls(path)
 
+    @classmethod
+    def open_existing(cls, directory: str | Path) -> "O2EvidenceWriter":
+        """Reopen an interrupted O2 run; complete artifacts remain immutable."""
+        path = Path(directory)
+        state = json.loads((path / "state.json").read_text(encoding="utf-8"))
+        if state.get("status") != "running":
+            raise ValueError("Only an interrupted running O2 artifact may resume.")
+        if not (path / "run_manifest.json").is_file():
+            raise ValueError("O2 resume artifact is missing its run manifest.")
+        return cls(path)
+
     def write_teacher_step_count(self, row: Mapping[str, Any]) -> None:
         self._append_csv("teacher_step_counts.csv", row)
 

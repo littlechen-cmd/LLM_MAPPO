@@ -2,6 +2,10 @@
 
 ## 2026-08-30
 
+- Added: O2 now saves an identity-bound live environment snapshot at completed PPO
+  update boundaries after each 10k-step checkpoint threshold. Interrupted runs can resume
+  only from the matching run directory, commit, configuration, seed, optimizer, EMA and
+  RNG state; all other resume attempts fail closed.
 - Validated: P1 Linux readiness and the independent O1 CUDA Gate have passed. The
   immutable O1 receipt is bound to
   `artifacts/optimization/o1_cuda_gate/20260829T075212Z_7c305ea2` at commit

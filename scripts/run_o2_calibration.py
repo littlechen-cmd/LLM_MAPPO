@@ -3,6 +3,7 @@
 import argparse
 import csv
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import subprocess
 from typing import Sequence
@@ -16,6 +17,7 @@ from llm_mappo.o2_contract import (
 from llm_mappo.o2_evidence import (
     O2EvidenceWriter,
     compute_throughput_grid,
+    load_o2_checkpoint,
     save_o2_checkpoint,
 )
 from llm_mappo.o2_training import O2Trainer
@@ -28,6 +30,7 @@ def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-root", required=True, help="O2 artifact root.")
     parser.add_argument("--run", required=True, help="One frozen GROUP:SEED member.")
     parser.add_argument("--device", default="cuda:0", help="Torch logical device.")
+    parser.add_argument("--resume", help="Interrupted O2 run directory to resume.")
     parser.add_argument(
         "--smoke-steps",
         type=int,
@@ -54,16 +57,13 @@ def _code_commit() -> str:
     return result.stdout.strip()
 
 
-def run(arguments: argparse.Namespace) -> dict:
+def run(arguments: argparse.Namespace) -> dict:  # noqa: C901
     config = O2ExperimentConfig.from_yaml(arguments.config)
     o1 = verify_o1_authorization(arguments.o1_run)
     selected = _selected_run(arguments.run, config)
     if arguments.smoke_steps is not None and arguments.smoke_steps < 1:
         raise ValueError("--smoke-steps must be positive.")
     diagnostic_only = arguments.smoke_steps is not None
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    name = f"{selected.group.lower()}_seed{selected.seed}_{timestamp}"
-    directory = Path(arguments.output_root) / name
     identity = {
         "code_commit": _code_commit(),
         "config_sha256": config.sha256(),
@@ -72,17 +72,44 @@ def run(arguments: argparse.Namespace) -> dict:
         "o1_code_commit": o1["code_commit"],
         "o1_summary_sha256": o1["summary_sha256"],
     }
-    writer = O2EvidenceWriter.create(
-        directory,
-        {
-            "schema": "o2-run-manifest-v1",
-            "identity": identity,
-            "diagnostic_only": diagnostic_only,
-            "real_env_steps_budget": selected.real_env_steps,
-            "llm_kd": False,
-        },
-    )
+    if arguments.resume:
+        directory = Path(arguments.resume)
+        manifest = json.loads(
+            (directory / "run_manifest.json").read_text(encoding="utf-8")
+        )
+        if manifest.get("identity") != identity:
+            raise ValueError("O2 resume identity does not exactly match this run.")
+        if manifest.get("diagnostic_only") != diagnostic_only:
+            raise ValueError("O2 resume diagnostic mode does not match the artifact.")
+        writer = O2EvidenceWriter.open_existing(directory)
+    else:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        name = f"{selected.group.lower()}_seed{selected.seed}_{timestamp}"
+        directory = Path(arguments.output_root) / name
+        writer = O2EvidenceWriter.create(
+            directory,
+            {
+                "schema": "o2-run-manifest-v1",
+                "identity": identity,
+                "diagnostic_only": diagnostic_only,
+                "real_env_steps_budget": selected.real_env_steps,
+                "llm_kd": False,
+            },
+        )
     trainer = O2Trainer(experiment=config, run=selected, device=arguments.device)
+    if arguments.resume:
+        restored = load_o2_checkpoint(
+            directory / "checkpoint_latest.pt",
+            expected_identity=identity,
+            actor=trainer.actor,
+            critic=trainer.critic,
+            optimizer=trainer.updater.optimizer,
+        )
+        trainer.restore_runtime_state(restored["trainer_state"])
+        trainer.restore_calibration_state(restored["calibration_state"])
+    next_checkpoint = [
+        ((trainer.schedule.global_env_steps // 10000) + 1) * 10000
+    ]
 
     def on_step(row):
         writer.write_teacher_step_count(
@@ -98,12 +125,34 @@ def run(arguments: argparse.Namespace) -> dict:
             )}
         )
 
+    def on_checkpoint(runtime):
+        if trainer.schedule.global_env_steps < next_checkpoint[0]:
+            return
+        save_o2_checkpoint(
+            directory / "checkpoint_latest.pt",
+            identity=identity,
+            actor=trainer.actor,
+            critic=trainer.critic,
+            optimizer=trainer.updater.optimizer,
+            schedule_state=trainer.schedule.state_dict(),
+            calibration_state=(
+                None
+                if trainer.calibrator is None
+                else trainer.calibrator.ema.state_dict()
+            ),
+            trainer_state=runtime,
+            rollout_empty=True,
+        )
+        while trainer.schedule.global_env_steps >= next_checkpoint[0]:
+            next_checkpoint[0] += 10000
+
     try:
         summary = trainer.run(
             max_steps=arguments.smoke_steps,
             on_step=on_step,
             on_update=on_update,
             on_episode=writer.write_episode,
+            on_checkpoint=on_checkpoint,
         )
         save_o2_checkpoint(
             directory / "checkpoint_final.pt",
@@ -117,7 +166,7 @@ def run(arguments: argparse.Namespace) -> dict:
                 if trainer.calibrator is None
                 else trainer.calibrator.ema.state_dict()
             ),
-            trainer_state={"status": "complete"},
+            trainer_state=trainer.runtime_state(),
             rollout_empty=True,
         )
         _write_throughput_grid(directory)

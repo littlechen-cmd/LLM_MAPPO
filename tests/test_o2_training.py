@@ -110,3 +110,36 @@ def test_o2_mappo_dg_short_prefix_has_no_teacher_side_effects():
     assert result["shadow_calls"] == 0
     assert result["ema_updates"] == 0
     assert result["semantic_loss"] == 0.0
+
+
+def test_o2_runtime_snapshot_resumes_from_an_empty_update_boundary():
+    from llm_mappo.o2_contract import O2ExperimentConfig, O2RunSpec
+    from llm_mappo.o2_training import O2Trainer
+
+    experiment = O2ExperimentConfig.from_yaml(
+        ROOT / "configs/optimization/o2_calibration.yaml"
+    )
+    first = O2Trainer(
+        experiment=experiment,
+        run=O2RunSpec("MAPPO-DG", 107, 150000),
+        device="cpu",
+    )
+    first.run(max_steps=2)
+    runtime = first.runtime_state()
+    first.environment.close()
+    first.student_shadow.close()
+    first.teacher_shadow.close()
+
+    resumed = O2Trainer(
+        experiment=experiment,
+        run=O2RunSpec("MAPPO-DG", 107, 150000),
+        device="cpu",
+    )
+    resumed.restore_runtime_state(runtime)
+    result = resumed.run(max_steps=4)
+    resumed.environment.close()
+    resumed.student_shadow.close()
+    resumed.teacher_shadow.close()
+
+    assert result["real_env_steps"] == 4
+    assert result["teacher_queries"] == 0
