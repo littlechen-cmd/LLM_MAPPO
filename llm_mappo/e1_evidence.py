@@ -24,7 +24,11 @@ class E1EvidenceWriter:
 
     _fields = {
         "updates.csv": ("real_env_steps", "policy_loss", "value_loss", "astar_loss",
-                        "semantic_loss", "semantic_valid_denominator", "lambda_a", "lambda_l"),
+                        "semantic_loss", "semantic_valid_denominator", "lambda_a", "lambda_l",
+                        "num_env_workers", "rollout_length", "global_environment_steps",
+                        "environment_steps_per_second", "rollout_wall_time", "policy_inference_time",
+                        "ppo_update_time", "total_elapsed_time", "peak_cuda_memory_allocated",
+                        "peak_cuda_memory_reserved"),
         "episodes.csv": ("real_env_steps", "completed_tasks", "reward", "collisions", "deadlocked"),
         "teacher_step_counts.csv": ("real_env_steps", "teacher_queries", "shadow_calls", "ema_updates",
                                     "semantic_valid_slots", "semantic_total_slots", "planner_query_count"),
@@ -88,7 +92,7 @@ def save_e1_checkpoint(path: str | Path, *, identity: Mapping[str, Any], actor, 
         raise ValueError("E1 checkpoint requires raw evidence identity.")
     if schedule_state.get("schedule_version") != "linear-env-step-v1":
         raise ValueError("E1 checkpoint requires the frozen schedule.")
-    if trainer_state.get("schema") != "e1-runtime-v1":
+    if trainer_state.get("schema") not in {"e1-runtime-v1", "e1-runtime-v2"}:
         raise ValueError("E1 checkpoint requires a resumable runtime state.")
     destination = Path(path)
     payload = {"schema": _SCHEMA, "identity": dict(identity), "actor": actor.state_dict(),
@@ -116,7 +120,7 @@ def load_e1_checkpoint(path: str | Path, *, expected_identity: Mapping[str, Any]
         raise ValueError("E1 expected identity lacks raw evidence hash.")
     if payload.get("schedule", {}).get("schedule_version") != "linear-env-step-v1":
         raise ValueError("E1 checkpoint schedule is incompatible.")
-    if payload.get("trainer_state", {}).get("schema") != "e1-runtime-v1":
+    if payload.get("trainer_state", {}).get("schema") not in {"e1-runtime-v1", "e1-runtime-v2"}:
         raise ValueError("E1 checkpoint trainer state is incompatible.")
     try:
         actor.load_state_dict(payload["actor"]); critic.load_state_dict(payload["critic"])

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 from pathlib import Path
+import time
 from typing import Any, Mapping
 
 import numpy as np
@@ -32,6 +33,8 @@ from llm_mappo.phase2 import Phase2Warehouse
 from llm_mappo.pure_motion_teacher import PureMotionQuery, PureMotionTeacher
 from llm_mappo.reward_calibration import RewardCalibrator
 from llm_mappo.shadow_state import ShadowStateAdapter
+from llm_mappo.shadow_state import ShadowSnapshotV1, rebind_snapshot_rng_guard
+from llm_mappo.e1_vector_env import E1VectorEnvironmentPool
 
 
 _RAW_LABEL_PROMPT = "semantic-prompt-v5-state-contract"
@@ -215,6 +218,7 @@ class E1Rollout:
             "semantic_ood_reliability": self._array(
                 values["semantic_ood_reliability"], (self.n_agents,)
             ),
+            "stream_id": int(values.get("stream_id", 0)),
             "reward": float(values["reward"]),
             "done": bool(values["done"]),
             "value": float(values["value"]),
@@ -239,20 +243,30 @@ class E1Rollout:
             raise ValueError("Each valid E1 A* preference must sum to one.")
         self._records.append(record)
 
-    def tensors(self, *, last_value: float, device: str | torch.device) -> E1RolloutTensors:
+    def tensors(self, *, last_value: float | Mapping[int, float] | np.ndarray, device: str | torch.device) -> E1RolloutTensors:
         if not self._records:
             raise ValueError("Cannot update an empty E1 rollout.")
         rewards = np.asarray([record["reward"] for record in self._records], dtype=np.float32)
         dones = np.asarray([record["done"] for record in self._records], dtype=bool)
         values = np.asarray([record["value"] for record in self._records], dtype=np.float32)
         advantages = np.zeros(len(self._records), dtype=np.float32)
-        gae, next_value = 0.0, float(last_value)
+        stream_ids = {record["stream_id"] for record in self._records}
+        if isinstance(last_value, Mapping):
+            next_values = {stream: float(last_value.get(stream, 0.0)) for stream in stream_ids}
+        elif np.isscalar(last_value):
+            next_values = {stream: float(last_value) for stream in stream_ids}
+        else:
+            vector = np.asarray(last_value, dtype=np.float32).reshape(-1)
+            next_values = {stream: float(vector[stream]) for stream in stream_ids}
+        gae_by_stream = {stream: 0.0 for stream in stream_ids}
         for index in reversed(range(len(self._records))):
+            stream = self._records[index]["stream_id"]
             keep_bootstrap = 1.0 - float(dones[index])
-            delta = rewards[index] + 0.99 * next_value * keep_bootstrap - values[index]
-            gae = delta + 0.99 * 0.95 * keep_bootstrap * gae
+            delta = rewards[index] + 0.99 * next_values[stream] * keep_bootstrap - values[index]
+            gae = delta + 0.99 * 0.95 * keep_bootstrap * gae_by_stream[stream]
             advantages[index] = gae
-            next_value = float(values[index])
+            gae_by_stream[stream] = gae
+            next_values[stream] = float(values[index])
 
         def stack(name: str, dtype: torch.dtype) -> Tensor:
             return torch.as_tensor(
@@ -320,7 +334,7 @@ class E1PPOUpdater:
             list(self.actor.parameters()) + list(self.critic.parameters()), lr=3e-4
         )
 
-    def update(self, rollout: E1Rollout, *, last_value: float,
+    def update(self, rollout: E1Rollout, *, last_value: float | Mapping[int, float] | np.ndarray,
                lambda_a: float, lambda_l: float) -> dict[str, float | int]:
         data = rollout.tensors(last_value=last_value, device=self.device)
         advantages = (data.advantages - data.advantages.mean()) / (
@@ -412,15 +426,25 @@ class E1Trainer:
         self.schedule = LinearEnvStepSchedule(int(run.real_environment_steps))
         self.teacher = None if run.astar_kd == "disabled" else PureMotionTeacher()
         self.calibrator = None if self.teacher is None else RewardCalibrator()
+        self.num_env_workers = int(training.get("num_env_workers", 1))
+        self.rollout_length = int(training.get("rollout_length", training["rollout_steps"]))
+        if self.num_env_workers < 1 or self.rollout_length < 1:
+            raise ValueError("E1 rollout worker count and length must be positive.")
         self.environment = self._new_environment()
         self.student_shadow = self._new_environment()
         self.teacher_shadow = self._new_environment()
-        self.real_adapter = ShadowStateAdapter(self.environment, code_commit="e1-v1")
-        self.student_adapter = ShadowStateAdapter(self.student_shadow, code_commit="e1-v1")
-        self.teacher_adapter = ShadowStateAdapter(self.teacher_shadow, code_commit="e1-v1")
+        self.real_adapter = ShadowStateAdapter(self.environment, code_commit="e1-vector-v1")
+        self.student_adapter = ShadowStateAdapter(self.student_shadow, code_commit="e1-vector-v1")
+        self.teacher_adapter = ShadowStateAdapter(self.teacher_shadow, code_commit="e1-vector-v1")
+        self.vector_pool = None
         self._runtime = None
+        if self.device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(self.device)
 
     def close(self) -> None:
+        if self.vector_pool is not None:
+            self.vector_pool.close()
+            self.vector_pool = None
         for environment in (self.environment, self.student_shadow, self.teacher_shadow):
             environment.close()
 
@@ -428,6 +452,8 @@ class E1Trainer:
         """Run a bounded real-environment prefix; owner runner owns checkpoints."""
         if not 1 <= max_steps <= self.run.real_environment_steps:
             raise ValueError("E1 prefix is outside the frozen real-step budget.")
+        if self.num_env_workers > 1:
+            return self._run_vector_prefix(max_steps, on_update=on_update)
         self.student_shadow.reset(seed=self.run.seed); self.teacher_shadow.reset(seed=self.run.seed)
         if self._runtime is None:
             observations = self.environment.reset(seed=self.run.seed)
@@ -486,6 +512,143 @@ class E1Trainer:
                 "exploratory_noisy_teacher": self.run.semantic_control == "llm", **counts,
                 **metrics}
 
+    def _run_vector_prefix(self, max_steps: int, *, on_update=None) -> dict[str, Any]:  # noqa: C901
+        """Collect real transitions in spawned CPU processes and learn centrally."""
+        if max_steps % self.num_env_workers:
+            raise ValueError("E1 vector prefix must end on a whole worker step.")
+        self.student_shadow.reset(seed=self.run.seed)
+        self.teacher_shadow.reset(seed=self.run.seed)
+        self.vector_pool = E1VectorEnvironmentPool(self.environment_values, self.run,
+            self.semantic_dataset, self.num_env_workers)
+        if self._runtime is not None:
+            state = self._runtime
+            self.vector_pool.restore(state["worker_states"])
+        updates = 0 if self._runtime is None else int(self._runtime["updates"])
+        counts = ({"teacher_queries": 0, "shadow_calls": 0, "ema_updates": 0,
+                   "semantic_valid_slots": 0, "semantic_total_slots": 0}
+                  if self._runtime is None else dict(self._runtime["counts"]))
+        latest = {} if self._runtime is None else dict(self._runtime["latest_metrics"])
+        rollout = E1Rollout(self.environment_values["n_agents"])
+        vector_ticks = 0
+        metrics = {"semantic_loss": 0.0, "semantic_valid_denominator": 0}
+        started = time.perf_counter()
+        rollout_wall = policy_wall = update_wall = 0.0
+        planner_queries = 0
+        while self.schedule.global_env_steps < max_steps:
+            payloads = self.vector_pool.payloads
+            observations = np.stack([item["observations"] for item in payloads])
+            semantic = np.stack([item["semantic"] for item in payloads])
+            masks = np.stack([item["action_masks"] for item in payloads])
+            policy_started = time.perf_counter()
+            actions, log_probs, values = self._actions_batch(observations, semantic, masks)
+            policy_wall += time.perf_counter() - policy_started
+            base_step = self.schedule.global_env_steps
+            addresses = [base_step + index for index in range(self.num_env_workers)]
+            selected = np.zeros(self.num_env_workers, dtype=bool)
+            if self.calibrator is not None:
+                for index, item in enumerate(payloads):
+                    selected[index] = self.calibrator.select(
+                        run_seed=self.run.seed, episode_index=int(item["episode_index"]),
+                        episode_seed=int(item["episode_seed"]), environment_index=index,
+                        real_global_step=addresses[index], episode_step=int(item["episode_step"]))
+                    counts["teacher_queries"] += len(item["astar_valid"])
+            rollout_started = time.perf_counter()
+            responses = self.vector_pool.step(actions, selected, addresses)
+            rollout_wall += time.perf_counter() - rollout_started
+            confidences = np.zeros(self.num_env_workers, dtype=np.float32)
+            for index, response in enumerate(responses):
+                item = payloads[index]
+                valid = item["astar_valid"]
+                if self.calibrator is not None and selected[index] and valid.any():
+                    snapshot = rebind_snapshot_rng_guard(ShadowSnapshotV1.from_bytes(response["snapshot"]))
+                    self.real_adapter.restore(snapshot)
+                    result = self.calibrator.run_paired_shadows(
+                        snapshot=snapshot, real_adapter=self.real_adapter,
+                        student_adapter=self.student_adapter, teacher_adapter=self.teacher_adapter,
+                        student_logits=lambda env, obs: self._shadow_logits(env, obs),
+                        teacher_preferences=lambda env: self._teacher_batch(env),
+                        initial_valid_mask=valid, critic_value=lambda obs: self._value(obs),
+                        gamma=0.99, address=snapshot.payload["address"])
+                    confidences[index] = 1.0 if self.run.astar_kd == "fixed" else float(result.confidence)
+                    counts["shadow_calls"] += 1; counts["ema_updates"] += 1
+                elif self.calibrator is not None:
+                    result = self.calibrator.record_delta_g(selected=bool(selected[index]), any_valid=bool(valid.any()), delta_g=0.0)
+                    confidences[index] = 1.0 if self.run.astar_kd == "fixed" and selected[index] else float(result.confidence)
+                rollout.add(physical_observations=item["observations"], semantic_observations=item["semantic"],
+                    actions=actions[index], log_probs=log_probs[index], action_masks=item["action_masks"],
+                    astar_preferences=item["astar_preferences"], astar_valid=valid,
+                    calibration_selected=bool(selected[index]), reward_confidence=float(confidences[index]),
+                    semantic_targets=item["semantic_targets"], semantic_validity=item["semantic_validity"],
+                    semantic_ood_reliability=item["semantic_ood_reliability"], reward=response["team_reward"],
+                    done=response["done"], value=float(values[index]), stream_id=index)
+                counts["semantic_valid_slots"] += int((item["semantic_validity"] > 0).sum())
+                counts["semantic_total_slots"] += len(item["semantic_validity"])
+                latest = response["latest_metrics"]
+                planner_queries += int(response["planner_query_count"])
+            self.schedule.advance_real_env_steps(self.num_env_workers)
+            vector_ticks += 1
+            if vector_ticks == self.rollout_length or self.schedule.global_env_steps == max_steps:
+                bootstrap = self._values_batch(np.stack([item["observations"] for item in self.vector_pool.payloads]))
+                update_started = time.perf_counter()
+                metrics = self.updater.update(rollout, last_value=bootstrap,
+                    lambda_a=self.schedule.weights()[0], lambda_l=self.schedule.weights()[1])
+                update_wall += time.perf_counter() - update_started
+                updates += 1; rollout = E1Rollout(self.environment_values["n_agents"]); vector_ticks = 0
+                self._runtime = self._capture_vector_runtime(updates=updates, counts=counts, latest=latest)
+                metrics.update(self._performance_metrics(started, rollout_wall, policy_wall, update_wall))
+                if on_update is not None: on_update(dict(metrics), self.runtime_state())
+        self._runtime = self._capture_vector_runtime(updates=updates, counts=counts, latest=latest)
+        metrics.update(self._performance_metrics(started, rollout_wall, policy_wall, update_wall))
+        return {"group": self.run.group, "seed": self.run.seed, "real_env_steps": self.schedule.global_env_steps,
+                "updates": updates, "latest_episode_metrics": latest, "planner_query_count": planner_queries,
+                "lambda_a": self.schedule.weights()[0], "lambda_l": self.schedule.weights()[1],
+                "exploratory_noisy_teacher": self.run.semantic_control == "llm", **counts, **metrics}
+
+    def _actions_batch(self, observations, semantic, masks):
+        physical = torch.as_tensor(observations, dtype=torch.float32, device=self.device)
+        semantic_tensor = torch.as_tensor(semantic, dtype=torch.float32, device=self.device)
+        mask_tensor = torch.as_tensor(masks, dtype=torch.bool, device=self.device)
+        with torch.no_grad():
+            flat_output = self.updater.actor(physical.flatten(0, 1), semantic_tensor.flatten(0, 1))
+            logits = flat_output.action_logits.reshape(*masks.shape[:2], -1).masked_fill(~mask_tensor, -1e9)
+            distribution = Categorical(logits=logits)
+            actions = distribution.sample()
+            log_probs = distribution.log_prob(actions)
+            values = self.updater.critic(physical)
+        return (actions.cpu().numpy().astype(np.int64), log_probs.cpu().numpy().astype(np.float32),
+                values.cpu().numpy().astype(np.float32))
+
+    def _values_batch(self, observations):
+        with torch.no_grad():
+            values = self.updater.critic(torch.as_tensor(observations, dtype=torch.float32, device=self.device))
+        return values.cpu().numpy().astype(np.float32)
+
+    def _capture_vector_runtime(self, *, updates, counts, latest):
+        addresses = []
+        for index in range(self.num_env_workers):
+            addresses.append({"run_seed": int(self.run.seed), "episode_index": 0, "episode_seed": 0,
+                "environment_index": index, "real_global_step": self.schedule.global_env_steps, "episode_step": 0})
+        snapshots = self.vector_pool.snapshot(addresses)
+        states = [{"snapshot": item["snapshot"], "episode_index": item["episode_index"],
+                   "episode_step": item["episode_step"]} for item in snapshots]
+        return {"schema": "e1-runtime-v2", "worker_states": states,
+                "schedule_state": self.schedule.state_dict(), "updates": int(updates),
+                "counts": dict(counts), "latest_metrics": dict(latest)}
+
+    def _performance_metrics(self, started, rollout_wall, policy_wall, update_wall):
+        elapsed = max(time.perf_counter() - started, 1e-9)
+        cuda_allocated = cuda_reserved = 0
+        if self.device.type == "cuda":
+            cuda_allocated = int(torch.cuda.max_memory_allocated(self.device))
+            cuda_reserved = int(torch.cuda.max_memory_reserved(self.device))
+        return {"num_env_workers": self.num_env_workers, "rollout_length": self.rollout_length,
+                "global_environment_steps": self.schedule.global_env_steps,
+                "environment_steps_per_second": self.schedule.global_env_steps / elapsed,
+                "rollout_wall_time": rollout_wall, "policy_inference_time": policy_wall,
+                "ppo_update_time": update_wall, "total_elapsed_time": elapsed,
+                "peak_cuda_memory_allocated": cuda_allocated,
+                "peak_cuda_memory_reserved": cuda_reserved}
+
     def runtime_state(self) -> dict[str, Any]:
         """Expose only an update-boundary snapshot for the checkpoint writer."""
         if self._runtime is None:
@@ -493,6 +656,16 @@ class E1Trainer:
         return dict(self._runtime)
 
     def restore_runtime_state(self, state: Mapping[str, Any]) -> None:
+        if state.get("schema") == "e1-runtime-v2":
+            required = {"schema", "worker_states", "schedule_state", "updates", "counts", "latest_metrics"}
+            if set(state) != required or len(state["worker_states"]) != self.num_env_workers:
+                raise ValueError("E1 vector runtime state is incompatible.")
+            schedule = state["schedule_state"]
+            if int(schedule.get("total_env_steps", -1)) != self.run.real_environment_steps:
+                raise ValueError("E1 runtime budget is incompatible.")
+            self.schedule.global_env_steps = int(schedule["global_env_steps"])
+            self._runtime = dict(state)
+            return
         required = {"schema", "snapshot", "schedule_state", "episode_index", "episode_step",
                     "updates", "counts", "latest_metrics"}
         if set(state) != required or state.get("schema") != "e1-runtime-v1":

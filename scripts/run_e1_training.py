@@ -8,11 +8,13 @@ import json
 from pathlib import Path
 import subprocess
 
+import torch
 import yaml
 
 from llm_mappo.e1_evidence import E1EvidenceWriter, load_e1_checkpoint, save_e1_checkpoint
 from llm_mappo.e1_protocol import expand_e1_formal_matrix, load_e1_governance_manifest
 from llm_mappo.e1_training import E1Trainer, load_e1_raw_semantic_evidence
+from llm_mappo.e1_qmix import E1QMIXDGTrainer
 from llm_mappo.o2_device import device_provenance
 
 
@@ -56,8 +58,9 @@ def main():  # noqa: C901
         **manifest["route_profiles"]["optimization"]["energy"]}
     if args.diagnostic_rollout_steps is not None and args.stop_at is None and not args.resume:
         raise ValueError("Diagnostic rollout override requires --stop-at.")
-    training = {"rollout_steps": args.diagnostic_rollout_steps or 512,
-                "update_epochs": 4, "minibatch_steps": 64}
+    training = {"rollout_steps": args.diagnostic_rollout_steps or 128,
+                "rollout_length": args.diagnostic_rollout_steps or 128,
+                "num_env_workers": 16, "update_epochs": 4, "minibatch_steps": 64}
     target = run.real_environment_steps if args.stop_at is None else args.stop_at
     if not 1 <= target <= run.real_environment_steps: raise ValueError("--stop-at is out of range.")
     if args.resume:
@@ -67,7 +70,26 @@ def main():  # noqa: C901
         directory = Path(args.output_root) / run.group.lower().replace("+", "-plus-") / f"seed_{run.seed:03d}_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
         writer = E1EvidenceWriter.create(directory, {"schema": "e1-run-manifest-v1", "identity": identity,
             "device": device_provenance(args.device), "real_env_steps_budget": run.real_environment_steps,
-            "diagnostic_only": args.stop_at is not None, "label_provenance": labels.provenance()})
+            "diagnostic_only": args.stop_at is not None, "label_provenance": labels.provenance(),
+            "rollout_execution": {"num_env_workers": 16, "rollout_length": 128,
+                                  "global_step_unit": "joint_environment_transition"}})
+    if run.algorithm == "qmix":
+        trainer = E1QMIXDGTrainer(run=run, environment={**environment,
+            "observation_schema": run.observation_schema}, device=args.device)
+        try:
+            summary = trainer.run_prefix(target)
+            torch.save(trainer.runtime_state(), directory / ("checkpoint_final.pt" if target == run.real_environment_steps else "checkpoint_latest.pt"))
+            writer.append("teacher_step_counts.csv", {"real_env_steps": summary["real_env_steps"],
+                "teacher_queries": 0, "shadow_calls": 0, "ema_updates": 0,
+                "semantic_valid_slots": 0, "semantic_total_slots": 0,
+                "planner_query_count": summary["planner_query_count"]})
+            if target == run.real_environment_steps: writer.complete(summary)
+            print(json.dumps({"run_directory": str(directory), **summary}, sort_keys=True))
+        except Exception as error:
+            writer.fail(type(error).__name__); raise
+        finally:
+            trainer.close()
+        return
     trainer = E1Trainer(run=run, environment=environment, training=training, labels=labels, device=args.device)
     try:
         if args.resume:
@@ -75,7 +97,9 @@ def main():  # noqa: C901
             trainer.restore_runtime_state(checkpoint["trainer_state"])
         def update(metrics, runtime):
             state = trainer.schedule.state_dict(); step = state["global_env_steps"]
-            writer.append("updates.csv", {"real_env_steps": step, **{key: metrics[key] for key in ("policy_loss", "value_loss", "astar_loss", "semantic_loss", "semantic_valid_denominator")}, "lambda_a": state["lambda_a"], "lambda_l": state["lambda_l"]})
+            writer.append("updates.csv", {"real_env_steps": step,
+                **{key: metrics[key] for key in ("policy_loss", "value_loss", "astar_loss", "semantic_loss", "semantic_valid_denominator", "num_env_workers", "rollout_length", "global_environment_steps", "environment_steps_per_second", "rollout_wall_time", "policy_inference_time", "ppo_update_time", "total_elapsed_time", "peak_cuda_memory_allocated", "peak_cuda_memory_reserved")},
+                "lambda_a": state["lambda_a"], "lambda_l": state["lambda_l"]})
             save_e1_checkpoint(directory / "checkpoint_latest.pt", identity=identity, actor=trainer.updater.actor, critic=trainer.updater.critic, optimizer=trainer.updater.optimizer, schedule_state=state, calibration_state=None if trainer.calibrator is None else trainer.calibrator.ema.state_dict(), trainer_state=runtime)
         summary = trainer.run_prefix(target, on_update=update)
         writer.append("teacher_step_counts.csv", {key: summary[key] for key in ("real_env_steps", "teacher_queries", "shadow_calls", "ema_updates", "semantic_valid_slots", "semantic_total_slots", "planner_query_count")})

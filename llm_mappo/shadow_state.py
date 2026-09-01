@@ -209,6 +209,18 @@ class ShadowSnapshotV1:
         return snapshot
 
 
+def rebind_snapshot_rng_guard(snapshot: ShadowSnapshotV1) -> ShadowSnapshotV1:
+    """Import a worker snapshot into the learner without importing its RNG guard.
+
+    Environment and space RNG state remain byte-for-byte unchanged.  The guard
+    is process-local bookkeeping, so a spawned CPU worker's guard cannot be
+    asserted by the CUDA learner process.
+    """
+    payload = copy.deepcopy(snapshot.payload)
+    payload["global_rng_guard"] = _global_rng_guard()
+    return ShadowSnapshotV1.create(payload)
+
+
 class EventAddressedRandomness:
     """Stateless `crn-v1` randomness keyed only by the frozen event address."""
 
