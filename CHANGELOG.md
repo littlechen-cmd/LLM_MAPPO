@@ -2,6 +2,10 @@
 
 ## 2026-09-01
 
+- Fixed: E1 CUDA smoke now uses its own shared-server preflight. It retains
+  host and RTX 4090 identity checks, records external compute processes, and
+  relies on the runner's exact four-slot memory gate rather than P1's 95%
+  exclusive-free-memory requirement.
 - Changed: E1/E2 training and CUDA smoke now use four independent process slots
   exclusively on the RTX 4090; the RTX 4080 SUPER is inventory-only and cannot
   receive a training run.

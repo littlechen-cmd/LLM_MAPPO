@@ -40,7 +40,7 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 | Single-GPU scheduling | physical GPU 0 的 RTX 4090 是唯一训练设备，固定最大并发 4；每个独立进程仍只运行一个仓库环境。所有 seed block 都绑定 GPU 0，不存在跨卡迁移或 GPU 型号混杂。 |
 | Formal GPU slots | E1 在 physical GPU 0 建立 `slot-0..slot-3` 四个项目锁；physical GPU 1 的 RTX 4080 SUPER 不建立训练 slot。只统计本项目正式进程，严禁复用或放宽 P1/O1/O2 的单卡独占 lease。每个 slot 同时最多持有一个子进程。 |
 | Slot memory admission | 并发 CUDA smoke 对每个训练家族记录 `torch.cuda.max_memory_reserved`；定义 `M_slot=ceil(1.5×max_family_peak_mib+1024 MiB)`。启动任一新 slot 前，目标 GPU 的实时 free memory 必须不少于 `M_slot`，该值写入 E1 receipt 并在 E2 冻结，禁止自动降低。 |
-| Formal preflight cadence | launcher 启动时沿用 P1 的 OS、Python、Git clean、RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、60 秒轮询、连续 5 次与 48 小时 timeout；训练设备身份固定为 physical GPU 0 的 RTX 4090。启动后的每个 slot 每 60 秒重新采样 lock、PID、free memory 和 GPU identity；外部 PID 只记录且不得干预，是否准入只由冻结 slot/显存门决定。 |
+| Formal preflight cadence | E1 使用专用、P1-compatible preflight 检查 OS、Python、Git clean、RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%` 与 physical GPU 0 的身份；外部 compute PID 只记录。四进程准入只由 runner 的精确 `4×M_slot` 空闲显存门决定，不能以 P1 的95%独占空闲阈值替代。 |
 | Shared-server conduct | 不抢占、终止或隐藏其他用户进程。RTX 4090 不可用时 worker 等待，不回退到 RTX 4080 SUPER。长任务用 `nohup`，日志写入 `/home/lzx/`。 |
 | Hardware claims | GPU 型号是 provenance/blocking factor，不把吞吐或训练时间作为方法性能优势。 |
 | O3 matrix | E2 完整执行 `MAPPO-DG` 与 `RC-AStarKD+LLMKD` × 8 training seeds × 2 topologies × `200..209` × 20 episodes，共 6400 episodes；无性能阈值、不得选择性报告。 |

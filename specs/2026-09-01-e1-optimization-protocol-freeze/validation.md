@@ -25,7 +25,7 @@
 5. 对四个 core group 与 Fixed control 比较 machine-readable contract diff；预期差异只出现在允许的 teacher mask 和 RC multiplier。
 6. 用 throwing online-LLM client 和 throwing execution planner 运行所有适用短链路；预期无调用且 run 完成。
 7. 保存、恢复并继续一个短 run；比较 update counter、schedule、EMA、RNG 和下一步输出；再用旧二维/错误 dataset hash 验证拒绝恢复。
-8. 用 fake GPU inventory/lease 测试 GPU 0 四 slot 调度、新 slot 显存门、busy wait、seed pinning、旧 lease 冲突、crash recovery 和 complete-run skip；预期 GPU 0 无第五个进程、GPU 1 无训练进程、无跨 GPU seed 漂移。
+8. 用 fake GPU inventory/lease 测试 GPU 0 四 slot 调度、E1 专用 preflight 对外部 PID 的记录但不拒绝、精确 `4×M_slot` 显存门、busy wait、seed pinning、旧 lease 冲突、crash recovery 和 complete-run skip；预期 GPU 0 无第五个进程、GPU 1 无训练进程、无跨 GPU seed 漂移。
 9. 由 owner 在服务器运行唯一 CUDA smoke；确认 8 个指定 run 均完成 128→256 恢复、两波分别在 GPU 0 出现四个并发项目进程，并从 peak reserved memory 按固定公式生成 `M_slot`。Codex 读取产物并执行 E1 evidence aggregator，不进行性能比较。
 10. 扫描 tracked files、Git staged diff 与 smoke/formal manifests，确认不存在 secret pattern、pilot-as-training、O3-as-training 或 legacy 2D schema。
 11. 完成所有 Gate 后，在合并前后分别运行 validation suite；确认 `codex/optimization` 指向 E1 freeze commit 后才允许 push。

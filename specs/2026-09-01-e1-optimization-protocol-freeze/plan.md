@@ -51,7 +51,7 @@
 
 - [ ] 实现单命令 E2 launcher：固定 repository、canonical Python、artifact root 与 `nohup` 日志约定；默认不依赖 `conda activate`、`tmux` 或服务器 GitHub。
 - [ ] 为 physical GPU 0 建立四个独立项目 slot lock，并实现最多四个独立进程的 seed-block scheduler；所有方法固定到 RTX 4090 provenance，physical GPU 1 不建立训练 slot。
-- [ ] launcher 启动时执行 P1-compatible host preflight：RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、Git clean、60 秒轮询、连续 5 次、48 小时 timeout；冻结 physical GPU 0 的名称/总显存，不沿用 P1 的 external-PID 独占判据。
+- [ ] launcher 启动时执行 E1-specific、P1-compatible host preflight：RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、Git clean 与 physical GPU 0 的名称/总显存；外部 compute PID 只记录，四进程所需显存由 runner 的精确 `4×M_slot` 门禁决定。
 - [ ] 每次领取 seed block 或启动新 slot 前，每 60 秒重新采样一次只读 formal lease/PID/GPU identity/free-memory；按 `M_slot=ceil(1.5×max_family_peak_mib+1024 MiB)` 检查实时显存。外部 PID 只记录且不得干预；无可用 slot 或显存不足时等待，禁止杀进程、回退到 RTX 4080 SUPER、创建第五个 slot 或降低 `M_slot`。
 - [ ] 保持 P1/O1/O2 的单卡独占 lease 与 evidence 不变；formal slot locks 使用不同路径/schema，防止旧 Gate runner 与 E1 正式 runner 同时占用同一 GPU。
 - [ ] 实现原子 matrix state、PID/lease、heartbeat、run identity、latest/final checkpoint 和失败原因；重启只恢复相同 identity，complete run 不重复执行。

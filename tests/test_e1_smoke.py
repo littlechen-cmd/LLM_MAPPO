@@ -39,6 +39,8 @@ def test_e1_cuda_smoke_aggregator_requires_exact_frozen_matrix(tmp_path):
 
 def test_e1_cuda_runner_uses_only_gpu_zero_and_four_slots():
     script = open("scripts/run_e1_cuda_smoke.sh", encoding="utf-8").read()
+    assert "configs/optimization/e1_cuda_smoke.yaml" in script
+    assert "configs/optimization/p1_linux_server.yaml" not in script
     assert "admit_gpu 0" in script
     assert "admit_gpu 1" not in script
     assert "2 * M_SLOT_MIB" not in script

@@ -13,7 +13,7 @@ M_SLOT_MIB=7168
 mkdir -p "$RUN_ROOT"
 
 test -f "$RECORDS" || { echo "Missing raw-label records: $RECORDS"; exit 1; }
-"$PYTHON_BIN" scripts/check_optimization_server.py --config configs/optimization/p1_linux_server.yaml --once --output "$RUN_ROOT/preflight"
+"$PYTHON_BIN" scripts/check_optimization_server.py --config configs/optimization/e1_cuda_smoke.yaml --once --output "$RUN_ROOT/preflight"
 
 admit_gpu() {
   local gpu="$1"

@@ -2,6 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import yaml
 
 from llm_mappo.linux_server_runtime import (
     MachineSnapshot,
@@ -93,6 +94,31 @@ def test_preflight_fails_closed_for_busy_or_ineligible_server():
     result = evaluate_preflight(under_memory, _policy())
     assert result.passed is False
     assert {"available_ram", "git_dirty"} <= set(result.reasons)
+
+
+def test_e1_preflight_records_but_does_not_reject_external_compute_processes():
+    snapshot = _snapshot()
+    busy = replace(snapshot, gpus=apply_compute_processes(
+        snapshot.gpus, "8123, GPU-4090-uuid\n"
+    ))
+    e1_policy = replace(
+        _policy(),
+        minimum_free_gpu_fraction=0.0,
+        require_no_external_compute_processes=False,
+    )
+
+    assert evaluate_preflight(busy, e1_policy).passed is True
+
+
+def test_e1_smoke_preflight_config_keeps_exact_memory_gate_in_runner():
+    values = yaml.safe_load(
+        (ROOT / "configs/optimization/e1_cuda_smoke.yaml").read_text(encoding="utf-8")
+    )
+    policy = ServerPolicy.from_mapping(values)
+
+    assert policy.physical_gpu_index == 0
+    assert policy.minimum_free_gpu_fraction == 0.0
+    assert policy.require_no_external_compute_processes is False
 
 
 def test_wait_requires_five_consecutive_eligible_samples():

@@ -67,6 +67,7 @@ class ServerPolicy:
     require_clean_git: bool
     required_python: str
     required_torch: str
+    require_no_external_compute_processes: bool = True
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, object]) -> "ServerPolicy":
@@ -211,7 +212,7 @@ def _target_gpu_reasons(
         reasons.append("target_gpu_name")
     if target.total_memory_mib < policy.minimum_total_gpu_memory_mib:
         reasons.append("target_gpu_total_memory")
-    if target.compute_pids:
+    if target.compute_pids and policy.require_no_external_compute_processes:
         reasons.append("external_compute_processes")
     if target.free_memory_mib < (
         target.total_memory_mib * policy.minimum_free_gpu_fraction
