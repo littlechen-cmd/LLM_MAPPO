@@ -1,0 +1,62 @@
+{
+  "schema": "o2-calibration-gate-evidence-v1",
+  "reviewed_on": "2026-09-01",
+  "artifact_root": "artifacts/optimization/o2_calibration/formal_11b0c839_c9a5316a",
+  "identity": {
+    "code_commit": "11b0c8391514f42880a6ebd8c61100ba4643a46e",
+    "config_sha256": "c9a5316a25befa57c53d5351a69e02d7d9bea359a6fa48d94101a5935406d78d",
+    "o1_code_commit": "7c305ea24cdca34467c2e7e8a5a9d66ba1133d1e",
+    "o1_summary_sha256": "8617a9ca34ed7896965a5c82d6d308e365fdfe803c84654a8808b180fd888250",
+    "device": "NVIDIA GeForce RTX 4090",
+    "logical_device": "cuda:0",
+    "torch": "2.10.0+cu128"
+  },
+  "matrix": {
+    "groups": [
+      "MAPPO-DG",
+      "RC-AStarKD"
+    ],
+    "seeds": [
+      107,
+      117,
+      127
+    ],
+    "real_env_steps_per_run": 150000,
+    "completed_runs": 6,
+    "diagnostic_runs": 0,
+    "final_checkpoints": 6
+  },
+  "gate": {
+    "passed": true,
+    "reasons": [],
+    "rc_coverage": {
+      "107": 0.9119220890410958,
+      "117": 0.8926813746287654,
+      "127": 0.9232379325074754
+    },
+    "paired_relative_auc_degradation": {
+      "107": 0.24011834713755373,
+      "117": 0.01891493096882363,
+      "127": -0.11394424141215292
+    },
+    "median_relative_auc_degradation": 0.01891493096882363,
+    "coverage_threshold": 0.25,
+    "median_degradation_threshold": 0.10
+  },
+  "sha256": {
+    "matrix_manifest.json": "7ddc8151d5c2f00656a4ac8dfeb1b3543867ce4855b46f4d9fc24313af7fa701",
+    "matrix_state.json": "3dc45c276bc427fe50eaf69a8071ccc2fa770d288d5e744f21898280a4f0cb3c",
+    "o2_gate_summary.json": "b55f72a8a869386ec9f0253e0b1753eab860708cfe9acd04d9b6b5624c171b72",
+    "mappo-dg_seed107_summary.json": "451872074fd448824412b036b980b8afacb1b388c6550c4ff3a24f66571bf380",
+    "mappo-dg_seed117_summary.json": "575570d614300bd50acffab70c34092b3e89d49c5fec944311fba3a55d2e1202",
+    "mappo-dg_seed127_summary.json": "819468649baebbb3badf37211abc14e8e65cd87fd777873944608ffa751456f9",
+    "rc-astarkd_seed107_summary.json": "9c9515124f1211fe24e574e85be3a295e7a2417296824d11da614203688155c0",
+    "rc-astarkd_seed117_summary.json": "a62324d9cd863fdee23c04aff2995c0cdbf385b2cfcd0b840fba65076dfdb30f",
+    "rc-astarkd_seed127_summary.json": "e5b71a5c12bae40189a366b75d56f39f264af134cf3a60fed9ad6cb88889563c"
+  },
+  "claim_boundary": {
+    "allowed": "The O2 reward-calibration training chain passed its preregistered coverage and median-throughput gates.",
+    "prohibited": "O2 alone does not establish universal performance improvement or support selecting a best seed.",
+    "notable_variation": "Seed 107 had 24.01% relative AUC degradation; this is retained and must not be hidden."
+  }
+}

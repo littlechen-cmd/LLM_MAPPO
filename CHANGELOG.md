@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-01
+
+- Validated: The owner-run O2 matrix completed all six non-diagnostic 150000-step runs
+  with final checkpoints. RC teacher coverage was `91.19%/89.27%/92.32%`; paired AUC
+  degradation was `24.01%/1.89%/-11.39%`, with the preregistered median at `1.89%` and
+  no aggregation errors. The retained seed-107 variation prohibits a universal
+  performance-improvement claim from O2 alone.
+- Decided: O0, P1, O1, O2 and O3 readiness gates all passed, so D1 selects the
+  optimization route at commit `11b0c8391514f42880a6ebd8c61100ba4643a46e` and advances
+  to E1. The stable route remains an isolated lower-bound backup/diagnostic and cannot
+  alter the decision using later results.
+- Added: `docs/evidence/o2-calibration-gate-v1.json` records the O2 identity, exact Gate
+  metrics, artifact hashes and paper-claim boundary independently of ignored artifacts.
+
 ## 2026-08-30
 
 - Added: A single owner-run O2 matrix launcher now executes all six frozen members in

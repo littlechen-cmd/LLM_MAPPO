@@ -61,7 +61,7 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## Phase O2：优化路线校准训练与 Go/No-Go
 
-- [~] experiment-layer implementation in progress
+- [x] complete
 - 目标：由研究所有者在 Linux 优化服务器上先通过 O1 门禁，再运行匹配校准训练；O1/O2 产物与
   Gate 状态保持逻辑隔离，Codex 分析日志与结果。
 - 固定组别：`MAPPO-DG/RC-AStarKD × 107/117/127 × 150000 steps`，两组均关闭 LLMKD，共
@@ -70,6 +70,10 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
   `MAPPO-DG` 的固定 10k-step 网格吞吐 AUC 中位数退化≤10%。
 - 失败规则：只允许修复一次已定位的接口/掩码错误并以相同合同重跑；不得根据结果调 KL 系数、
   seed、预算或阈值。
+- 验收证据：commit `11b0c8391514f42880a6ebd8c61100ba4643a46e` 下六个正式 run 全部完成；
+  RC 覆盖率为 `91.19%/89.27%/92.32%`，配对 AUC 中位退化为 `1.89%`，无错误。seed 107
+  单独退化 `24.01%` 必须保留，因此 O2 不支持“普遍性能提升”主张。规范化证据见
+  `docs/evidence/o2-calibration-gate-v1.json`。
 
 ## Phase O3：优化路线真正未见拓扑
 
@@ -105,7 +109,7 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## Phase D1：唯一路线决策门
 
-- [ ] pending
+- [x] complete — selected optimization route
 - 优化路线选择条件：O0 人工批准、P1 通过、O1 本地验证与 owner-run Linux CUDA
   runtime/memory 门通过、O2
   校准门通过、O3 拓扑/接口就绪门通过。
@@ -115,10 +119,12 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 - 防泄漏：不得使用正式 seed；不得依据 S2 性能结果选择路线；决策、commit、配置和允许主张
   必须写入 `TASKS.md` 与 `CHANGELOG.md`。
 - 决策后未选路线冻结为诊断/附录，不再进入确认性实验。
+- 决策记录：2026-09-01，O0/P1/O1/O2/O3 均满足预注册条件，未使用正式 seed、O3 策略性能
+  或 S2 结果，选择优化路线进入 E1。稳定路线仅保留为隔离的下限备份/诊断，不得反向改变本决策。
 
 ## Phase E1：所选路线协议冻结与链路验证
 
-- [ ] pending
+- [~] next — optimization protocol freeze and end-to-end validation
 - 目标：冻结唯一代码 commit、环境、教师语义、奖励、seed、交互预算、checkpoint 规则、日志
   schema、失败处理、统计假设和论文主张；完成所有必需组端到端短 smoke。
 - 优化路线 E1/E2 正式训练预算保持不变：核心 `2×2` 32 次，Fixed-KD、QMIX-DG、RuleKD-v3 各 8 次，
