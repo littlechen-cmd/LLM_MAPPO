@@ -166,6 +166,10 @@ def test_controlled_scenarios_preserve_their_frozen_semantic_invariants():
         for item in grouped["narrow_corridor_yield"]
     )
     assert all(
+        sum(bool(value) for value in item.semantic_view["focal"]["adjacent_highway"].values()) == 2
+        for item in grouped["narrow_corridor_yield"]
+    )
+    assert all(
         item.semantic_view["focal"]["battery_ratio"] == 0.15
         and item.semantic_view["focal"]["loaded"]
         and item.semantic_view["focal"]["target_kind"] == "charging"

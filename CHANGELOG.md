@@ -2,6 +2,9 @@
 
 ## 2026-09-01
 
+- Fixed: E1-B's narrow-corridor injector now measures focal highway degree using
+  the same complete highway-neighbor definition as semantic-view-v3. Station
+  cells no longer silently reduce the degree count and admit a three-way layout.
 - Fixed: E1 pilot review artifacts now keep scenario strata and IDs in an owner-only
   review key; the reviewer-facing pack contains neither field, preserving the required
   blind review boundary.

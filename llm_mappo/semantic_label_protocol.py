@@ -342,11 +342,12 @@ def _candidate_pair(
     for first in _highway_cells(warehouse):
         if first in stations:
             continue
-        neighbors = [point for point in _highway_neighbors(warehouse, first) if point not in stations]
-        if minimum_degree is not None and len(neighbors) < minimum_degree:
+        highway_neighbors = _highway_neighbors(warehouse, first)
+        if minimum_degree is not None and len(highway_neighbors) < minimum_degree:
             continue
-        if exact_degree is not None and len(neighbors) != exact_degree:
+        if exact_degree is not None and len(highway_neighbors) != exact_degree:
             continue
+        neighbors = [point for point in highway_neighbors if point not in stations]
         pairs.extend(
             (first, second, direction.name)
             for second in neighbors for direction in Direction
