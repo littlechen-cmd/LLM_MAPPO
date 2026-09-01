@@ -12,11 +12,15 @@
 - 本地 Intel i5、无独显 Huawei MateBook 用于文档、代码开发、静态检查、确定性测试和短
   smoke；
 - 优化路线服务器为 Ubuntu 22.04.5、双路 EPYC 7542、128 GB RAM、RTX 4090 49140 MiB
-  与 RTX 4080 SUPER 16376 MiB；O1/O2 canonical physical GPU 固定为 index 0 的 RTX 4090；
+  与 RTX 4080 SUPER 16376 MiB；physical GPU 0 的 RTX 4090 是 O1/O2/E1/E2 唯一训练
+  GPU，physical GPU 1 的 RTX 4080 SUPER 只保留在硬件清单中，不参与训练或 CUDA smoke；
+- E1/E2 在 RTX 4090 上固定最多四个独立训练进程，每个进程仍运行一个仓库环境；并发只提高
+  实验吞吐量，不改变 rollout、real environment steps、seed、模型或算法合同；
 - P1 只服务优化路线。目标 GPU 必须通过共享服务器预检与项目 GPU lease；不得抢占、终止或
   隐藏其他用户进程。O1 Gate、O2、正式长训练和长评估仍只由研究所有者人工启动；短诊断直接
   使用当前 SSH，会持续较久的任务使用 `nohup`，日志写入 `/home/lzx/`；不依赖 `tmux`；
-- O3、E1 短验证、标签处理和统计绘图仍在 MateBook/CPU 完成。
+- O3 接口验证、E1 本地短验证、标签处理和统计绘图仍在 MateBook/CPU 完成；E1 CUDA smoke
+  由研究所有者在 RTX 4090 上运行。
 
 选择理由：保持现有项目和历史 checkpoint 的兼容性，避免在论文后期引入无关运行时迁移。
 

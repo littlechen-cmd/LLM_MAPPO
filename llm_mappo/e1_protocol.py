@@ -7,7 +7,7 @@ from typing import Any, Mapping
 import yaml
 
 
-E1_MANIFEST_SCHEMA_VERSION = 9
+E1_MANIFEST_SCHEMA_VERSION = 10
 E1_FORMAL_ENVIRONMENT_STEPS = 150000
 E1_FORMAL_SEEDS = (7, 17, 27, 37, 47, 57, 67, 77)
 E1_DIAGNOSTIC_SEEDS = (7, 17, 27)
@@ -47,7 +47,9 @@ def load_e1_governance_manifest(path: str | Path) -> Mapping[str, Any]:
     return manifest
 
 
-def validate_e1_governance_manifest(manifest: Mapping[str, Any]) -> None:
+def validate_e1_governance_manifest(  # noqa: C901
+    manifest: Mapping[str, Any],
+) -> None:
     """Reject any manifest that drifts from the E1 preregistered contract."""
 
     if manifest.get("schema_version") != E1_MANIFEST_SCHEMA_VERSION:
@@ -61,6 +63,7 @@ def validate_e1_governance_manifest(manifest: Mapping[str, Any]) -> None:
         raise ValueError("E1 formal environment-step budget is incompatible.")
     if training.get("checkpoint_rule") != E1_CHECKPOINT_RULE:
         raise ValueError("E1 checkpoint rule is incompatible.")
+    _validate_execution_gpu(training)
     route = _mapping(_mapping(manifest, "route_profiles"), "optimization")
     if tuple(route.get("formal_training_seeds", ())) != E1_FORMAL_SEEDS:
         raise ValueError("E1 formal seeds are incompatible.")
@@ -85,6 +88,18 @@ def validate_e1_governance_manifest(manifest: Mapping[str, Any]) -> None:
     )
     if expected_episodes != 6400:
         raise ValueError("E1 O3 exploratory matrix does not expand to 6400 episodes.")
+
+
+def _validate_execution_gpu(training: Mapping[str, Any]) -> None:
+    expected = {
+        "physical_index": 0,
+        "expected_name": "NVIDIA GeForce RTX 4090",
+        "max_independent_processes": 4,
+        "environments_per_process": 1,
+        "rtx_4080_super_training": "prohibited",
+    }
+    if _mapping(training, "execution_gpu") != expected:
+        raise ValueError("E1 execution GPU contract is incompatible.")
 
 
 def expand_e1_formal_matrix(manifest: Mapping[str, Any]) -> tuple[E1FormalRun, ...]:

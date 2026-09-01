@@ -133,7 +133,7 @@
 | Preflight（资源预检） | 开工前检查机器、显卡、内存和磁盘是否真的可用。 | 在产生训练副作用前验证硬件身份、占用、版本、容量和 Git 状态的门禁。 | 其他用户占用 GPU 时返回 No-Go，不抢占资源。 |
 | GPU Lease | 本项目给目标显卡加的一把协作锁。 | 由 `fcntl.flock` 持有的进程生命周期文件锁。 | 防止本项目自己的两个 launcher 同时使用 GPU 0；不能代替外部进程检查。 |
 | Wait-to-run | 先等待资源，满足条件后再执行。 | 按冻结周期采样并要求连续通过，超时即失败的 owner-started orchestration。 | 服务器长期占用时仍能等待执行 O1，但不能降低门槛。 |
-| tmux | SSH 断线后仍能保留命令会话的工具。 | 服务器端 terminal multiplexer。 | owner 手动启动等待或长任务后可以安全断开 SSH。 |
+| nohup | SSH 断线后仍让长任务继续运行的启动方式。 | 将进程与当前终端输入分离，并把标准输出和错误写入指定日志。 | 服务器无管理员权限且不依赖 `tmux`；长任务日志统一写入 `/home/lzx/`。 |
 | Atomic Write（原子写入） | 文件要么完整出现，要么保持旧状态。 | 临时文件 flush/fsync 后以原子 rename/replace 提交。 | 避免断电或中断留下看似正式但不完整的 CSV/JSON。 |
 | Explicit Resume（显式恢复） | 只有明确要求且身份完全一致才续跑。 | 校验 code/config/machine/environment hash 后复用完整 shard 的恢复协议。 | 基础设施中断可恢复，算法失败不能被静默覆盖。 |
 
@@ -148,7 +148,7 @@
 | Exploratory Noisy-Teacher Evidence（探索性带噪教师证据） | 明知教师会犯错，但仍用统一且不修补的数据检验学生是否总体受益。 | 原始标签、错误审计与训练结果严格绑定；记录级权重仍只表达结构有效性与 OOD，不表达语义正确性。 | v5 Pro 800-record raw 标签只能支持“Student 是否能从不完美 LLM 监督中经验性获益”的探索性问题，不能支持 LLM 语义正确性或人工验证主张。 |
 | System Fingerprint（系统指纹） | 后端实际提供模型服务的版本标记。 | API 成功响应返回并由首条 formal response 冻结的 backend identity 字段，与 request/response model 共同构成 formal backend tuple。 | formal 生成中发生变化必须暂停，不能把不同后端的标签静默混合。 |
 | Resume Identity（恢复身份） | 判断一次中断任务能否安全接着跑的“身份证”。 | 由 run identity、代码 commit、配置/环境/数据 hash、checkpoint schema、GPU provenance 与已保存训练状态组成的严格匹配关系。 | 只有基础设施中断且所有身份字段一致时才可恢复；算法、数值或安全失败不得通过换 seed/配置伪装为恢复。 |
-| GPU Slot（GPU 槽位） | 同一张显卡上为本项目预留的一个训练位置。 | 由独立 project lock、PID、GPU identity 和 `M_slot` 显存准入共同保护的单进程资源槽。 | E1/E2 每张 GPU 最多两个槽、全机最多四个；它不改变 P1/O1/O2 的既有独占 lease。 |
+| GPU Slot（GPU 槽位） | 同一张显卡上为本项目预留的一个训练位置。 | 由独立 project lock、PID、GPU identity 和 `M_slot` 显存准入共同保护的单进程资源槽。 | E1/E2 只在 RTX 4090 建立四个槽，每槽运行一个独立实验进程；RTX 4080 SUPER 不建立训练槽。 |
 
 ## 8. 术语维护规则
 

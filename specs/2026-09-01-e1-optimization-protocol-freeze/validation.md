@@ -11,7 +11,7 @@
 - [ ] QMIX、RuleKD、Shuffle、NoOOD、NoGoalHint 和启发式基线满足各自冻结合同，没有 fallback 或二维污染。
 - [ ] DirectGoal/NoGoalHint 在 throwing planner stub 下完成短链路，执行期 planner query 为 0。
 - [ ] checkpoint 可从相同 identity 恢复模型、optimizer、schedule、EMA 和 RNG；损坏/跨 schema/跨数据恢复 fail closed。
-- [ ] 双 GPU scheduler 最大并发为 4、每 GPU 最多两个进程、seed block 固定、formal slot 与旧独占 lease 隔离、显存不足时等待，并在重启后无重复地恢复。
+- [ ] RTX 4090 单卡 scheduler 最大并发为 4、RTX 4080 SUPER 无训练 slot、seed block 固定、formal slot 与旧独占 lease 隔离、显存不足时等待，并在重启后无重复地恢复。
 - [ ] 本地测试和一次最小化 owner-run CUDA smoke 通过；没有运行正式 65-run matrix 或正式长评估。
 - [ ] O3 exploratory matrix 已冻结为执行，精确展开为 6400 episodes，并标记 non-confirmatory/no-threshold/no-selective-reporting。
 - [ ] E1 evidence receipt、`TASKS.md`、`CHANGELOG.md`、Roadmap 和 terminology 同步；E1 commit fast-forward 合并到 `codex/optimization`。
@@ -25,8 +25,8 @@
 5. 对四个 core group 与 Fixed control 比较 machine-readable contract diff；预期差异只出现在允许的 teacher mask 和 RC multiplier。
 6. 用 throwing online-LLM client 和 throwing execution planner 运行所有适用短链路；预期无调用且 run 完成。
 7. 保存、恢复并继续一个短 run；比较 update counter、schedule、EMA、RNG 和下一步输出；再用旧二维/错误 dataset hash 验证拒绝恢复。
-8. 用 fake GPU inventory/lease 测试四 worker/双 slot 调度、第二 slot 显存门、busy wait、seed pinning、旧 lease 冲突、crash recovery 和 complete-run skip；预期每卡无第三个进程、全机无第五个进程、无跨 GPU seed 漂移。
-9. 由 owner 在服务器运行唯一 CUDA smoke；确认 8 个指定 run 均完成 128→256 恢复、每卡确实出现两个并发项目进程，并从 peak reserved memory 按固定公式生成 `M_slot`。Codex 读取产物并执行 E1 evidence aggregator，不进行性能比较。
+8. 用 fake GPU inventory/lease 测试 GPU 0 四 slot 调度、新 slot 显存门、busy wait、seed pinning、旧 lease 冲突、crash recovery 和 complete-run skip；预期 GPU 0 无第五个进程、GPU 1 无训练进程、无跨 GPU seed 漂移。
+9. 由 owner 在服务器运行唯一 CUDA smoke；确认 8 个指定 run 均完成 128→256 恢复、两波分别在 GPU 0 出现四个并发项目进程，并从 peak reserved memory 按固定公式生成 `M_slot`。Codex 读取产物并执行 E1 evidence aggregator，不进行性能比较。
 10. 扫描 tracked files、Git staged diff 与 smoke/formal manifests，确认不存在 secret pattern、pilot-as-training、O3-as-training 或 legacy 2D schema。
 11. 完成所有 Gate 后，在合并前后分别运行 validation suite；确认 `codex/optimization` 指向 E1 freeze commit 后才允许 push。
 
@@ -42,7 +42,7 @@
   single fingerprint and exploratory-noisy-teacher status without claiming a
   confirmatory label Gate Go。
 - [ ] E1 local end-to-end smoke aggregator returns Go。
-- [ ] owner-run Linux CUDA smoke aggregator returns Go，且精确包含 seeds 9001..9004、8 个指定组、2048 总环境步、128→256 resume、每卡双进程、冻结 `M_slot`，provenance 指向允许的 RTX 4090/4080 SUPER、canonical Python 和 E1 commit。
+- [ ] owner-run Linux CUDA smoke aggregator returns Go，且精确包含 seeds 9001..9004、8 个指定组、2048 总环境步、128→256 resume、GPU 0 每波四进程、冻结 `M_slot`，provenance 只指向 RTX 4090、canonical Python 和 E1 commit。
 - [ ] secret scan、online-LLM zero-call、execution-planner zero-call 和 legacy-schema isolation checks return Go。
 
 ## Merge criteria
@@ -50,7 +50,7 @@
 - [ ] `plan.md` 所有任务完成，且每个完成的 `TASKS.md` 子任务在同一 commit 更新 `CHANGELOG.md`。
 - [ ] 所有适用 validation checks 通过；raw LLM label 的历史 strict No-Go 必须保留且
   所有包含该教师的结果必须为 exploratory。CUDA smoke 或任何工程安全 No-Go 仍禁止合并。
-- [ ] 没有未解决的算法、安全、数据身份、schema、恢复或双 GPU 调度问题。
+- [ ] 没有未解决的算法、安全、数据身份、schema、恢复或单 GPU 四进程调度问题。
 - [ ] 只存在一个 E1 feature spec 目录，canonical architecture 与三份 E1 spec 没有矛盾。
 - [ ] 研究所有者批准 E1 evidence receipt 和允许/禁止论文主张。
 - [ ] 合并使用 fast-forward，不覆盖 `codex/optimization` 的非祖先变更，不删除用户未跟踪文件。

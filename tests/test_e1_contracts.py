@@ -39,12 +39,16 @@ def test_qmix_dg_rejects_waypoint_or_teacher_fallback():
 
 
 def test_seed_block_scheduler_keeps_paired_runs_on_one_gpu(tmp_path):
-    from llm_mappo.e1_scheduler import SeedBlockScheduler
+    from llm_mappo.e1_scheduler import SLOTS, SeedBlockScheduler
+
+    assert [(slot.physical_gpu, slot.slot) for slot in SLOTS] == [
+        (0, 0), (0, 1), (0, 2), (0, 3),
+    ]
 
     scheduler = SeedBlockScheduler(tmp_path / "matrix.json")
-    assert scheduler.assign(seed=7, available_gpus=(0, 1)) == 0
-    assert scheduler.assign(seed=7, available_gpus=(1,)) == 0
-    assert scheduler.assign(seed=17, available_gpus=(0, 1)) == 1
+    assert scheduler.assign(seed=7, available_gpus=(0,)) == 0
+    assert scheduler.assign(seed=7, available_gpus=(0,)) == 0
+    assert scheduler.assign(seed=17, available_gpus=(0,)) == 0
     scheduler.mark("MAPPO-DG:seed007", "failed", reason="RuntimeError")
     assert scheduler.summary()["counts"]["failed"] == 1
 

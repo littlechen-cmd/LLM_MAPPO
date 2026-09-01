@@ -19,8 +19,8 @@ admit_gpu() {
   local gpu="$1"
   local free
   free="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i "$gpu" | tr -d ' ')"
-  if [ "$free" -lt $((2 * M_SLOT_MIB)) ]; then
-    echo "GPU $gpu has ${free}MiB free; requires $((2 * M_SLOT_MIB))MiB for two E1 smoke slots."
+  if [ "$free" -lt $((4 * M_SLOT_MIB)) ]; then
+    echo "GPU $gpu has ${free}MiB free; requires $((4 * M_SLOT_MIB))MiB for four E1 smoke slots."
     exit 2
   fi
 }
@@ -35,12 +35,12 @@ launch_member() {
 }
 
 run_wave() {
-  admit_gpu 0; admit_gpu 1
+  admit_gpu 0
   local p1 p2 p3 p4
   launch_member 0 "$1" "$2"; p1="$LAST_PID"
   launch_member 0 "$3" "$4"; p2="$LAST_PID"
-  launch_member 1 "$5" "$6"; p3="$LAST_PID"
-  launch_member 1 "$7" "$8"; p4="$LAST_PID"
+  launch_member 0 "$5" "$6"; p3="$LAST_PID"
+  launch_member 0 "$7" "$8"; p4="$LAST_PID"
   wait "$p1"; wait "$p2"; wait "$p3"; wait "$p4"
 }
 

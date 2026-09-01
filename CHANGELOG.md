@@ -2,6 +2,9 @@
 
 ## 2026-09-01
 
+- Changed: E1/E2 training and CUDA smoke now use four independent process slots
+  exclusively on the RTX 4090; the RTX 4080 SUPER is inventory-only and cannot
+  receive a training run.
 - Added: E1-C through E1-F implementation now includes a three-dimensional
   exploratory noisy-teacher MAPPO path, DirectGoal QMIX-DG isolation and resume
   state, formal slot/seed scheduling primitives, and an owner-run two-wave

@@ -135,6 +135,8 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 - 优化路线 E1/E2 正式训练预算保持不变：核心 `2×2` 32 次，Fixed-KD、QMIX-DG、RuleKD-v3 各 8 次，
   ShuffleKD-v3、NoOOD-v1、NoGoalHint-v1 各 3 次，共 65 次；启发式 A* 无训练。资源修订后
   连同 O2 共 71 次；不做 8-AGV 压力实验。
+- E1/E2 只使用 physical GPU 0 的 RTX 4090，固定最多四个独立实验进程且每进程一个环境；
+  RTX 4080 SUPER 不参与训练或 CUDA smoke，资源不足时等待而非切换设备或降低显存门槛。
 - O3 探索性矩阵不增加训练；是否运行必须在 E1 预先冻结，不能根据 O3 性能触发、取消或删减。
 - 稳定路线预算：核心 `2×2` 与 RuleKD 各 5 seed，NoWP 3 诊断 seed，启发式 A* 无训练；删除
   QMIX、ShuffleKD、未见拓扑和 8-AGV 压力实验。

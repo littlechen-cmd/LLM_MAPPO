@@ -1,9 +1,11 @@
 from collections import Counter
+from copy import deepcopy
 import json
 from pathlib import Path
 import subprocess
 import sys
 
+import pytest
 import yaml
 
 from llm_mappo.e1_protocol import (
@@ -49,12 +51,20 @@ def test_e1_governance_records_selected_route_and_exploratory_o3_execution():
     validate_e1_governance_manifest(manifest)
 
     raw = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8"))
-    assert raw["schema_version"] == 9
+    assert raw["schema_version"] == 10
     assert raw["status"] == "d1_optimization_selected_e1_implementation_in_progress"
     assert raw["freeze_blockers"] == ["E1 selected-route protocol freeze"]
     assert raw["training"]["formal_environment_steps"] == 150000
     assert raw["evaluation"]["o3_exploratory_matrix"]["default_state"] == "execute"
     assert raw["evaluation"]["o3_exploratory_matrix"]["total_episodes"] == 6400
+
+
+def test_e1_governance_rejects_noncanonical_training_gpu():
+    manifest = deepcopy(load_e1_governance_manifest(MANIFEST_PATH))
+    manifest["training"]["execution_gpu"]["physical_index"] = 1
+
+    with pytest.raises(ValueError, match="execution GPU"):
+        validate_e1_governance_manifest(manifest)
 
 
 def test_e1_validator_writes_a_machine_readable_65_run_matrix(tmp_path):

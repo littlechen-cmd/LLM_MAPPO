@@ -47,12 +47,12 @@
 - [ ] 接入 `Heuristic-Dispatcher+AStar` evaluation-only 基线，明确其不使用 Student checkpoint，也不计入 65 次训练。
 - [ ] 为每个方法输出 machine-readable contract diff；出现超出允许字段的差异时拒绝创建正式 run。
 
-## Task group E1-E：双 GPU 四槽 owner runner 与评估入口
+## Task group E1-E：RTX 4090 单卡四槽 owner runner 与评估入口
 
 - [ ] 实现单命令 E2 launcher：固定 repository、canonical Python、artifact root 与 `nohup` 日志约定；默认不依赖 `conda activate`、`tmux` 或服务器 GitHub。
-- [ ] 为 physical GPU 0/1 各实现两个独立项目 slot lock，并实现最多四个 worker、每卡最多两个进程的 seed-block scheduler；seed 首次分配后，将所有配对方法和诊断方法固定到同一 GPU provenance，同一 seed 的两个 run 可占用该卡的两个 slot。
-- [ ] launcher 启动时执行 P1-compatible host preflight：RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、Git clean、60 秒轮询、连续 5 次、48 小时 timeout；按 physical GPU 0/1 分别冻结名称/总显存，不沿用 P1 的 external-PID 独占判据。
-- [ ] 每次领取 seed block 或启动第二 slot 前，每 60 秒重新采样一次只读 formal lease/PID/GPU identity/free-memory；按 `M_slot=ceil(1.5×max_family_peak_mib+1024 MiB)` 检查实时显存。外部 PID 只记录且不得干预；无可用 slot或显存不足时等待，其他 GPU/slot 可继续尚未开始的完整 seed block，禁止杀进程、借用第三 slot 或降低 `M_slot`。
+- [ ] 为 physical GPU 0 建立四个独立项目 slot lock，并实现最多四个独立进程的 seed-block scheduler；所有方法固定到 RTX 4090 provenance，physical GPU 1 不建立训练 slot。
+- [ ] launcher 启动时执行 P1-compatible host preflight：RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、Git clean、60 秒轮询、连续 5 次、48 小时 timeout；冻结 physical GPU 0 的名称/总显存，不沿用 P1 的 external-PID 独占判据。
+- [ ] 每次领取 seed block 或启动新 slot 前，每 60 秒重新采样一次只读 formal lease/PID/GPU identity/free-memory；按 `M_slot=ceil(1.5×max_family_peak_mib+1024 MiB)` 检查实时显存。外部 PID 只记录且不得干预；无可用 slot 或显存不足时等待，禁止杀进程、回退到 RTX 4080 SUPER、创建第五个 slot 或降低 `M_slot`。
 - [ ] 保持 P1/O1/O2 的单卡独占 lease 与 evidence 不变；formal slot locks 使用不同路径/schema，防止旧 Gate runner 与 E1 正式 runner 同时占用同一 GPU。
 - [ ] 实现原子 matrix state、PID/lease、heartbeat、run identity、latest/final checkpoint 和失败原因；重启只恢复相同 identity，complete run 不重复执行。
 - [ ] 任一算法失败使对应 run 保留 failed 并停止新的正式调度；基础设施失败允许 owner 以相同 identity 恢复，不能自动换 seed/配置/GPU 后掩盖记录。
@@ -63,9 +63,9 @@
 
 - [ ] 运行新增与受影响的 deterministic unit/integration tests，覆盖三维 shape/梯度、标签 Gate、方法合同、checkpoint resume、65-run expansion、GPU scheduler 和零 planner/online-LLM 调用。
 - [ ] 对每个独立实现路径运行最短 CPU smoke；共享同一代码路径的方法不得因组数重复做性能测试。
-- [ ] 生成一次 owner-run 双 GPU 四槽 CUDA 功能 smoke 命令，固定总计 8 个 run、每个 256 real environment steps，并在第 128 步主动停止/保存后从 checkpoint 恢复至 256；不得采集或比较性能。
-- [ ] smoke 固定两波：wave 1 在 GPU0 并行 seed9001 `MAPPO-DG` 与 seed9002 `Fixed-AStarKD+LLMKD`，GPU1 并行 seed9003 `RuleKD-v3` 与 seed9004 `NoOOD-v1`；wave 2 在 GPU0 并行 seed9001 `RC-AStarKD+LLMKD` 与 seed9002 `QMIX-DG`，GPU1 并行 seed9003 `ShuffleKD-v3` 与 seed9004 `NoGoalHint-v1`。每个 run 256 steps、128→256 resume，总计 2048 steps。
-- [ ] Codex 审核 CUDA smoke 产物的四槽上限、每卡双进程、device binding、seed blocking、128→256 resume、三维非零 LLM loss、Fixed/RC parity、QMIX 身份、planner query=0、online LLM=0 和无 NaN/Inf，并据所有家族的峰值冻结 `M_slot`。
+- [ ] 生成一次 owner-run RTX 4090 单卡四进程 CUDA 功能 smoke 命令，固定总计 8 个 run、每个 256 real environment steps，并在第 128 步主动停止/保存后从 checkpoint 恢复至 256；不得采集或比较性能。
+- [ ] smoke 固定两波且全部使用 physical GPU 0：wave 1 并行 seed9001 `MAPPO-DG`、seed9002 `Fixed-AStarKD+LLMKD`、seed9003 `RuleKD-v3`、seed9004 `NoOOD-v1`；wave 2 并行 seed9001 `RC-AStarKD+LLMKD`、seed9002 `QMIX-DG`、seed9003 `ShuffleKD-v3`、seed9004 `NoGoalHint-v1`。每个 run 256 steps、128→256 resume，总计 2048 steps。
+- [ ] Codex 审核 CUDA smoke 产物的 GPU 0 四进程上限、device binding、seed blocking、128→256 resume、三维非零 LLM loss、Fixed/RC parity、QMIX 身份、planner query=0、online LLM=0 和无 NaN/Inf，并据所有家族的峰值冻结 `M_slot`。
 - [ ] 运行 manifest/config/schema/hash 审计，确认没有密钥、pilot 数据、O3 数据或旧二维 checkpoint 进入正式 800 reference 或训练路径。
 
 ## Task group E1-G：协议冻结、合并与发布

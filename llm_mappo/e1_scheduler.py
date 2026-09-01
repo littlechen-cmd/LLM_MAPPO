@@ -15,7 +15,7 @@ class E1Slot:
     def name(self): return f"gpu{self.physical_gpu}-slot{self.slot}"
 
 
-SLOTS = tuple(E1Slot(gpu, slot) for gpu in (0, 1) for slot in (0, 1))
+SLOTS = tuple(E1Slot(0, slot) for slot in range(4))
 
 
 class E1SlotLocks:

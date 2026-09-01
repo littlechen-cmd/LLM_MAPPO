@@ -1,4 +1,4 @@
-"""Generate a bounded, four-slot E2 launch plan; does not start training itself."""
+"""Generate a bounded, four-process GPU-0 E2 plan; does not start training itself."""
 
 import argparse
 import json
@@ -30,9 +30,9 @@ def main():
         if len(planned) >= args.limit: break
         state = scheduler.state["runs"].get(run.identity, {})
         if state.get("status") in {"complete", "running", "failed"}: continue
-        gpu = scheduler.assign(seed=run.seed, available_gpus=(0, 1))
+        gpu = scheduler.assign(seed=run.seed, available_gpus=(0,))
         same_gpu = sum(item["gpu"] == gpu for item in planned)
-        if same_gpu >= 2: continue
+        if same_gpu >= 4: continue
         planned.append({"run_identity": run.identity, "gpu": gpu, "slot": same_gpu,
             "command": ["scripts/run_e1_training.py", "--governance", args.governance,
                 "--records", args.records, "--run", run.identity.replace(":seed", ":"),

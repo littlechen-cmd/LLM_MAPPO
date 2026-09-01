@@ -8,7 +8,7 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 - 生成并验收 semantic-view-v3 的 60 条 pilot 与 800 条 formal 三维离线 LLM 标签；
 - 将三维 Student、LLM KD、A* KD、Reward Calibration、buffer、schedule、日志和 checkpoint 从短 smoke 链路升级为正式链路；
 - 实现或修正核心 `2×2`、`Fixed-AStarKD+LLMKD`、`QMIX-DG`、`RuleKD-v3`、`ShuffleKD-v3`、`NoOOD-v1`、`NoGoalHint-v1` 与无训练启发式基线；
-- 提供双 GPU、每卡最多两个任务、全机最多四个并发任务的 owner-run 调度器，以及恢复、失败停止、聚合和身份校验；
+- 提供 RTX 4090 单卡、最多四个独立任务的 owner-run 调度器，以及恢复、失败停止、聚合和身份校验；RTX 4080 SUPER 不参与训练；
 - 冻结 canonical core topology 的正式评估和两张 O3 未见拓扑的探索性评估协议；
 - 完成本地测试、一次最小化整合 CUDA smoke、证据收口、分支合并与发布。
 
@@ -37,11 +37,11 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 | Formal model identity | 第一条成功响应冻结 request model、response model 与 system fingerprint；正式生成中变化立即暂停，禁止静默混合 backend。 |
 | Schedule | 所有方法记录同一 `linear-env-step-v1`：`lambda_A=0.05(1-p)`、`lambda_L=0.10(1-p)`、`p=min(t/150000,1)`；缺少教师时仅将对应 mask 置零。 |
 | A* comparison | Fixed 与 RC 使用相同 1/16 sampler、shadow rollout、日志与调用密度；唯一优化差异是 RC 额外乘 `c_A_reward`。 |
-| Dual-GPU scheduling | 最大并发 4，每块 GPU 最多两个正式进程。一个 seed 的第一个运行取得 GPU 后，该 seed 的所有配对方法都固定到该 GPU；尚未启动的 seed block 可由任一具有空闲 slot 且通过 formal lease/preflight 的 GPU 领取。同一 seed 可在所绑定 GPU 的两个 slot 中并行，但禁止跨卡迁移。 |
-| Formal GPU slots | E1 为 physical GPU 0/1 分别建立 `slot-0/slot-1` 四个项目锁；只统计本项目正式进程，严禁复用或放宽 P1/O1/O2 的单卡独占 lease。每个 slot 同时最多持有一个子进程。 |
+| Single-GPU scheduling | physical GPU 0 的 RTX 4090 是唯一训练设备，固定最大并发 4；每个独立进程仍只运行一个仓库环境。所有 seed block 都绑定 GPU 0，不存在跨卡迁移或 GPU 型号混杂。 |
+| Formal GPU slots | E1 在 physical GPU 0 建立 `slot-0..slot-3` 四个项目锁；physical GPU 1 的 RTX 4080 SUPER 不建立训练 slot。只统计本项目正式进程，严禁复用或放宽 P1/O1/O2 的单卡独占 lease。每个 slot 同时最多持有一个子进程。 |
 | Slot memory admission | 并发 CUDA smoke 对每个训练家族记录 `torch.cuda.max_memory_reserved`；定义 `M_slot=ceil(1.5×max_family_peak_mib+1024 MiB)`。启动任一新 slot 前，目标 GPU 的实时 free memory 必须不少于 `M_slot`，该值写入 E1 receipt 并在 E2 冻结，禁止自动降低。 |
-| Formal preflight cadence | launcher 启动时沿用 P1 的 OS、Python、Git clean、RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、60 秒轮询、连续 5 次与 48 小时 timeout；GPU 名称/总显存按两张物理卡分别冻结。启动后的每个 slot 每 60 秒重新采样 lock、PID、free memory 和 GPU identity；外部 PID 只记录且不得干预，是否准入只由冻结 slot/显存门决定。 |
-| Shared-server conduct | 不抢占、终止或隐藏其他用户进程。GPU 不可用时对应 worker 等待；另一 GPU 可继续完整 seed block。长任务用 `nohup`，日志写入 `/home/lzx/`。 |
+| Formal preflight cadence | launcher 启动时沿用 P1 的 OS、Python、Git clean、RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、60 秒轮询、连续 5 次与 48 小时 timeout；训练设备身份固定为 physical GPU 0 的 RTX 4090。启动后的每个 slot 每 60 秒重新采样 lock、PID、free memory 和 GPU identity；外部 PID 只记录且不得干预，是否准入只由冻结 slot/显存门决定。 |
+| Shared-server conduct | 不抢占、终止或隐藏其他用户进程。RTX 4090 不可用时 worker 等待，不回退到 RTX 4080 SUPER。长任务用 `nohup`，日志写入 `/home/lzx/`。 |
 | Hardware claims | GPU 型号是 provenance/blocking factor，不把吞吐或训练时间作为方法性能优势。 |
 | O3 matrix | E2 完整执行 `MAPPO-DG` 与 `RC-AStarKD+LLMKD` × 8 training seeds × 2 topologies × `200..209` × 20 episodes，共 6400 episodes；无性能阈值、不得选择性报告。 |
 | Checkpoints | 仅 `checkpoint_final.pt` 进入正式评估；训练 checkpoint 必须可严格恢复 optimizer、schedule、EMA、RNG 和 provenance；旧 1D/2D checkpoint fail closed。 |

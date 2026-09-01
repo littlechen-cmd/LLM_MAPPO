@@ -19,7 +19,7 @@ def test_p1_governance_preserves_linux_contract_after_e1_manifest_upgrade():
     assert "P1→O1→O2" in protocol
     assert "A600" not in protocol
 
-    assert manifest["schema_version"] == 9
+    assert manifest["schema_version"] == 10
     assert manifest["status"] == "d1_optimization_selected_e1_implementation_in_progress"
     assert manifest["route_profiles"]["optimization"]["prerequisites"] == [
         "O0",

@@ -137,6 +137,7 @@
   产物必须携带 exploratory-noisy-teacher provenance。
 - [ ] 冻结代码、环境、教师、奖励、seed、预算、checkpoint、日志、失败和统计合同；
 - [ ] 完成所选路线全部必需组的端到端短 smoke；
+- [ ] E1-F：在 RTX 4090 上以两波、每波四个独立进程完成 8-member CUDA smoke；RTX 4080 SUPER 不参与训练，显存不足时 fail closed；
 - [ ] 优化 E1/E2 预算为 65 次：核心 2×2 32，Fixed-KD/QMIX-DG/RuleKD-v3 各 8，
   ShuffleKD-v3/NoOOD-v1/NoGoalHint-v1 各 3；正式训练规模不变，连同 O2 共 71 次；
 - [ ] 在查看任何 O3 策略性能前冻结探索矩阵为“执行”或“延期”；若执行，唯一矩阵为
