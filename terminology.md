@@ -145,6 +145,7 @@
 | Seed Block（随机种子块） | 同一个随机种子对应的一整套方法对照，作为一个整体调度。 | 对一个 training seed 的所有匹配学习组的不可拆分调度与 provenance 单位。 | 该块首次领取 GPU 后，同 seed 的方法固定在该 GPU，避免硬件差异破坏配对比较。 |
 | GPU Provenance（GPU 来源记录） | 记录某次训练实际用了哪张显卡。 | 写入 run manifest 的物理 GPU index、UUID、名称、驱动、逻辑设备和资源窗口记录。 | 它是可追溯性和配对设计的 blocking factor，不是论文中的性能优势指标。 |
 | Dataset-level Gate（数据集级门） | 对整套标签做一次统一验收，而不是挑出坏样本逐条修补。 | 在固定 800 attempts 上联合检查唯一性、parser validity、单一 model/fingerprint 和双人盲审错误率的 Go/No-Go 规则。 | 未通过时 formal dataset 不得进入检索、OOD reference、Student 或训练；必须按新版本重走 pilot 与完整 formal 生成。 |
+| Exploratory Noisy-Teacher Evidence（探索性带噪教师证据） | 明知教师会犯错，但仍用统一且不修补的数据检验学生是否总体受益。 | 原始标签、错误审计与训练结果严格绑定；记录级权重仍只表达结构有效性与 OOD，不表达语义正确性。 | v5 Pro 800-record raw 标签只能支持“Student 是否能从不完美 LLM 监督中经验性获益”的探索性问题，不能支持 LLM 语义正确性或人工验证主张。 |
 | System Fingerprint（系统指纹） | 后端实际提供模型服务的版本标记。 | API 成功响应返回并由首条 formal response 冻结的 backend identity 字段，与 request/response model 共同构成 formal backend tuple。 | formal 生成中发生变化必须暂停，不能把不同后端的标签静默混合。 |
 | Resume Identity（恢复身份） | 判断一次中断任务能否安全接着跑的“身份证”。 | 由 run identity、代码 commit、配置/环境/数据 hash、checkpoint schema、GPU provenance 与已保存训练状态组成的严格匹配关系。 | 只有基础设施中断且所有身份字段一致时才可恢复；算法、数值或安全失败不得通过换 seed/配置伪装为恢复。 |
 | GPU Slot（GPU 槽位） | 同一张显卡上为本项目预留的一个训练位置。 | 由独立 project lock、PID、GPU identity 和 `M_slot` 显存准入共同保护的单进程资源槽。 | E1/E2 每张 GPU 最多两个槽、全机最多四个；它不改变 P1/O1/O2 的既有独占 lease。 |

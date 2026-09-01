@@ -126,6 +126,10 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 - [~] in progress — optimization protocol freeze and end-to-end validation
 - 唯一规格：`specs/2026-09-01-e1-optimization-protocol-freeze/`。
+- 2026-09-01 修订：v5 Pro raw 800-record LLM 数据保留其 strict label Gate No-Go，
+  但研究所有者批准将其作为 exploratory noisy-teacher evidence 进入 E1-C/E2；
+  不进行人工单条修补，不宣称语义正确性验证通过，具体边界见
+  `plan/noisy-teacher-exploratory-protocol.md`。
 - 目标：冻结唯一代码 commit、环境、教师语义、奖励、seed、交互预算、checkpoint 规则、日志
   schema、失败处理、统计假设和论文主张；完成所有必需组端到端短 smoke。
 - 优化路线 E1/E2 正式训练预算保持不变：核心 `2×2` 32 次，Fixed-KD、QMIX-DG、RuleKD-v3 各 8 次，

@@ -2,6 +2,11 @@
 
 ## 2026-09-01
 
+- Changed: The owner approved the v5 Pro raw 800-record label source as
+  exploratory noisy-teacher evidence after its strict semantic label Gate
+  No-Go. The raw evidence remains immutable; no record is manually repaired,
+  retried, deleted or re-ordered, and all LLMKD results are now explicitly
+  exploratory rather than confirmatory label-quality claims.
 - Fixed: E1 formal review packs now use shuffled neutral blind IDs and include
   only the reviewer-readable deidentified semantic view, scores, reasons and
   content hash. Provenance strata, scenario IDs and opaque 61D vectors no

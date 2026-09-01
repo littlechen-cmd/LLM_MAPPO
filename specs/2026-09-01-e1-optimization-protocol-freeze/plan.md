@@ -12,6 +12,11 @@
 
 ## Task group E1-B：三维正式标签链路
 
+> 状态修订（2026-09-01）：原 v5 Pro 800-record strict label Gate 已 No-Go，
+> 不得勾选为 confirmatory data Gate 通过。研究所有者批准保留其为 immutable
+> exploratory noisy-teacher evidence，因此 E1-B 的 raw 证据归档不再阻塞 E1-C；
+> 具体边界见 `plan/noisy-teacher-exploratory-protocol.md`。
+
 - [ ] 审计并修正 semantic-view-v3 scenario generator、prompt-v4、严格 parser、原始请求/响应记录、retry 分类和 manifest；禁止 prompt 接收 scenario type、规则标签、A*、reward、Student 或目标分数。
 - [ ] 让标签 CLI 只从 `DEEPSEEK_API_KEY` 读取凭据，并添加密钥不落盘、不回显、不进入异常文本和 Git 的回归测试。
 - [ ] 提供唯一 owner-run pilot 命令：精确生成五层各 12 条、共 60 条 Flash pilot，并输出 model/fingerprint、validity 和人工复核包；pilot 永不进入训练或 OOD reference。

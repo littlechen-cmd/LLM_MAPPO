@@ -128,6 +128,13 @@
 ## E1 — 所选路线协议冻结与链路验证
 
 - [x] E1-A：冻结优化路线 65-run 正式矩阵、150000-step 预算、final-checkpoint 规则及 O3 6400-episode exploratory evaluation 合同，并以机器可读 validator 审计；
+- [x] E1-B 决策修订：保留 v5 Pro raw 800-record 数据与 strict label Gate No-Go
+  证据；研究所有者批准不进行人工复核或单条修补，后续 LLMKD 训练统一标记为
+  exploratory noisy-teacher evidence，具体合同见
+  `plan/noisy-teacher-exploratory-protocol.md`。
+- [~] E1-C：在不改变 65-run matrix、环境、奖励、A* 教师、schedule 或 raw 标签的前提下，
+  实现正式三维 Student、raw LLM KD、checkpoint 与日志链路；所有包含 raw LLMKD 的
+  产物必须携带 exploratory-noisy-teacher provenance。
 - [ ] 冻结代码、环境、教师、奖励、seed、预算、checkpoint、日志、失败和统计合同；
 - [ ] 完成所选路线全部必需组的端到端短 smoke；
 - [ ] 优化 E1/E2 预算为 65 次：核心 2×2 32，Fixed-KD/QMIX-DG/RuleKD-v3 各 8，

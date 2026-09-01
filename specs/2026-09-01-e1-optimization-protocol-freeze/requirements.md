@@ -31,7 +31,8 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 | Seeds | 正式组用 `7/17/27/37/47/57/67/77`；诊断组只用 `7/17/27`；评估用 `200..209 × 20 episodes`。 |
 | Semantic contract | 唯一正式语义为 `task_persistence/yielding_preference/coordination_risk`，Student 输出 `[N,3]`；整记录 validity 与共享 OOD reliability 共同加权。 |
 | Label generation | 先运行 60 条 Flash pilot；只有 canonical architecture 第 11.6 节的系统性失败门触发时，才废弃整套 Flash pilot 并用 Pro 重做完整 60 条。通过的唯一模型用于完整 800 条 formal。 |
-| Label acceptance | formal 必须恰好 800 attempts、800 个唯一 ID/hash、overall validity `>=784/800`、每层 `>=152/160`、单一 model/fingerprint；盲审 100 条、两位独立 reviewer、critical error=0、substantive error `<=5/100` 且每层 `<=2/20`。失败时升级版本并从 pilot 和完整 800 重新开始。 |
+| Raw LLM label evidence | 原始 strict label Gate 及其 No-Go 保留在 `plan/label-audit-protocol.md`。研究所有者于 2026-09-01 批准将已完成的 v5 Pro 800-record raw 数据集作为 exploratory noisy-teacher evidence：它必须保持 800 attempts、唯一 ID/hash、overall validity `799/800`、每层至少 `159/160`、单一 model/fingerprint，但不得称为通过语义正确性 Gate 的 formal label dataset。 |
+| Exploratory LLM boundary | `LLMKD` 与完整方法继续使用相同 raw 数据、整记录 `validity × OOD reliability`、网络和 schedule；训练/评估结果均标记 exploratory。该权重不是语义正确性置信度，且不允许以人工改单条、选择性删除或新 API 请求修补 raw 数据。 |
 | Secret handling | API 凭据只从进程环境变量 `DEEPSEEK_API_KEY` 读取。程序和文档不得记录、回显、序列化、hash、提交或复制密钥；标签任务结束后由 owner 从 shell 环境清除。 |
 | Formal model identity | 第一条成功响应冻结 request model、response model 与 system fingerprint；正式生成中变化立即暂停，禁止静默混合 backend。 |
 | Schedule | 所有方法记录同一 `linear-env-step-v1`：`lambda_A=0.05(1-p)`、`lambda_L=0.10(1-p)`、`p=min(t/150000,1)`；缺少教师时仅将对应 mask 置零。 |
@@ -51,8 +52,9 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 
 - `MAPPO-DG`：A* KD=0，LLM KD=0。
 - `RC-AStarKD`：Reward-Calibrated A* KD，LLM KD=0。
-- `LLMKD`：A* KD=0，semantic-view-v3 LLM KD 开启。
-- `RC-AStarKD+LLMKD`：完整方法，两类 KD 均开启。
+- `LLMKD`：A* KD=0，semantic-view-v3 raw LLM KD 开启；论文中称为 `Raw-LLMKD`。
+- `RC-AStarKD+LLMKD`：完整方法，两类 KD 均开启；论文中称为
+  `RC-AStarKD+Raw-LLMKD`。
 - `Fixed-AStarKD+LLMKD`：除 `c_A_reward` 外与完整方法完全一致。
 - `QMIX-DG`：共享 DirectGoal 613D observation、环境、奖励、动作 mask、训练预算和 seed；不得回退为 MAPPO 或 waypoint 输入。
 - `RuleKD-v3`：在同一 800 semantic views 上按 canonical architecture 第 13.3 节独立生成三维规则标签，复用 retrieval/validity/OOD；规则不得进入 LLM prompt 或改写正式标签。
@@ -64,7 +66,8 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 ## Context
 
 - Canonical architecture：`docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md`。
-- Label review：`plan/label-audit-protocol.md`。
+- 原始严格标签审计：`plan/label-audit-protocol.md`；探索性 raw LLM 边界：
+  `plan/noisy-teacher-exploratory-protocol.md`。
 - O2 Gate evidence：`docs/evidence/o2-calibration-gate-v1.json`。
 - O2 已证明 Reward Calibration 链路满足 coverage 与中位 AUC 门，但没有启用 LLMKD，不能作为三维 LLM 蒸馏证据。
 - 当前 `semantic_v3.py`、优化 Student 与 checkpoint 已包含三维组件；旧 `mappo.py`、Phase 4 teacher 和 `semantic_controls.py` 仍有二维实现，E1 必须阻止正式优化路线误入旧链路。

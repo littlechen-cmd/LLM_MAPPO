@@ -5,7 +5,7 @@
 - [ ] O0/P1/O1/O2/O3/D1 identities与 E1 frozen implementation/data/config hashes 可追溯，governance manifest 不再含旧 blocker 或 null formal budget。
 - [ ] 65-run manifest 精确展开为 32 core、8 Fixed、8 QMIX、8 RuleKD、9 diagnostic runs；训练预算和 seeds 与需求一致，无重复 identity。
 - [ ] 优化路线正式标签、网络输出、loss、日志和 checkpoint 均为有序三维语义，且正式入口无法加载旧 1D/2D checkpoint 或进入旧二维 trainer。
-- [ ] 60 pilot 和 800 formal 均由 owner-run 链路生成；pilot 不进入训练；formal 通过全部 dataset-level、fingerprint 和双人盲审门。
+- [ ] 原始 60 pilot 与 v5 Pro 800-record raw 数据均可追溯；pilot 不进入训练。原 strict dataset-level Gate 的 No-Go、799/800 validity、单一 fingerprint 与关键语义错误必须保留为审计证据；任何使用 raw LLM 标签的 E1/E2 结果均标记 exploratory noisy-teacher evidence，而非 confirmatory label-Gate 通过。
 - [ ] 仓库、Git history、配置、日志、artifact manifest 和异常文本中没有 API key；训练/评估在线 LLM 调用为 0。
 - [ ] Fixed/RC 除 `c_A_reward` 外具有相同 sampler、shadow、EMA、schedule、数据、网络、reward、mask 和计数链路。
 - [ ] QMIX、RuleKD、Shuffle、NoOOD、NoGoalHint 和启发式基线满足各自冻结合同，没有 fallback 或二维污染。
@@ -20,7 +20,7 @@
 
 1. 用 canonical Windows Python 运行 E1 manifest validator；预期输出 `65` 个唯一学习 run 和每组/seed 精确计数。
 2. 对 60 pilot manifest 运行 model-selection validator；只有冻结的三种状态之一，且 pilot path 不可被 formal trainer 接受。
-3. 对 800 formal dataset 运行 integrity、fingerprint、validity、blind-review 和 OOD validator；预期产生唯一 Go receipt 与 content SHA256。
+3. 对 800-record raw dataset 运行 integrity、fingerprint、validity、盲审与 OOD 审计；预期保留原 strict Gate 的 No-Go 及 content SHA256，并生成 exploratory-noisy-teacher identity，而不是伪造 Go receipt。
 4. 构造三维 batch，验证 Student 输出 `[batch,N,3]`；reason/disagreement 改变不影响 tensor、loss 或 retrieval。
 5. 对四个 core group 与 Fixed control 比较 machine-readable contract diff；预期差异只出现在允许的 teacher mask 和 RC multiplier。
 6. 用 throwing online-LLM client 和 throwing execution planner 运行所有适用短链路；预期无调用且 run 完成。
@@ -38,7 +38,9 @@
 - [ ] E1 manifest/label/checkpoint/scheduler focused test selection passes。
 - [ ] `D:\Anaconda3\envs\py310\python.exe -m flake8 rware llm_mappo eval train scripts figures/core` passes，或每个既有失败均有与 E1 无关的基线证据。
 - [ ] E1 65-run manifest validator returns Go。
-- [ ] E1 formal-label validator returns Go。
+- [ ] E1 raw-label integrity validator reports the immutable `799/800` dataset,
+  single fingerprint and exploratory-noisy-teacher status without claiming a
+  confirmatory label Gate Go。
 - [ ] E1 local end-to-end smoke aggregator returns Go。
 - [ ] owner-run Linux CUDA smoke aggregator returns Go，且精确包含 seeds 9001..9004、8 个指定组、2048 总环境步、128→256 resume、每卡双进程、冻结 `M_slot`，provenance 指向允许的 RTX 4090/4080 SUPER、canonical Python 和 E1 commit。
 - [ ] secret scan、online-LLM zero-call、execution-planner zero-call 和 legacy-schema isolation checks return Go。
@@ -46,7 +48,8 @@
 ## Merge criteria
 
 - [ ] `plan.md` 所有任务完成，且每个完成的 `TASKS.md` 子任务在同一 commit 更新 `CHANGELOG.md`。
-- [ ] 所有 validation checks 通过；label dataset 或 CUDA smoke No-Go 时禁止合并。
+- [ ] 所有适用 validation checks 通过；raw LLM label 的历史 strict No-Go 必须保留且
+  所有包含该教师的结果必须为 exploratory。CUDA smoke 或任何工程安全 No-Go 仍禁止合并。
 - [ ] 没有未解决的算法、安全、数据身份、schema、恢复或双 GPU 调度问题。
 - [ ] 只存在一个 E1 feature spec 目录，canonical architecture 与三份 E1 spec 没有矛盾。
 - [ ] 研究所有者批准 E1 evidence receipt 和允许/禁止论文主张。
