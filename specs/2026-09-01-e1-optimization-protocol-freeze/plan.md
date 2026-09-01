@@ -1,6 +1,24 @@
 # Plan — E1 Optimization Protocol Freeze
 
-本计划只完成 E1。每个任务组完成后更新 `CHANGELOG.md`；只有出现 owner-run 操作、Gate 失败或冻结合同冲突时暂停。任何长训练或长评估均不得在 E1 启动。
+本计划原本只完成 E1，不在 E1 启动长训练。2026-09-02，研究所有者明确授权在治理文档
+收口前提前启动 E2 全部 65-run 正式矩阵，并批准 MAPPO 执行合同修订为四个 learner slot、
+每 learner 16 个 spawned CPU environment workers、`rollout_length=128`。本文件如实保留该
+阶段越序；不得把它改写成原计划顺序。QMIX-DG 保持单环境 trainer。
+
+## 2026-09-02 重规划裁决
+
+- 当前 E1 状态为 `implementation complete / governance closeout in progress`；E2 已进入运行中。
+- raw v5 Pro 数据保持 strict Gate No-Go，并作为 immutable exploratory noisy-teacher evidence：
+  800 attempts、799 valid、单一 fingerprint，records SHA256 为
+  `a108d35e8398114baec1cf88dbe34446efaefda4c9066725d5e7a57a0fed2512`。原 manifest 的
+  `status: running` 是已接受但不得静默改写的元数据异常。
+- `5f56f20` CUDA smoke 已通过 8 个功能成员、2048 总 steps、GPU 0 only；它不覆盖后续
+  `7de1f04` 16-worker 改造。owner 决定不补新 smoke，而以 E2 早期稳定运行作为工程健康证据。
+- E2 canonical artifact root 为 `artifacts/optimization/e2_formal_vector16_7de1f04`；当前矩阵
+  不因本轮文档收口中断，也不得在运行期间混入新实现 commit。
+- 矩阵完成后必须审计：是否发生 resume、failed/restarted run、超过四 learner、重复 artifact、
+  code/config/data identity 漂移。仅实际受影响的成员进入重跑裁决。
+- E1-G 在 receipt、治理清单、上述运行审计和 `codex/optimization` 合并完成前保持未关闭。
 
 ## Task group E1-A：治理清单与正式矩阵冻结
 
@@ -10,69 +28,77 @@
 - [x] 冻结 canonical core evaluation 与 O3 6400-episode exploratory evaluation manifest；两者必须使用 final checkpoint，且 O3 标注 non-confirmatory。
 - [x] 更新 `terminology.md`，解释 formal run matrix、seed block、GPU provenance/blocking factor、dataset-level Gate、system fingerprint 和 resume identity。
 
-## Task group E1-B：三维正式标签链路
+## Task group E1-B：三维正式标签链路（strict Gate 已执行并 No-Go；探索性替代合同生效）
 
 > 状态修订（2026-09-01）：原 v5 Pro 800-record strict label Gate 已 No-Go，
 > 不得勾选为 confirmatory data Gate 通过。研究所有者批准保留其为 immutable
 > exploratory noisy-teacher evidence，因此 E1-B 的 raw 证据归档不再阻塞 E1-C；
 > 具体边界见 `plan/noisy-teacher-exploratory-protocol.md`。
 
-- [ ] 审计并修正 semantic-view-v3 scenario generator、prompt-v4、严格 parser、原始请求/响应记录、retry 分类和 manifest；禁止 prompt 接收 scenario type、规则标签、A*、reward、Student 或目标分数。
-- [ ] 让标签 CLI 只从 `DEEPSEEK_API_KEY` 读取凭据，并添加密钥不落盘、不回显、不进入异常文本和 Git 的回归测试。
-- [ ] 提供唯一 owner-run pilot 命令：精确生成五层各 12 条、共 60 条 Flash pilot，并输出 model/fingerprint、validity 和人工复核包；pilot 永不进入训练或 OOD reference。
-- [ ] 实现 Flash→Pro 判定器，只按 canonical 第 11.6 节冻结条件给出 `FLASH_GO`、`REGENERATE_FULL_PILOT_WITH_PRO` 或 `DATASET_NO_GO`，禁止依据训练性能选择模型。
-- [ ] 在 pilot Go 后提供唯一 owner-run formal 命令：精确发起五层各 160 条、共 800 attempts；第一条成功响应冻结单一 model/fingerprint，变化时原子暂停。
-- [ ] 生成 deterministic 100-record blind-review pack（seed `20260820`，每层 20），合并两位 reviewer 结果并执行 validity/critical/substantive dataset Gate；禁止逐条改分、选择性删除或坏标签重试。
-- [ ] Gate Go 后冻结 canonical 800-record content、SHA256、61D OOD reference 与 manifest path；No-Go 时原样归档并停止 E1，不生成可训练数据。
-- [ ] 输出 owner 清除临时 `DEEPSEEK_API_KEY` 的收尾检查，但不得把实际值写入任何产物。
+- [x] 完成 semantic-view-v3 generator、prompt-v5 state contract、严格 parser、原始请求/响应、retry 和 manifest 链路；prompt 不接收规则标签、A*、reward、Student 或目标分数。
+- [x] 标签 CLI 仅从 `DEEPSEEK_API_KEY` 读取凭据，密钥不进入版本化产物。
+- [x] 完成 60-record pilot、模型升级裁决与五层各 160 条、共 800 attempts 的 Pro formal 采集。
+- [x] 完成 deterministic 100-record blind-review 流程；strict dataset-level Gate 结论为 No-Go，
+  不进行逐条修补、选择性删除或失败标签重试。
+- [x] 原 Gate-Go freeze 任务由 owner 裁决替代：原始 800 attempts 原样归档为 exploratory
+  noisy-teacher evidence；SHA256、799/800 validity、model/fingerprint 与 metadata anomaly 写入 receipt。
+- [~] API key 未进入仓库；最终销毁仍由 owner 在项目不再需要 LLM 接入时执行，E1 不记录实际值。
 
-## Task group E1-C：正式三维 Student 与训练核心
+## Task group E1-C：正式三维 Student 与训练核心（实现完成）
 
-- [ ] 建立优化路线唯一正式 trainer；不得调用只支持 1/2 维的 legacy Phase 3/4 actor、teacher、buffer 或 checkpoint loader。
-- [ ] 将 O0 Student 的 613D physical branch、61D semantic branch、三维 semantic head、detached late fusion 和 centralized critic 接入完整 MAPPO rollout/update，而非 fixture-only smoke。
-- [ ] 实现三维整记录 semantic loss：同一 record 的三个分量共享 validity×OOD reliability，reason 和 disagreement 只记录诊断，不进入网络、loss 或 OOD。
-- [ ] 实现 `linear-env-step-v1` 的 `B=150000` schedule，并确保所有组共享名义 `lambda_A/lambda_L`；从 checkpoint 严格恢复 `t/p/lambda`。
-- [ ] 接入 Fixed/RC A* KD、1/16 deterministic calibration sampler、H=12 paired shadow、EMA 和 fail-closed zero-validity；验证 Fixed/RC 唯一优化差异为 `c_A_reward`。
-- [ ] 实现正式 checkpoint 的模型、optimizer、schedule、EMA、Python/NumPy/Torch CPU/CUDA RNG、配置/数据/代码/GPU provenance 和原子写入；旧 1D/2D 与缺失训练状态的文件禁止恢复训练。
-- [ ] 完成训练日志 schema：run manifest、episodes、updates、teacher counts/events、resource windows；记录三维 loss、有效分母、schedule、calibration 和 planner query，禁止普通状态全数组日志。
-- [ ] 保留原子 latest checkpoint 恢复能力；基础设施失败只允许同 run identity 恢复，算法 NaN/安全失败必须保留为结果。
+- [x] 建立优化路线唯一正式三维 trainer，并接入 613D physical、61D semantic、三维 head、
+  detached late fusion、centralized critic 和整记录 `validity×OOD` semantic loss。
+- [x] 接入 `linear-env-step-v1`、Fixed/RC A* KD、1/16 sampler、H=12 paired shadow、EMA 与
+  fail-closed zero-validity；MAPPO 正式 rollout 修订为 16 workers × 128 vector ticks。
+- [~] checkpoint 已保存模型、optimizer、schedule、RNG、worker snapshot 和 provenance；若正式
+  run 发生 resume，仍须审计并修复当前 calibration EMA 未恢复的缺口。
+- [~] compact updates/teacher count 与性能字段已写入；episodes/resource windows/events 的完整性
+  及 resume 后累计 wall-time 仍列入 E1-G/E2 产物审计。
+- [~] latest checkpoint 原子写入已实现；同 identity 自动恢复、失败 attempt 唯一定位和完整
+  calibration state 仍不得在运行后审计前宣称通过。
 
-## Task group E1-D：正式方法、基线与消融
+## Task group E1-D：正式方法、基线与消融（实现完成；启发式长评估留在 E2）
 
-- [ ] 用同一 trainer 配置核心 `MAPPO-DG/RC-AStarKD/LLMKD/RC-AStarKD+LLMKD`，仅通过教师 mask/RC 开关形成 2×2，禁止复制漂移的训练实现。
-- [ ] 实现 `Fixed-AStarKD+LLMKD`，并添加配置及运行时等价性审计，证明与完整方法仅差 `c_A_reward`。
-- [ ] 将 QMIX-DG 接入同一 DirectGoal、环境、奖励、mask、预算、seed、日志和评估协议；检测到 MAPPO/waypoint fallback 立即失败。
-- [ ] 将旧二维 `semantic_controls.py` 替换或隔离为正式 `RuleKD-v3`、`ShuffleKD-v3` 和 `NoOOD-v1` 三维控制；稳定路线旧二维行为不得被修改。
-- [ ] 实现 `NoGoalHint-v1` 九位 geometry block 清零与 schema/checkpoint 隔离，并证明执行 planner stub 一旦被调用即抛错时仍可端到端运行。
-- [ ] 接入 `Heuristic-Dispatcher+AStar` evaluation-only 基线，明确其不使用 Student checkpoint，也不计入 65 次训练。
-- [ ] 为每个方法输出 machine-readable contract diff；出现超出允许字段的差异时拒绝创建正式 run。
+- [x] 核心 2×2、Fixed、RuleKD-v3、ShuffleKD-v3、NoOOD-v1 与 NoGoalHint-v1 通过冻结 matrix
+  进入正式入口；共享 trainer 的差异由教师 mask、semantic control 和 RC multiplier 决定。
+- [x] QMIX-DG 使用 DirectGoal、共同环境/奖励/mask/预算/seed，保持单环境 trainer，不进入
+  MAPPO 16-worker 路径，也不允许 waypoint fallback。
+- [~] Heuristic-Dispatcher+AStar 仍为 evaluation-only、无 Student checkpoint、65-run 外基线；
+  canonical/O3 长评估入口和最终 contract diff 归 E2 运行前审计。
 
-## Task group E1-E：RTX 4090 单卡四槽 owner runner 与评估入口
+## Task group E1-E：RTX 4090 单卡四槽 owner runner 与评估入口（运行中审计）
 
-- [ ] 实现单命令 E2 launcher：固定 repository、canonical Python、artifact root 与 `nohup` 日志约定；默认不依赖 `conda activate`、`tmux` 或服务器 GitHub。
-- [ ] 为 physical GPU 0 建立四个独立项目 slot lock，并实现最多四个独立进程的 seed-block scheduler；所有方法固定到 RTX 4090 provenance，physical GPU 1 不建立训练 slot。
-- [ ] launcher 启动时执行 E1-specific、P1-compatible host preflight：RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%`、Git clean 与 physical GPU 0 的名称/总显存；外部 compute PID 只记录，四进程所需显存由 runner 的精确 `4×M_slot` 门禁决定。
-- [ ] 每次领取 seed block 或启动新 slot 前，每 60 秒重新采样一次只读 formal lease/PID/GPU identity/free-memory；按 `M_slot=ceil(1.5×max_family_peak_mib+1024 MiB)` 检查实时显存。外部 PID 只记录且不得干预；无可用 slot 或显存不足时等待，禁止杀进程、回退到 RTX 4080 SUPER、创建第五个 slot 或降低 `M_slot`。
+- [x] 单命令 E2 dispatcher 已固定 repository、canonical Python、artifact root、`nohup` 日志和
+  GPU 0，并自动维持最多四个当前子进程、顺序提交完整 65-run matrix。
+- [x] owner 已明确取消重复正式 preflight/性能 benchmark；P1/O1 Gate 身份保持有效，dispatcher
+  仅保留启动时实时 free-memory admission，不切换到 GPU 1 或降低 `M_slot`。
+- [~] formal slot lock、持续 heartbeat、dispatcher 重启时存活子进程计数和同 identity resume
+  尚有缺口。当前矩阵保持 `7de1f04` 不变；完成后依据实际是否触发这些路径决定受影响 run。
 - [ ] 保持 P1/O1/O2 的单卡独占 lease 与 evidence 不变；formal slot locks 使用不同路径/schema，防止旧 Gate runner 与 E1 正式 runner 同时占用同一 GPU。
-- [ ] 实现原子 matrix state、PID/lease、heartbeat、run identity、latest/final checkpoint 和失败原因；重启只恢复相同 identity，complete run 不重复执行。
-- [ ] 任一算法失败使对应 run 保留 failed 并停止新的正式调度；基础设施失败允许 owner 以相同 identity 恢复，不能自动换 seed/配置/GPU 后掩盖记录。
-- [ ] 提供单一状态摘要和最终聚合命令，研究所有者无需逐 run 输入或检查；日志写入 `/home/lzx/`，正式 artifact 只写入 `artifacts/optimization/`。
+- [~] matrix state、PID、启动 heartbeat、run identity、checkpoint 和失败停止已接入；完成后必须
+  审计重复 attempt、失败分类、resume 和 final checkpoint 唯一性。
+- [x] 已提供单一状态摘要/ETA 命令；日志写入 `/home/lzx/`，正式 artifact 写入已冻结的
+  `artifacts/optimization/e2_formal_vector16_7de1f04`。
 - [ ] 提供 canonical core、启发式和 O3 exploratory evaluation runners；E1 只验证命令展开，不执行长评估。
 
-## Task group E1-F：最小充分验证
+## Task group E1-F：最小充分验证（owner CUDA smoke 已通过，16-worker 偏差已记录）
 
 - [ ] 运行新增与受影响的 deterministic unit/integration tests，覆盖三维 shape/梯度、标签 Gate、方法合同、checkpoint resume、65-run expansion、GPU scheduler 和零 planner/online-LLM 调用。
 - [ ] 对每个独立实现路径运行最短 CPU smoke；共享同一代码路径的方法不得因组数重复做性能测试。
-- [ ] 生成一次 owner-run RTX 4090 单卡四进程 CUDA 功能 smoke 命令，固定总计 8 个 run、每个 256 real environment steps，并在第 128 步主动停止/保存后从 checkpoint 恢复至 256；不得采集或比较性能。
-- [ ] smoke 固定两波且全部使用 physical GPU 0：wave 1 并行 seed9001 `MAPPO-DG`、seed9002 `Fixed-AStarKD+LLMKD`、seed9003 `RuleKD-v3`、seed9004 `NoOOD-v1`；wave 2 并行 seed9001 `RC-AStarKD+LLMKD`、seed9002 `QMIX-DG`、seed9003 `ShuffleKD-v3`、seed9004 `NoGoalHint-v1`。每个 run 256 steps、128→256 resume，总计 2048 steps。
+- [x] owner-run RTX 4090 CUDA smoke 已完成两波、8 members、128→256、2048 总 steps、GPU 0
+  only；证据 commit 为 `5f56f20`。
+- [x] owner 批准不为 `7de1f04` 16-worker 改造补独立 smoke，以 E2 early-run stability 替代；
+  该偏差只作工程健康证据，不作方法性能证据。
 - [ ] Codex 审核 CUDA smoke 产物的 GPU 0 四进程上限、device binding、seed blocking、128→256 resume、三维非零 LLM loss、Fixed/RC parity、QMIX 身份、planner query=0、online LLM=0 和无 NaN/Inf，并据所有家族的峰值冻结 `M_slot`。
 - [ ] 运行 manifest/config/schema/hash 审计，确认没有密钥、pilot 数据、O3 数据或旧二维 checkpoint 进入正式 800 reference 或训练路径。
 
-## Task group E1-G：协议冻结、合并与发布
+## Task group E1-G：协议冻结、合并与发布（当前收口任务）
 
-- [ ] 将通过 Gate 的 formal label path/hash、实现 commit、65-run manifest hash、环境/config hash、CUDA smoke evidence 和允许/禁止主张写入 governance manifest 与 E1 evidence receipt。
-- [ ] 更新 `TASKS.md`、`CHANGELOG.md`、`specs/roadmap.md` 和 `terminology.md`；E1 只有在 owner-run 标签 Gate 与 CUDA smoke 均 Go 后才可标记 complete。
+- [x] raw label identity、strict No-Go、实现 commit、matrix/config hash、CUDA smoke 边界及允许/
+  禁止主张已写入 `evidence-receipt.md`；governance machine-readable manifest 的最终回填留待运行后身份审计。
+- [x] `TASKS.md`、`CHANGELOG.md`、Roadmap、Tech Stack 和 terminology 已同步；E1 在运行后审计
+  与 `codex/optimization` 合并前保持 closeout in progress。
 - [ ] 检查工作树并保留用户未跟踪文件；创建聚焦的 E1 freeze commit，不提交 API key、bundle 或下载压缩包。
 - [ ] fast-forward 合并当前实现分支到 `codex/optimization`，运行合并后验证并尝试 push `codex/optimization` 到 GitHub。
 - [ ] 若 push 因网络或权限失败，输出含实际旧/新 commit 的本机 push 命令；同时按固定 bundle→scp→fetch→`merge --ff-only` 流程交付服务器同步命令。
-- [ ] 交付唯一 E2 owner-run 命令与监控/恢复说明，但不得在 E1 自动启动 65 次正式训练。
+- [x] 已交付并由 owner 启动唯一 E2 65-run 命令与监控/ETA 说明；这是明确记录的阶段越序授权。

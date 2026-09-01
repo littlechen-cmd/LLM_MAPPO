@@ -14,7 +14,8 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 
 ## Out of scope
 
-- E1 不运行 65 次正式训练、不执行正式 held-out 或 O3 长评估；这些属于 E2，且只由研究所有者启动。
+- E1 原范围不运行 65 次正式训练；研究所有者于 2026-09-02 明确授权在 E1 治理收口前提前
+  启动 E2。该偏差只改变阶段执行顺序，不改变 65-run matrix、seed、环境、奖励、教师或评估合同。
 - 不修改冻结的环境、奖励、电量、动作 mask、安全规则、Pure Motion Teacher、`K_motion=12`、`H_reward=12`、512 expansion budget、1/16 sampler、EMA、seed 或统计假设。
 - 不搜索超参数，不根据短 smoke 或正式结果调整 schedule、训练预算、模型、seed、数据子集或阈值。
 - 不恢复旧二维 Phase 4 语义，不做 1D/2D→3D 权重迁移，不混合稳定路线代码或产物。
@@ -37,13 +38,17 @@ E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复�
 | Formal model identity | 第一条成功响应冻结 request model、response model 与 system fingerprint；正式生成中变化立即暂停，禁止静默混合 backend。 |
 | Schedule | 所有方法记录同一 `linear-env-step-v1`：`lambda_A=0.05(1-p)`、`lambda_L=0.10(1-p)`、`p=min(t/150000,1)`；缺少教师时仅将对应 mask 置零。 |
 | A* comparison | Fixed 与 RC 使用相同 1/16 sampler、shadow rollout、日志与调用密度；唯一优化差异是 RC 额外乘 `c_A_reward`。 |
-| Single-GPU scheduling | physical GPU 0 的 RTX 4090 是唯一训练设备，固定最大并发 4；每个独立进程仍只运行一个仓库环境。所有 seed block 都绑定 GPU 0，不存在跨卡迁移或 GPU 型号混杂。 |
+| MAPPO rollout execution | 每个 MAPPO learner 固定 `num_env_workers=16`、`rollout_length=128`；16 个 CPU-only spawned workers 并行执行 `env.step()`，主 learner 对 `16×5=80` 个智能体观测集中执行一次 GPU Actor/Critic inference。一次 PPO update 使用 `16×128=2048` 个累计 joint transitions；GAE 按 worker stream 和 episode 独立，不跨环境。 |
+| Global-step accounting | `formal_environment_steps=150000` 是所有 worker 累计的 joint environment transitions；一次完整 vector step 增加 16。checkpoint、schedule、日志和 resume 均使用该累计计数，任何 worker 都不得各自运行 150000。 |
+| Single-GPU scheduling | physical GPU 0 的 RTX 4090 是唯一训练设备，固定最大并发 4 个 learner。MAPPO learner 各持有 16 个 CPU 环境 worker；QMIX-DG 保持单环境 trainer，但允许四个独立 QMIX run 并发。所有 seed block 绑定 GPU 0，不存在跨卡迁移或 GPU 型号混杂。 |
 | Formal GPU slots | E1 在 physical GPU 0 建立 `slot-0..slot-3` 四个项目锁；physical GPU 1 的 RTX 4080 SUPER 不建立训练 slot。只统计本项目正式进程，严禁复用或放宽 P1/O1/O2 的单卡独占 lease。每个 slot 同时最多持有一个子进程。 |
 | Slot memory admission | 并发 CUDA smoke 对每个训练家族记录 `torch.cuda.max_memory_reserved`；定义 `M_slot=ceil(1.5×max_family_peak_mib+1024 MiB)`。启动任一新 slot 前，目标 GPU 的实时 free memory 必须不少于 `M_slot`，该值写入 E1 receipt 并在 E2 冻结，禁止自动降低。 |
-| Formal preflight cadence | E1 使用专用、P1-compatible preflight 检查 OS、Python、Git clean、RAM `>=64 GiB`、disk `>=200 GiB`、CPU `<=50%` 与 physical GPU 0 的身份；外部 compute PID 只记录。四进程准入只由 runner 的精确 `4×M_slot` 空闲显存门决定，不能以 P1 的95%独占空闲阈值替代。 |
+| Formal launch admission | P1/O1 已确认 OS、Python、Git、RAM、disk 与 GPU 身份。owner 于正式训练前明确取消重复 benchmark/smoke/preflight；E2 dispatcher 每次启动 learner 只执行 GPU 0 实时 free-memory admission，外部 PID 不被终止或隐藏，也不使用 P1 的 95% 独占空闲阈值。 |
 | Shared-server conduct | 不抢占、终止或隐藏其他用户进程。RTX 4090 不可用时 worker 等待，不回退到 RTX 4080 SUPER。长任务用 `nohup`，日志写入 `/home/lzx/`。 |
 | Hardware claims | GPU 型号是 provenance/blocking factor，不把吞吐或训练时间作为方法性能优势。 |
 | O3 matrix | E2 完整执行 `MAPPO-DG` 与 `RC-AStarKD+LLMKD` × 8 training seeds × 2 topologies × `200..209` × 20 episodes，共 6400 episodes；无性能阈值、不得选择性报告。 |
+| E2 artifact root | 本轮正式矩阵唯一根目录为 `artifacts/optimization/e2_formal_vector16_7de1f04`；每个 run 的实际 attempt directory、PID、log、state、manifest 与 final checkpoint 必须由 matrix state 唯一定位。 |
+| Running-commit rule | 已启动矩阵固定使用 `7de1f04c772ccf49d422a53aa0c1ad01deec9204`，运行期间不得混入后续修复 commit。完成后审计中断、恢复、重复和并发；仅被实际缺陷触发的成员进入重跑裁决。 |
 | Checkpoints | 仅 `checkpoint_final.pt` 进入正式评估；训练 checkpoint 必须可严格恢复 optimizer、schedule、EMA、RNG 和 provenance；旧 1D/2D checkpoint fail closed。 |
 | Implementation flow | Codex 可连续完成任务组；只在 owner-run API/CUDA 操作、冻结合同冲突、数据 Gate 失败或需要扩大范围时暂停。 |
 | Integration | 所有 E1 Gate 通过后，将当前实现 fast-forward 合并至 `codex/optimization` 并优先直接 push；网络/权限阻塞时交付无占位符命令。 |

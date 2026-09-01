@@ -149,6 +149,12 @@
 | System Fingerprint（系统指纹） | 后端实际提供模型服务的版本标记。 | API 成功响应返回并由首条 formal response 冻结的 backend identity 字段，与 request/response model 共同构成 formal backend tuple。 | formal 生成中发生变化必须暂停，不能把不同后端的标签静默混合。 |
 | Resume Identity（恢复身份） | 判断一次中断任务能否安全接着跑的“身份证”。 | 由 run identity、代码 commit、配置/环境/数据 hash、checkpoint schema、GPU provenance 与已保存训练状态组成的严格匹配关系。 | 只有基础设施中断且所有身份字段一致时才可恢复；算法、数值或安全失败不得通过换 seed/配置伪装为恢复。 |
 | GPU Slot（GPU 槽位） | 同一张显卡上为本项目预留的一个训练位置。 | 由独立 project lock、PID、GPU identity 和 `M_slot` 显存准入共同保护的单进程资源槽。 | E1/E2 只在 RTX 4090 建立四个槽，每槽运行一个独立实验进程；RTX 4080 SUPER 不建立训练槽。 |
+| Learner（学习器主进程） | 真正持有神经网络并更新参数的训练主进程。 | 持有 Actor、centralized Critic、optimizer、PPO update 和唯一 CUDA context 的进程。 | RTX 4090 同时最多运行四个 learner；环境 worker 不复制 GPU 模型。 |
+| Environment Worker（环境工作进程） | 专门负责推进一个仓库仿真的 CPU 子进程。 | 通过 `spawn` 创建、独立 seed/reset、并行执行 `env.step()` 的 CPU-only process。 | 每个正式 MAPPO learner 固定 16 个 worker；QMIX-DG 当前仍为单环境 trainer。 |
+| Vector Step（向量步） | 16 个环境同时各向前走一步。 | learner 批量发出 16 组动作并收回 16 个 joint environment transitions 的一次同步交互。 | 一次 vector step 使 global environment steps 增加 16。 |
+| Rollout Length（采样窗口长度） | 每次更新网络前，每个环境连续采集多少步。 | vectorized MAPPO 两次 PPO update 之间的 vector-step 数。 | E1/E2 固定为 128；因此每次更新包含 `16×128=2048` 个累计 transitions。 |
+| Global Environment Steps（累计环境步） | 所有 worker 合计完成的交互次数。 | 跨 stream 累加的 joint environment transition 计数，是 schedule、checkpoint 和预算的唯一横轴。 | 每个 run 的总预算仍为 150000，不是 16 个 worker 各跑 150000。 |
+| Provisional Run（待审计运行） | 训练已经完成或正在运行，但还没通过最终身份与恢复检查。 | 在 code/config/data identity、并发、resume、失败重启和 artifact 唯一性审计前暂不进入正式统计的 run。 | 当前 `7de1f04` 矩阵不中断；完成后只对实际受缺陷影响的成员作重跑裁决。 |
 
 ## 8. 术语维护规则
 

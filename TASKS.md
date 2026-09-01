@@ -132,21 +132,27 @@
   证据；研究所有者批准不进行人工复核或单条修补，后续 LLMKD 训练统一标记为
   exploratory noisy-teacher evidence，具体合同见
   `plan/noisy-teacher-exploratory-protocol.md`。
-- [~] E1-C：在不改变 65-run matrix、环境、奖励、A* 教师、schedule 或 raw 标签的前提下，
+- [x] E1-C：在不改变 65-run matrix、环境、奖励、A* 教师、schedule 或 raw 标签的前提下，
   实现正式三维 Student、raw LLM KD、checkpoint 与日志链路；所有包含 raw LLMKD 的
   产物必须携带 exploratory-noisy-teacher provenance。
-- [ ] 冻结代码、环境、教师、奖励、seed、预算、checkpoint、日志、失败和统计合同；
-- [ ] 完成所选路线全部必需组的端到端短 smoke；
-- [ ] E1-F：在 RTX 4090 上以两波、每波四个独立进程完成 8-member CUDA smoke；RTX 4080 SUPER 不参与训练，显存不足时 fail closed；
-- [ ] 优化 E1/E2 预算为 65 次：核心 2×2 32，Fixed-KD/QMIX-DG/RuleKD-v3 各 8，
+- [~] E1-D/E：核心方法、基线、诊断组及 owner runner 已接入；正式 MAPPO 执行合同由 owner
+  修订为四个 GPU learner slot、每 learner 16 个 CPU worker、`rollout_length=128`；QMIX-DG
+  保留单环境 trainer。调度器重启/同身份恢复与证据聚合仍待 E1-G 收口审计；
+- [x] E1-F：研究所有者已在 RTX 4090 上完成两波、每波四个独立进程的 8-member CUDA
+  smoke，共 2048 steps，GPU 1 未参与。该 smoke 对应 `5f56f20`；后续 `7de1f04` 16-worker
+  改造按 owner 决策使用正式运行早期稳定性替代新增 smoke；
+- [x] 优化 E1/E2 预算为 65 次：核心 2×2 32，Fixed-KD/QMIX-DG/RuleKD-v3 各 8，
   ShuffleKD-v3/NoOOD-v1/NoGoalHint-v1 各 3；正式训练规模不变，连同 O2 共 71 次；
-- [ ] 在查看任何 O3 策略性能前冻结探索矩阵为“执行”或“延期”；若执行，唯一矩阵为
+- [x] 在查看任何 O3 策略性能前冻结探索矩阵为“执行”；唯一矩阵为
   `MAPPO-DG/RC-AStarKD+LLMKD × 8 training seeds × 2 topologies × 200–209 × 20 episodes`；
-- [ ] 稳定预算：核心 2×2、RuleKD 各 5 seed，NoWP 3；不含 QMIX/Shuffle/未见拓扑/8-AGV。
+- [x] 稳定预算：核心 2×2、RuleKD 各 5 seed，NoWP 3；不含 QMIX/Shuffle/未见拓扑/8-AGV。
+- [~] E1-G：治理收口进行中——补齐 exploratory raw-label identity、E1 receipt、规格/术语/
+  CHANGELOG、当前矩阵运行偏差与完成后审计；`codex/optimization` 合并和 push 尚未完成。
 
 ## E2 — 正式训练与独立评估
 
-- [ ] 研究所有者在批准的服务器运行全部长任务，所选路线产物写入其隔离目录；
+- [~] 研究所有者已在批准的服务器启动全部 65-run 矩阵，canonical root 为
+  `artifacts/optimization/e2_formal_vector16_7de1f04`；训练完成和运行身份审计待完成；
 - [ ] 正式必需评估固定在 canonical core topology 使用 `200–209 × 20`、确定性动作和 final
   checkpoint；
 - [ ] 仅当 E1 已预先选择执行时，完整运行并报告 O3 探索矩阵；不设最低性能阈值，不得按结果

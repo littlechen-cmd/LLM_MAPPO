@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-09-02
+
+- Changed: Formal MAPPO rollout now uses one centralized RTX 4090 learner with
+  16 spawned CPU environment workers and a frozen 128-vector-step rollout,
+  preserving the aggregate 150000-transition budget and per-stream GAE.
+- Changed: The owner launched the complete 65-run E2 matrix from `7de1f04` with
+  four learner slots. Its canonical artifact root is
+  `artifacts/optimization/e2_formal_vector16_7de1f04`; QMIX-DG retains its
+  single-environment trainer.
+- Recorded: E1 governance closeout follows the already-authorized E2 launch.
+  The earlier `5f56f20` CUDA smoke validates the functional training paths;
+  the 16-worker revision uses early formal-run stability as engineering health
+  evidence and must not turn throughput into a method-performance claim.
+- Recorded: The immutable raw noisy-teacher source contains 800 attempts and
+  799 valid labels at SHA256 `a108d35e8398114baec1cf88dbe34446efaefda4c9066725d5e7a57a0fed2512`.
+  Its stale `status: running` remains a disclosed metadata anomaly, and its
+  strict semantic-quality Gate remains No-Go.
+
 ## 2026-09-01
 
 - Fixed: E1 CUDA smoke now uses its own shared-server preflight. It retains

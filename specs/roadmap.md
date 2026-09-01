@@ -124,7 +124,7 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## Phase E1：所选路线协议冻结与链路验证
 
-- [~] in progress — optimization protocol freeze and end-to-end validation
+- [~] implementation complete / governance closeout in progress
 - 唯一规格：`specs/2026-09-01-e1-optimization-protocol-freeze/`。
 - 2026-09-01 修订：v5 Pro raw 800-record LLM 数据保留其 strict label Gate No-Go，
   但研究所有者批准将其作为 exploratory noisy-teacher evidence 进入 E1-C/E2；
@@ -135,15 +135,25 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 - 优化路线 E1/E2 正式训练预算保持不变：核心 `2×2` 32 次，Fixed-KD、QMIX-DG、RuleKD-v3 各 8 次，
   ShuffleKD-v3、NoOOD-v1、NoGoalHint-v1 各 3 次，共 65 次；启发式 A* 无训练。资源修订后
   连同 O2 共 71 次；不做 8-AGV 压力实验。
-- E1/E2 只使用 physical GPU 0 的 RTX 4090，固定最多四个独立实验进程且每进程一个环境；
-  RTX 4080 SUPER 不参与训练或 CUDA smoke，资源不足时等待而非切换设备或降低显存门槛。
+- 2026-09-02 owner 修订执行合同：E1/E2 只使用 physical GPU 0 的 RTX 4090，固定最多四个
+  独立 learner；MAPPO 每个 learner 使用 16 个 spawned CPU environment workers、
+  `rollout_length=128`，集中式 GPU learner 每次更新接收 2048 个累计 transitions；QMIX-DG
+  保留单环境 trainer。RTX 4080 SUPER 不参与训练或 CUDA smoke。
+- E1 功能链路 CUDA smoke 在 `5f56f20` 上完成；后续 16-worker 改造 `7de1f04` 不补做独立
+  smoke，按 owner 决策以 E2 正式运行的早期稳定性作为工程健康证据，但不将吞吐量作为方法证据。
+- E2 在 E1 文档收口前经 owner 明确授权提前启动。该阶段越序必须保留在证据链中，不得改写为
+  原计划顺序；E1 receipt、调度恢复审计和分支合并仍属于治理收口事项。
 - O3 探索性矩阵不增加训练；是否运行必须在 E1 预先冻结，不能根据 O3 性能触发、取消或删减。
 - 稳定路线预算：核心 `2×2` 与 RuleKD 各 5 seed，NoWP 3 诊断 seed，启发式 A* 无训练；删除
   QMIX、ShuffleKD、未见拓扑和 8-AGV 压力实验。
 
 ## Phase E2：正式训练与独立评估
 
-- [ ] pending
+- [~] in progress — 65-run matrix launched by owner
+- 本轮 canonical artifact root 冻结为
+  `artifacts/optimization/e2_formal_vector16_7de1f04`，启动实现为
+  `7de1f04c772ccf49d422a53aa0c1ad01deec9204`。当前矩阵不中断；完成后审计 resume、failed/
+  restarted run、最大 learner 并发、重复 artifact 和代码/配置身份，仅重跑实际受影响成员。
 - 研究所有者在批准的服务器上运行全部长任务；Codex 和项目工程师分别准备所负责路线的命令，并对
   产物进行独立分析和交叉审查。
 - 正式必需评估固定在 canonical core topology 使用 held-out evaluation seeds

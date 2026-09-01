@@ -14,8 +14,15 @@
 - 优化路线服务器为 Ubuntu 22.04.5、双路 EPYC 7542、128 GB RAM、RTX 4090 49140 MiB
   与 RTX 4080 SUPER 16376 MiB；physical GPU 0 的 RTX 4090 是 O1/O2/E1/E2 唯一训练
   GPU，physical GPU 1 的 RTX 4080 SUPER 只保留在硬件清单中，不参与训练或 CUDA smoke；
-- E1/E2 在 RTX 4090 上固定最多四个独立训练进程，每个进程仍运行一个仓库环境；并发只提高
-  实验吞吐量，不改变 rollout、real environment steps、seed、模型或算法合同；
+- E1/E2 在 RTX 4090 上固定最多四个独立 learner 进程。MAPPO 系列每个 learner 固定使用
+  `spawn` 启动 16 个 CPU-only 仓库环境 worker，由主进程集中完成 `16×5=80` 个智能体观测的
+  GPU Actor/Critic 推理与 PPO 更新；QMIX-DG 保留单环境 trainer，但允许四个独立 seed run 并发；
+- MAPPO 正式 rollout 固定为 `num_env_workers=16`、`rollout_length=128`，即每次更新收集
+  `16×128=2048` 个累计 joint environment transitions。`formal_environment_steps=150000`
+  始终是所有 worker 的累计预算，一次 vector step 使全局计数增加 16，而不是每个 worker
+  分别运行 150000 steps；
+- 环境 worker 不初始化 CUDA context，并限制 `OMP_NUM_THREADS/MKL_NUM_THREADS/
+  OPENBLAS_NUM_THREADS=1`；RTX 4090 只由 learner 的 Actor、Critic、optimizer 和 PPO update 使用；
 - P1 只服务优化路线。目标 GPU 必须通过共享服务器预检与项目 GPU lease；不得抢占、终止或
   隐藏其他用户进程。O1 Gate、O2、正式长训练和长评估仍只由研究所有者人工启动；短诊断直接
   使用当前 SSH，会持续较久的任务使用 `nohup`，日志写入 `/home/lzx/`；不依赖 `tmux`；

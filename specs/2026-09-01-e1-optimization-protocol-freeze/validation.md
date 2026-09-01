@@ -2,8 +2,16 @@
 
 ## Definition of done
 
+2026-09-02 状态说明：E1 实现链路与 owner CUDA smoke 已完成，但治理 receipt、运行后调度/
+恢复审计以及 `codex/optimization` 合并尚未完成，因此 E1 仍为 closeout in progress。E2 已由
+owner 提前启动，不得据此反向伪造 E1 原计划顺序。
+
 - [ ] O0/P1/O1/O2/O3/D1 identities与 E1 frozen implementation/data/config hashes 可追溯，governance manifest 不再含旧 blocker 或 null formal budget。
-- [ ] 65-run manifest 精确展开为 32 core、8 Fixed、8 QMIX、8 RuleKD、9 diagnostic runs；训练预算和 seeds 与需求一致，无重复 identity。
+- [~] 65-run manifest 已精确展开为 32 core、8 Fixed、8 QMIX、8 RuleKD、9 diagnostic runs，
+  combinatorics validator 已返回 Go；但当前 machine-readable governance manifest 仍输出旧
+  `artifacts/optimization/e2_formal` 路径，不能用于定位正在运行的正式矩阵。实际运行根目录已冻结为
+  `artifacts/optimization/e2_formal_vector16_7de1f04`，最终 manifest/validator 路径回填须等待运行后
+  identity 审计，以免向 commit `7de1f04` 的在途矩阵混入新合同。
 - [ ] 优化路线正式标签、网络输出、loss、日志和 checkpoint 均为有序三维语义，且正式入口无法加载旧 1D/2D checkpoint 或进入旧二维 trainer。
 - [ ] 原始 60 pilot 与 v5 Pro 800-record raw 数据均可追溯；pilot 不进入训练。原 strict dataset-level Gate 的 No-Go、799/800 validity、单一 fingerprint 与关键语义错误必须保留为审计证据；任何使用 raw LLM 标签的 E1/E2 结果均标记 exploratory noisy-teacher evidence，而非 confirmatory label-Gate 通过。
 - [ ] 仓库、Git history、配置、日志、artifact manifest 和异常文本中没有 API key；训练/评估在线 LLM 调用为 0。
@@ -11,10 +19,28 @@
 - [ ] QMIX、RuleKD、Shuffle、NoOOD、NoGoalHint 和启发式基线满足各自冻结合同，没有 fallback 或二维污染。
 - [ ] DirectGoal/NoGoalHint 在 throwing planner stub 下完成短链路，执行期 planner query 为 0。
 - [ ] checkpoint 可从相同 identity 恢复模型、optimizer、schedule、EMA 和 RNG；损坏/跨 schema/跨数据恢复 fail closed。
-- [ ] RTX 4090 单卡 scheduler 最大并发为 4、RTX 4080 SUPER 无训练 slot、seed block 固定、formal slot 与旧独占 lease 隔离、显存不足时等待，并在重启后无重复地恢复。
-- [ ] 本地测试和一次最小化 owner-run CUDA smoke 通过；没有运行正式 65-run matrix 或正式长评估。
+- [~] RTX 4090 单卡最大并发目标为 4、RTX 4080 SUPER 无训练 slot、seed block 固定；当前
+  `7de1f04` 矩阵完成后必须核验实际最大 learner 数、dispatcher restart、重复 attempt 与恢复记录，
+  在审计前不得宣称重启/恢复 Gate 已完全通过。
+- [x] `5f56f20` owner-run CUDA smoke 完成 8 members、2048 steps、GPU 0 only；该证据只覆盖
+  功能链路。owner 已批准 16-worker 改造不补独立 smoke，以正式运行早期稳定性作为工程健康证据。
+- [~] E2 65-run matrix 已从 `7de1f04` 提前启动；这属于明确记录的 owner 阶段越序授权，训练
+  开始不等于 E1 Gate 自动完成。
 - [ ] O3 exploratory matrix 已冻结为执行，精确展开为 6400 episodes，并标记 non-confirmatory/no-threshold/no-selective-reporting。
 - [ ] E1 evidence receipt、`TASKS.md`、`CHANGELOG.md`、Roadmap 和 terminology 同步；E1 commit fast-forward 合并到 `codex/optimization`。
+
+## 16-worker 与运行后审计
+
+- [x] MAPPO 运行合同冻结为 16 CPU environment workers、128 vector ticks、2048 累计
+  transitions/update；150000 是跨 worker 的累计 global-step budget。
+- [x] Actor/Critic/optimizer/PPO update 仅存在于 learner；worker 清除 CUDA 可见性并限制内部线程。
+- [x] per-stream GAE 与累计 global-step 算术已接入正式 trainer；QMIX-DG 明确保留单环境路径。
+- [ ] 矩阵完成后核验所有 run 均使用 `7de1f04`、相同 raw-label hash/config、最多四 learner，
+  且不存在未披露的 resume、failed restart 或重复 final artifact。
+- [ ] 若发生 resume，核验 Reward Calibration EMA、模型、optimizer、schedule、RNG 和 worker
+  snapshot 均连续；当前实现的 EMA restore 缺口意味着发生过 resume 的 RC/Fixed run 必须进入
+  单独重跑裁决，不能直接接纳。
+- [x] ETA 与吞吐只作为工程监控；不得作为算法效率或方法性能证据。
 
 ## How to verify
 
@@ -37,7 +63,8 @@
 - [ ] `D:\Anaconda3\envs\py310\python.exe -m pytest` passes。
 - [ ] E1 manifest/label/checkpoint/scheduler focused test selection passes。
 - [ ] `D:\Anaconda3\envs\py310\python.exe -m flake8 rware llm_mappo eval train scripts figures/core` passes，或每个既有失败均有与 E1 无关的基线证据。
-- [ ] E1 65-run manifest validator returns Go。
+- [~] E1 65-run manifest validator returns Go for run combinatorics；artifact-root governance
+  backfill remains pending after the running matrix audit。
 - [ ] E1 raw-label integrity validator reports the immutable `799/800` dataset,
   single fingerprint and exploratory-noisy-teacher status without claiming a
   confirmatory label Gate Go。
