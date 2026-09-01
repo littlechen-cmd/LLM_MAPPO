@@ -1,11 +1,8 @@
-schema_version: 8
-status: p1_and_o1_gate_passed_o2_implementation_in_progress
+schema_version: 9
+status: d1_optimization_selected_e1_implementation_in_progress
 document_role: governance_manifest_not_runtime_training_config
 canonical_architecture: docs/architecture/o0-reward-calibrated-heterogeneous-distillation.md
 freeze_blockers:
-  - O2 owner-run six-run calibration Go
-  - O3 evaluation-only topology and interface freeze
-  - D1 single-route decision
   - E1 selected-route protocol freeze
 
 code:
@@ -217,8 +214,8 @@ training:
     start: 0
     stop: 150000
     interval: 10000
-  formal_environment_steps: null
-  formal_budget_rule: one_value_frozen_at_E1_and_shared_by_all_learning_groups
+  formal_environment_steps: 150000
+  formal_budget_rule: frozen_at_E1_and_shared_by_all_learning_groups
   checkpoint_rule: checkpoint_final.pt
   optimization_run_budget:
     o2_calibration: 6
@@ -260,8 +257,8 @@ evaluation:
   same_map_eight_agv_stress: prohibited
   o3_exploratory_matrix:
     activation_decision_phase: E1_before_any_o3_policy_performance_access
-    activation_basis: owner_recorded_resource_availability_only
-    default_state: pending_owner_freeze
+    activation_basis: e1_preregistered_resource_decision
+    default_state: execute
     groups: [MAPPO-DG, RC-AStarKD+LLMKD]
     training_seeds: [7, 17, 27, 37, 47, 57, 67, 77]
     topologies:
@@ -269,10 +266,86 @@ evaluation:
       - llm-mappo-o3-unseen-central-cross-5ag-v2
     held_out_seeds: [200, 201, 202, 203, 204, 205, 206, 207, 208, 209]
     episodes_per_seed: 20
+    total_episodes: 6400
     minimum_performance_threshold: null
     confirmatory: false
     selective_reporting: prohibited
     if_deferred: no_o3_policy_performance_may_be_run_or_reported
+
+e1_formal_matrix:
+  schema: e1-formal-matrix-v1
+  artifact_root: artifacts/optimization/e2_formal
+  groups:
+    MAPPO-DG:
+      seed_set: formal
+      algorithm: mappo
+      astar_kd: disabled
+      semantic_teacher: disabled
+      semantic_control: none
+      observation_schema: direct-goal-observation-v1
+    RC-AStarKD:
+      seed_set: formal
+      algorithm: mappo
+      astar_kd: reward_calibrated
+      semantic_teacher: disabled
+      semantic_control: none
+      observation_schema: direct-goal-observation-v1
+    LLMKD:
+      seed_set: formal
+      algorithm: mappo
+      astar_kd: disabled
+      semantic_teacher: semantic_view_v3
+      semantic_control: llm
+      observation_schema: direct-goal-observation-v1
+    RC-AStarKD+LLMKD:
+      seed_set: formal
+      algorithm: mappo
+      astar_kd: reward_calibrated
+      semantic_teacher: semantic_view_v3
+      semantic_control: llm
+      observation_schema: direct-goal-observation-v1
+    Fixed-AStarKD+LLMKD:
+      seed_set: formal
+      algorithm: mappo
+      astar_kd: fixed
+      semantic_teacher: semantic_view_v3
+      semantic_control: llm
+      observation_schema: direct-goal-observation-v1
+    QMIX-DG:
+      seed_set: formal
+      algorithm: qmix
+      astar_kd: disabled
+      semantic_teacher: disabled
+      semantic_control: none
+      observation_schema: direct-goal-observation-v1
+    RuleKD-v3:
+      seed_set: formal
+      algorithm: mappo
+      astar_kd: reward_calibrated
+      semantic_teacher: semantic_view_v3
+      semantic_control: rule_v3
+      observation_schema: direct-goal-observation-v1
+    ShuffleKD-v3:
+      seed_set: diagnostic
+      algorithm: mappo
+      astar_kd: reward_calibrated
+      semantic_teacher: semantic_view_v3
+      semantic_control: shuffle_v3
+      observation_schema: direct-goal-observation-v1
+    NoOOD-v1:
+      seed_set: diagnostic
+      algorithm: mappo
+      astar_kd: reward_calibrated
+      semantic_teacher: semantic_view_v3
+      semantic_control: no_ood_v1
+      observation_schema: direct-goal-observation-v1
+    NoGoalHint-v1:
+      seed_set: diagnostic
+      algorithm: mappo
+      astar_kd: reward_calibrated
+      semantic_teacher: semantic_view_v3
+      semantic_control: llm
+      observation_schema: no-geometric-goal-hint-v1
 
 training_logs:
   run_manifest: run_manifest.json

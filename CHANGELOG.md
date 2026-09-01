@@ -2,6 +2,11 @@
 
 ## 2026-09-01
 
+- Added: E1-A freezes the machine-readable 65-run optimization matrix, 150000-step
+  formal budget, final-checkpoint evaluation contract and 6400-episode O3 exploratory
+  matrix. The validator audits group counts, exact seed blocks and duplicate identities.
+- Added: `terminology.md` now defines the E1 formal-run, seed, GPU provenance,
+  dataset-Gate, system-fingerprint and resume-identity terms.
 - Validated: The owner-run O2 matrix completed all six non-diagnostic 150000-step runs
   with final checkpoints. RC teacher coverage was `91.19%/89.27%/92.32%`; paired AUC
   degradation was `24.01%/1.89%/-11.39%`, with the preregistered median at `1.89%` and

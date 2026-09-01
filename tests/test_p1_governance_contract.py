@@ -6,7 +6,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_p1_governance_freezes_linux_o1_to_o2_sequence():
+def test_p1_governance_preserves_linux_contract_after_e1_manifest_upgrade():
     roadmap = (ROOT / "specs/roadmap.md").read_text(encoding="utf-8")
     tasks = (ROOT / "TASKS.md").read_text(encoding="utf-8")
     protocol = (ROOT / "plan/experiment-protocol.md").read_text(encoding="utf-8")
@@ -19,8 +19,8 @@ def test_p1_governance_freezes_linux_o1_to_o2_sequence():
     assert "P1→O1→O2" in protocol
     assert "A600" not in protocol
 
-    assert manifest["schema_version"] == 8
-    assert manifest["status"] == "p1_and_o1_gate_passed_o2_implementation_in_progress"
+    assert manifest["schema_version"] == 9
+    assert manifest["status"] == "d1_optimization_selected_e1_implementation_in_progress"
     assert manifest["route_profiles"]["optimization"]["prerequisites"] == [
         "O0",
         "O1",

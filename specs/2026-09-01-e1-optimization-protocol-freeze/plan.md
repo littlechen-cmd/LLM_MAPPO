@@ -4,11 +4,11 @@
 
 ## Task group E1-A：治理清单与正式矩阵冻结
 
-- [ ] 将 `configs/g3_experiment_manifest.yaml` 更新为 D1 后的优化路线 E1 governance manifest，写入 O1/O2/O3/D1 状态、O2 evidence identity、`formal_environment_steps=150000` 和 O3 matrix=execute。
-- [ ] 建立机器可读的 65-run matrix；逐项记录 group、seed、教师开关、semantic control、observation schema、预算、final checkpoint 规则和 artifact path。
-- [ ] 添加 matrix validator，证明运行总数为 65、组别计数为 `32/8/8/8/3/3/3`、seed 精确且没有重复 run identity。
-- [ ] 冻结 canonical core evaluation 与 O3 6400-episode exploratory evaluation manifest；两者必须使用 final checkpoint，且 O3 标注 non-confirmatory。
-- [ ] 更新 `terminology.md`，解释 formal run matrix、seed block、GPU provenance/blocking factor、dataset-level Gate、system fingerprint 和 resume identity。
+- [x] 将 `configs/g3_experiment_manifest.yaml` 更新为 D1 后的优化路线 E1 governance manifest，写入 O1/O2/O3/D1 状态、O2 evidence identity、`formal_environment_steps=150000` 和 O3 matrix=execute。
+- [x] 建立机器可读的 65-run matrix；逐项记录 group、seed、教师开关、semantic control、observation schema、预算、final checkpoint 规则和 artifact path。
+- [x] 添加 matrix validator，证明运行总数为 65、组别计数为 `32/8/8/8/3/3/3`、seed 精确且没有重复 run identity。
+- [x] 冻结 canonical core evaluation 与 O3 6400-episode exploratory evaluation manifest；两者必须使用 final checkpoint，且 O3 标注 non-confirmatory。
+- [x] 更新 `terminology.md`，解释 formal run matrix、seed block、GPU provenance/blocking factor、dataset-level Gate、system fingerprint 和 resume identity。
 
 ## Task group E1-B：三维正式标签链路
 
