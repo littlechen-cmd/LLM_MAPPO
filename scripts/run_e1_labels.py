@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 from llm_mappo.semantic_label_protocol import (
     FormalLabelSession,
+    SemanticScenarioAttempt,
     build_blind_review_pack,
     build_pilot_review_pack,
     build_semantic_prompt,
@@ -24,31 +25,50 @@ def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", choices=("deepseek-v4-flash", "deepseek-v4-pro"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--resume", action="store_true")
     return parser.parse_args(argv)
 
 
 def run(arguments: argparse.Namespace) -> dict:
-    attempts = generate_semantic_attempts(arguments.mode)
     expected = 60 if arguments.mode == "pilot" else 800
-    if len(attempts) != expected:
-        raise RuntimeError("Frozen E1 scenario quota was not generated exactly.")
-    arguments.output.mkdir(parents=True, exist_ok=False)
     attempts_path = arguments.output / "attempts.jsonl"
-    attempts_path.write_text(
-        "".join(json.dumps({
-            "scenario_id": item.scenario_id, "content_hash": item.content_hash,
-            "stratum": item.stratum, "semantic_view": item.semantic_view,
-            "vector": item.vector,
-        }, ensure_ascii=False, sort_keys=True, default=lambda value: value.item())
-            + "\n" for item in attempts),
-        encoding="utf-8",
-    )
+    if arguments.resume:
+        if arguments.prepare_only:
+            raise ValueError("--prepare-only cannot resume an existing label session.")
+        if (arguments.output / "review_pack.json").exists():
+            raise RuntimeError("Resume refuses to overwrite an existing review pack.")
+        attempts = _load_existing_attempts(attempts_path, expected)
+        records = _load_existing_records(arguments.output / "records.jsonl", attempts)
+        session = FormalLabelSession.resume(
+            arguments.output, arguments.model, mode=arguments.mode,
+        )
+        resumed_record_count = len(records)
+        pending_attempts = attempts[len(records):]
+    else:
+        attempts = generate_semantic_attempts(arguments.mode)
+        if len(attempts) != expected:
+            raise RuntimeError("Frozen E1 scenario quota was not generated exactly.")
+        arguments.output.mkdir(parents=True, exist_ok=False)
+        attempts_path.write_text(
+            "".join(json.dumps({
+                "scenario_id": item.scenario_id, "content_hash": item.content_hash,
+                "stratum": item.stratum, "semantic_view": item.semantic_view,
+                "vector": item.vector,
+            }, ensure_ascii=False, sort_keys=True, default=lambda value: value.item())
+                + "\n" for item in attempts),
+            encoding="utf-8",
+        )
+        records = []
+        session = None
+        resumed_record_count = 0
+        pending_attempts = attempts
     if arguments.prepare_only:
         return {"mode": arguments.mode, "attempts": len(attempts), "prepared": True,
                 "output": str(arguments.output), "network_calls": 0}
     key = require_deepseek_api_key()
-    session = FormalLabelSession(arguments.output, arguments.model, mode=arguments.mode)
-    for attempt in attempts:
+    if session is None:
+        session = FormalLabelSession(arguments.output, arguments.model, mode=arguments.mode)
+    for attempt in pending_attempts:
         response = _request_label(key, arguments.model, build_semantic_prompt(attempt.semantic_view))
         session.consume_response(attempt, response)
     records = [json.loads(line) for line in (arguments.output / "records.jsonl").read_text(
@@ -65,7 +85,46 @@ def run(arguments: argparse.Namespace) -> dict:
             json.dumps(review_key, indent=2, sort_keys=True), encoding="utf-8"
         )
     return {"mode": arguments.mode, "attempts": len(attempts), "prepared": False,
-            "output": str(arguments.output), "network_calls": len(attempts)}
+            "output": str(arguments.output), "network_calls": len(pending_attempts),
+            "resumed_records": resumed_record_count}
+
+
+def _load_existing_attempts(path: Path, expected: int):
+    """Load the immutable attempt order without regenerating or rewriting it."""
+    if not path.is_file():
+        raise FileNotFoundError("Resume requires the existing attempts.jsonl.")
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    if len(rows) != expected:
+        raise RuntimeError("Resume attempts.jsonl does not have the frozen quota.")
+    attempts = [
+        SemanticScenarioAttempt(
+            scenario_id=row["scenario_id"], content_hash=row["content_hash"],
+            stratum=row["stratum"], semantic_view=row["semantic_view"],
+            vector=row["vector"],
+        )
+        for row in rows
+    ]
+    if len({item.scenario_id for item in attempts}) != expected:
+        raise RuntimeError("Resume attempts.jsonl has duplicate scenario identities.")
+    if len({item.content_hash for item in attempts}) != expected:
+        raise RuntimeError("Resume attempts.jsonl has duplicate content identities.")
+    return attempts
+
+
+def _load_existing_records(path: Path, attempts) -> list[dict]:
+    """Accept only an immutable contiguous record prefix from the frozen attempts."""
+    if not path.is_file():
+        raise FileNotFoundError("Resume requires the existing records.jsonl.")
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+               if line.strip()]
+    if len(records) > len(attempts):
+        raise RuntimeError("Resume records exceed the frozen attempt quota.")
+    for record, attempt in zip(records, attempts):
+        if (record.get("scenario_id") != attempt.scenario_id
+                or record.get("content_hash") != attempt.content_hash):
+            raise RuntimeError("Resume records are not the immutable attempt prefix.")
+    return records
 
 
 def _request_label(api_key: str, model: str, prompt) -> dict:

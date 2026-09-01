@@ -556,6 +556,36 @@ class FormalLabelSession:
         self._status = "running"
         self._write_manifest()
 
+    @classmethod
+    def resume(cls, output_directory: str | Path, request_model: str, *, mode: str):
+        """Restore only a running session whose immutable identity still matches."""
+        directory = Path(output_directory)
+        manifest_path = directory / "manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError("Resume requires the existing manifest.json.")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (manifest.get("schema") != "semantic-label-session-v1"
+                or manifest.get("mode") != mode
+                or manifest.get("request_model") != request_model
+                or manifest.get("prompt_version") != SEMANTIC_PROMPT_VERSION
+                or manifest.get("prompt_system_sha256") != _digest(SYSTEM_PROMPT)):
+            raise RuntimeError("Resume identity does not match the frozen label session.")
+        if manifest.get("status") != "running":
+            raise RuntimeError("Only an interrupted running label session may resume.")
+        backend = manifest.get("frozen_backend_tuple")
+        if mode == "formal":
+            if not isinstance(backend, list) or len(backend) != 3 or backend[0] != request_model:
+                raise RuntimeError("Formal resume requires one frozen backend fingerprint.")
+        session = cls.__new__(cls)
+        session.output_directory = directory
+        session.request_model = request_model
+        session.mode = mode
+        session._manifest_path = manifest_path
+        session._records_path = directory / "records.jsonl"
+        session._backend_tuple = tuple(backend) if backend is not None else None
+        session._status = "running"
+        return session
+
     def consume_response(self, attempt: SemanticScenarioAttempt,
                          response: Mapping[str, Any]) -> dict[str, Any]:
         if self._status != "running":

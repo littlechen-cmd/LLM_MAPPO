@@ -2,6 +2,10 @@
 
 ## 2026-09-01
 
+- Fixed: E1 formal semantic-label collection now resumes only from an immutable,
+  contiguous `records.jsonl` prefix after validating the existing attempts and
+  frozen label-session identity; it never regenerates, rewrites, or re-requests
+  completed records.
 - Fixed: E1-B now records `semantic-prompt-v5-state-contract`. It restores the
   canonical three-dimensional anchors/rubric missing from the runtime prompt and
   explicitly defines priority-rank direction, static highway connectivity and the
