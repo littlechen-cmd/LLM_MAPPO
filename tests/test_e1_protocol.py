@@ -12,6 +12,7 @@ from llm_mappo.e1_protocol import (
     E1_FORMAL_ENVIRONMENT_STEPS,
     expand_e1_formal_matrix,
     load_e1_governance_manifest,
+    resolve_e1_run,
     validate_e1_governance_manifest,
 )
 
@@ -44,6 +45,15 @@ def test_e1_expands_the_preregistered_65_run_matrix_without_duplicates():
     assert {run.checkpoint_rule for run in runs} == {"checkpoint_final.pt"}
     assert all(run.artifact_path.startswith("artifacts/optimization/e2_formal/")
                for run in runs)
+
+
+def test_e1_resolves_every_nonfirst_formal_seed_without_smoke_substitution():
+    runs = expand_e1_formal_matrix(load_e1_governance_manifest(MANIFEST_PATH))
+
+    selected = resolve_e1_run(runs, "MAPPO-DG:17", smoke=False)
+
+    assert selected.identity == "MAPPO-DG:seed017"
+    assert selected.real_environment_steps == E1_FORMAL_ENVIRONMENT_STEPS
 
 
 def test_e1_governance_records_selected_route_and_exploratory_o3_execution():

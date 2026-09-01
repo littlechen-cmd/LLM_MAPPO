@@ -1,7 +1,6 @@
 """Owner-run entry point for one E1 formal or diagnostic training member."""
 
 import argparse
-from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -12,7 +11,11 @@ import torch
 import yaml
 
 from llm_mappo.e1_evidence import E1EvidenceWriter, load_e1_checkpoint, save_e1_checkpoint
-from llm_mappo.e1_protocol import expand_e1_formal_matrix, load_e1_governance_manifest
+from llm_mappo.e1_protocol import (
+    expand_e1_formal_matrix,
+    load_e1_governance_manifest,
+    resolve_e1_run,
+)
 from llm_mappo.e1_training import E1Trainer, load_e1_raw_semantic_evidence
 from llm_mappo.e1_qmix import E1QMIXDGTrainer
 from llm_mappo.o2_device import device_provenance
@@ -38,14 +41,8 @@ def _commit(): return subprocess.run(["git", "rev-parse", "HEAD"], check=True, t
 def main():  # noqa: C901
     args = _arguments(); manifest = load_e1_governance_manifest(args.governance)
     runs = expand_e1_formal_matrix(manifest)
-    try:
-        group, raw_seed = args.run.rsplit(":", 1)
-        seed = int(raw_seed)
-        profile = next(item for item in runs if item.group == group)
-        run = profile if profile.seed == seed else replace(profile, seed=seed, real_environment_steps=256)
-    except (StopIteration, ValueError) as error: raise ValueError("--run must identify one frozen E1 member.") from error
-    if not args.smoke and run not in runs:
-        raise ValueError("Non-smoke execution must identify one frozen E1 member.")
+    run = resolve_e1_run(runs, args.run, smoke=args.smoke)
+    seed = run.seed
     if args.smoke and seed not in {9001, 9002, 9003, 9004}:
         raise ValueError("E1 smoke seeds must be in 9001..9004.")
     labels = load_e1_raw_semantic_evidence(args.records)

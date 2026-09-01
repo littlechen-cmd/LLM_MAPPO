@@ -1,6 +1,6 @@
 """Frozen E1 governance manifest parsing and formal run-matrix expansion."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -137,6 +137,28 @@ def expand_e1_formal_matrix(manifest: Mapping[str, Any]) -> tuple[E1FormalRun, .
             ))
     _validate_expanded_runs(runs)
     return tuple(runs)
+
+
+def resolve_e1_run(
+    runs: tuple[E1FormalRun, ...], identity: str, *, smoke: bool
+) -> E1FormalRun:
+    """Resolve an exact formal member, or an explicitly requested smoke clone."""
+    try:
+        group, raw_seed = identity.rsplit(":", 1)
+        seed = int(raw_seed)
+    except (AttributeError, ValueError) as error:
+        raise ValueError("E1 run identity must use GROUP:SEED.") from error
+    exact = next(
+        (run for run in runs if run.group == group and run.seed == seed), None
+    )
+    if exact is not None:
+        return exact
+    if not smoke:
+        raise ValueError("Non-smoke execution must identify one frozen E1 member.")
+    profile = next((run for run in runs if run.group == group), None)
+    if profile is None:
+        raise ValueError("E1 run group is not frozen in the matrix.")
+    return replace(profile, seed=seed, real_environment_steps=256)
 
 
 def _validate_expanded_runs(runs: list[E1FormalRun]) -> None:
