@@ -141,3 +141,14 @@ class QMIXLearner:
             "mixer": self.mixer.state_dict(),
             "hyperparameters": self.hyperparameters.__dict__,
         }
+
+    def state_dict(self) -> dict:
+        """Complete resumable state for E1's DirectGoal QMIX baseline."""
+        return {"agent": self.agent.state_dict(), "mixer": self.mixer.state_dict(),
+                "target_agent": self.target_agent.state_dict(), "target_mixer": self.target_mixer.state_dict(),
+                "optimizer": self.optimizer.state_dict()}
+
+    def load_state_dict(self, state: dict) -> None:
+        self.agent.load_state_dict(state["agent"]); self.mixer.load_state_dict(state["mixer"])
+        self.target_agent.load_state_dict(state["target_agent"]); self.target_mixer.load_state_dict(state["target_mixer"])
+        self.optimizer.load_state_dict(state["optimizer"])

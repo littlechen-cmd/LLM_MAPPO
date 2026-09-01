@@ -2,6 +2,11 @@
 
 ## 2026-09-01
 
+- Added: E1-C through E1-F implementation now includes a three-dimensional
+  exploratory noisy-teacher MAPPO path, DirectGoal QMIX-DG isolation and resume
+  state, formal slot/seed scheduling primitives, and an owner-run two-wave
+  four-slot CUDA smoke harness with 128-to-256 receipts. Formal long training
+  has not been started.
 - Changed: The owner approved the v5 Pro raw 800-record label source as
   exploratory noisy-teacher evidence after its strict semantic label Gate
   No-Go. The raw evidence remains immutable; no record is manually repaired,
