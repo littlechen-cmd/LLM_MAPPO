@@ -23,6 +23,7 @@ STRATA = (
     "normal_transport", "priority_conflict", "narrow_corridor_yield",
     "low_battery_diversion", "station_exit_congestion",
 )
+SEMANTIC_PROMPT_VERSION = "semantic-prompt-v5-state-contract"
 SYSTEM_PROMPT = (
     "You are a JSON-only warehouse semantic teacher. Evaluate only the supplied "
     "semantic state. Never output actions, paths, assignments, right-of-way "
@@ -33,12 +34,46 @@ task_persistence_reason, yielding_preference, yielding_preference_reason,
 coordination_risk, coordination_risk_reason. Each score must be a finite number
 in [0,1]. Each reason must be a non-empty string of at most 1000 characters.
 
-task_persistence is how reasonable it is to keep the current transport task.
-yielding_preference is a tendency to voluntarily delay or cede local passage.
-coordination_risk is the risk of local conflict, congestion, deadlock, or failure.
-Use the facts jointly and interpolate continuously: 0.00=no basis, 0.25=weak or
-minor, 0.50=balanced or material, 0.75=strong or high, 1.00=overwhelming or
-near-certain. The scores are not complements or aliases. Do not invent facts,
+task_persistence is how reasonable it is to keep the currently assigned
+transport task. It is not an immediate movement instruction and is not the task
+priority itself. yielding_preference is the semantic tendency to voluntarily
+delay or cede local passage; a higher value means a stronger tendency to yield,
+but it is not a NOOP or action command. coordination_risk is the risk that the
+current local interaction causes conflict, congestion, deadlock, or cooperative
+failure; it is not a behavior command.
+
+Interpret the supplied state fields exactly as follows. A smaller numeric
+priority_rank means higher priority: for example, 0.0 outranks 0.04.
+adjacent_highway describes static map connectivity only. A true value means the
+adjacent map cell is a highway; it is not occupancy, blockage, or a planned path.
+target_kind=charging is a temporary energy diversion. task_persistence evaluates
+whether the original assigned transport task should continue, not whether moving
+toward charging is reasonable.
+
+For each dimension use these anchors and interpolate continuously when needed.
+The output is not restricted to the five anchor values. 0.00 means no semantic
+basis for that property. 0.25 means weak persistence or yielding, or minor
+coordination risk. 0.50 means balanced persistence/yielding reasons, or material
+but non-high coordination risk. 0.75 means strong persistence or yielding
+reasons, or high coordination risk. 1.00 means overwhelming persistence or
+yielding reasons, or near-certain immediate or sustained coordination failure
+without coordination.
+
+Use the following factors as a semantic rubric, not as deterministic scoring
+rules. For task_persistence, consider whether an active transport task exists,
+its priority, carrying and battery state, progress, interruption cost, and local
+difficulty. With no active task, persistence should be near zero. For
+yielding_preference, consider whether there is an actual local interaction,
+loaded versus empty status, relative task priority, delay cost, and whether
+yielding can resolve a bottleneck. For coordination_risk, consider neighbor
+density, narrow or station bottlenecks, dead or blocking robots, movement
+constraints, and whether the area is open. These factors may conflict; weigh
+them jointly and use any finite value in [0,1]. Do not convert scenario types or
+fixed rules into target scores.
+
+The three scores are not complements or aliases. High task persistence may
+coexist with high yielding preference. High coordination risk does not imply a
+particular yielding score. Use only facts in SEMANTIC_STATE. Do not invent facts,
 IDs, actions, paths, assignments, priorities, right-of-way rulings, station
 controls, or task-label changes. Do not emit markdown or text outside the JSON.
 
@@ -75,7 +110,7 @@ class SemanticPrompt:
 
 
 def build_semantic_prompt(semantic_view: Mapping[str, Any]) -> SemanticPrompt:
-    """Construct v4 prompt, explicitly excluding layout identifiers."""
+    """Construct v5 prompt, explicitly excluding layout identifiers."""
     expected = {"semantic_view_version", "layout_hash", "focal", "neighbors"}
     if set(semantic_view) != expected:
         raise ValueError("semantic-view-v3 JSON schema is incompatible.")
@@ -548,7 +583,7 @@ class FormalLabelSession:
             "stratum": attempt.stratum, "semantic_view_version": "semantic-view-v3",
             "semantic_view": _deidentified_view(attempt.semantic_view),
             "vector": attempt.vector,
-            "prompt": {"version": "semantic-prompt-v4-directional-rubric",
+            "prompt": {"version": SEMANTIC_PROMPT_VERSION,
                        "system_sha256": prompt.system_sha256,
                        "user_sha256": prompt.user_sha256,
                        "semantic_view_sha256": prompt.semantic_view_sha256},
@@ -590,6 +625,8 @@ class FormalLabelSession:
         _atomic_json(self._manifest_path, {
             "schema": "semantic-label-session-v1", "mode": self.mode,
             "request_model": self.request_model, "status": self._status,
+            "prompt_version": SEMANTIC_PROMPT_VERSION,
+            "prompt_system_sha256": _digest(SYSTEM_PROMPT),
             "frozen_backend_tuple": list(self._backend_tuple) if self._backend_tuple else None,
             "records_path": self._records_path.name,
         })

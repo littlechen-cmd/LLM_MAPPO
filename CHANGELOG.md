@@ -2,6 +2,11 @@
 
 ## 2026-09-01
 
+- Fixed: E1-B now records `semantic-prompt-v5-state-contract`. It restores the
+  canonical three-dimensional anchors/rubric missing from the runtime prompt and
+  explicitly defines priority-rank direction, static highway connectivity and the
+  transport-task meaning of a charging diversion. Prior v4 Pilot labels remain
+  archived and cannot enter formal data or training.
 - Fixed: E1-B's narrow-corridor injector now measures focal highway degree using
   the same complete highway-neighbor definition as semantic-view-v3. Station
   cells no longer silently reduce the degree count and admit a three-way layout.

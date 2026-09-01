@@ -1188,6 +1188,14 @@ but it is not a NOOP or action command. coordination_risk is the risk that the
 current local interaction causes conflict, congestion, deadlock, or cooperative
 failure; it is not a behavior command.
 
+Interpret the supplied state fields exactly as follows. A smaller numeric
+priority_rank means higher priority: for example, 0.0 outranks 0.04.
+adjacent_highway describes static map connectivity only. A true value means the
+adjacent map cell is a highway; it is not occupancy, blockage, or a planned path.
+target_kind=charging is a temporary energy diversion. task_persistence evaluates
+whether the original assigned transport task should continue, not whether moving
+toward charging is reasonable.
+
 For each dimension use these anchors and interpolate continuously when needed.
 The output is not restricted to the five anchor values. 0.00 means no
 semantic basis for that property. 0.25 means weak persistence or yielding, or
@@ -1223,7 +1231,9 @@ SEMANTIC_STATE={semantic_state}
 
 `semantic_state` 是 sorted-key、compact-separator 的 canonical `semantic-view-v3` JSON。
 
-该模板版本固定为 `semantic-prompt-v4-directional-rubric`。五点 anchors 只解释量表语义，
+该模板版本固定为 `semantic-prompt-v5-state-contract`。它恢复 v4 已冻结的完整 anchors/rubric，并加入
+priority rank、静态道路连通性和充电暂时改道的无歧义定义；两轮失败的 v4 labels 仅归档，绝不进入
+formal、kNN reference、Student 或训练。五点 anchors 只解释量表语义，
 `0.18/0.43/0.72/0.91` 等连续值均合法；禁止把 anchor 或 rubric 实现为场景到分数的查表规则。
 prompt 中不得出现 `scenario_type`、任何 ID、场景目标分数、RuleKD 标签、controlled reference
 direction 或“某类应高/低于某阈值”。prompt bytes、system/user text、semantic JSON 和 request body分别计算
@@ -1681,7 +1691,7 @@ Student 最终动作路径中的 execution planner query 必须为 0。不同组
 ### 13.3 语义对照与诊断消融
 
 正式 LLM 标签唯一链路是
-`semantic-view-v3 -> semantic-prompt-v4-directional-rubric -> DeepSeek -> continuous [0,1]^3`。
+`semantic-view-v3 -> semantic-prompt-v5-state-contract -> DeepSeek -> continuous [0,1]^3`。
 五点 anchors 和方向性因素是量表说明，不是确定性标签生成器；reason 仍只作 audit metadata。
 
 `RuleKD-v3` 是独立规则教师基线。它在与 formal LLM 相同的 800 个 semantic views 上生成三维

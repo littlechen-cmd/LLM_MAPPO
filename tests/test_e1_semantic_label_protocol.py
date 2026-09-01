@@ -6,6 +6,7 @@ from llm_mappo.semantic_label_protocol import (
     FLASH_GO,
     FINGERPRINT_PAUSED,
     FormalLabelSession,
+    SEMANTIC_PROMPT_VERSION,
     SemanticScenarioAttempt,
     build_semantic_prompt,
     build_blind_review_pack,
@@ -62,6 +63,21 @@ def test_prompt_uses_only_the_deidentified_semantic_view():
         assert forbidden not in prompt.user_text
     assert "SEMANTIC_STATE=" in prompt.user_text
     assert "battery_ratio" in prompt.user_text
+
+
+def test_v5_prompt_defines_the_three_previously_ambiguous_state_fields():
+    prompt = build_semantic_prompt(_attempt().semantic_view)
+
+    assert SEMANTIC_PROMPT_VERSION == "semantic-prompt-v5-state-contract"
+    assert "priority_rank means higher priority" in prompt.user_text
+    assert "adjacent_highway describes static map connectivity only" in prompt.user_text
+    assert "not occupancy, blockage, or a planned path" in prompt.user_text
+    assert "target_kind=charging is a temporary energy diversion" in prompt.user_text
+    assert "original assigned transport task" in prompt.user_text
+    assert "For task_persistence, consider whether an active transport task exists" in prompt.user_text
+    assert "loaded versus empty status, relative task priority" in prompt.user_text
+    assert "For coordination_risk, consider neighbor" in prompt.user_text
+    assert "density, narrow or station bottlenecks" in prompt.user_text
 
 
 def test_session_never_accepts_a_key_argument_or_persists_it(tmp_path, monkeypatch):
