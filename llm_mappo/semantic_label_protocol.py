@@ -169,16 +169,23 @@ def build_blind_review_pack(records: list[Mapping[str, Any]]) -> list[dict[str, 
         )
         if len(ranked) < 20:
             raise ValueError("Blind review requires 20 records in every stratum.")
-        for ordinal, record in enumerate(ranked[:20]):
-            selected.append({
-                "blind_id": f"review-{stratum}-{ordinal:02d}",
-                "semantic_view_version": record.get("semantic_view_version", "semantic-view-v3"),
-                "vector": record.get("vector"),
-                "scores": record.get("scores"),
-                "reasons": record.get("reasons"),
-                "content_hash": record.get("content_hash"),
-            })
-    return selected
+        selected.extend(ranked[:20])
+    blinded_order = sorted(
+        selected,
+        key=lambda record: _digest(
+            "20260820|formal-blind-order|" + str(record.get("content_hash", ""))
+        ),
+    )
+    pack = []
+    for ordinal, record in enumerate(blinded_order):
+        pack.append({
+            "blind_id": f"formal-review-{ordinal:03d}",
+            "semantic_view": record.get("semantic_view"),
+            "scores": record.get("scores"),
+            "reasons": record.get("reasons"),
+            "content_hash": record.get("content_hash"),
+        })
+    return pack
 
 
 def build_pilot_review_pack(records: list[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

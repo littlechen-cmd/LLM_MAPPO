@@ -2,6 +2,10 @@
 
 ## 2026-09-01
 
+- Fixed: E1 formal review packs now use shuffled neutral blind IDs and include
+  only the reviewer-readable deidentified semantic view, scores, reasons and
+  content hash. Provenance strata, scenario IDs and opaque 61D vectors no
+  longer leak into the reviewer-facing artifact.
 - Fixed: E1 formal semantic-label collection now resumes only from an immutable,
   contiguous `records.jsonl` prefix after validating the existing attempts and
   frozen label-session identity; it never regenerates, rewrites, or re-requests
