@@ -2,6 +2,10 @@
 
 ## 2026-09-01
 
+- Added: E1-B introduces an owner-only semantic-view-v3 label-session primitive and
+  pilot/formal runner. It deidentifies prompt input, reads `DEEPSEEK_API_KEY` only
+  from process scope, preserves redacted evidence and pauses formal generation on a
+  backend fingerprint change. No API call or label generation was performed locally.
 - Added: E1-A freezes the machine-readable 65-run optimization matrix, 150000-step
   formal budget, final-checkpoint evaluation contract and 6400-episode O3 exploratory
   matrix. The validator audits group counts, exact seed blocks and duplicate identities.
