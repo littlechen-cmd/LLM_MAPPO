@@ -86,6 +86,14 @@ def test_formal_session_atomically_pauses_on_fingerprint_change(tmp_path):
     assert manifest["frozen_backend_tuple"][2] == "fp-a"
 
 
+def test_session_serializes_a_real_generated_view_without_losing_the_first_record(tmp_path):
+    generated = generate_semantic_attempts("pilot", per_stratum=1)[0]
+    session = FormalLabelSession(tmp_path, "deepseek-v4-flash", mode="pilot")
+    session.consume_response(generated, _valid_response())
+
+    assert len((tmp_path / "records.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+
+
 def test_pilot_switches_to_pro_only_for_preregistered_flash_failure():
     review = {
         "records": 60,
@@ -126,9 +134,10 @@ def test_formal_gate_requires_complete_strata_single_backend_and_fixed_blind_pac
 
 
 def test_scenario_generator_is_deterministic_and_never_uses_a_planner():
-    first = generate_semantic_attempts("pilot", per_stratum=1)
-    second = generate_semantic_attempts("pilot", per_stratum=1)
+    first = generate_semantic_attempts("pilot")
+    second = generate_semantic_attempts("pilot")
 
-    assert len(first) == len(second) == 5
+    assert len(first) == len(second) == 60
     assert [item.scenario_id for item in first] == [item.scenario_id for item in second]
+    assert len({item.content_hash for item in first}) == 60
     assert all(len(item.vector) == 61 for item in first)

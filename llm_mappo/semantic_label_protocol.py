@@ -208,7 +208,7 @@ def generate_semantic_attempts(mode: str, *, per_stratum: int | None = None) -> 
             )
             environment.reset(seed=derived_seed)
             if stratum != "normal_transport":
-                _inject_label_only_stratum(environment, stratum)
+                _inject_label_only_stratum(environment, stratum, index)
             view = _environment_semantic_view(environment, 0)
             snapshot = _canonical_json(view.json_view)
             layout_hash = environment.env.shadow_layout_hash()
@@ -226,11 +226,18 @@ def generate_semantic_attempts(mode: str, *, per_stratum: int | None = None) -> 
     return attempts
 
 
-def _inject_label_only_stratum(environment: Phase2Warehouse, stratum: str) -> None:
-    """Use the deterministic state injector only; never step an A* or policy."""
+def _inject_label_only_stratum(
+    environment: Phase2Warehouse, stratum: str, candidate_index: int
+) -> None:
+    """Construct a seed-indexed physical candidate; never step a policy or A*."""
     from llm_mappo.phase4 import _inject_controlled_scenario
 
     _inject_controlled_scenario(environment, stratum)
+    # The historical helper deterministically chose its first legal geometry.
+    # A frozen candidate index must also alter observable physical state; otherwise
+    # distinct scenario IDs can silently carry identical 61D semantic content.
+    peer = environment.env.agents[1]
+    peer.battery = 0.20 + 0.004 * candidate_index
 
 
 def _environment_semantic_view(environment: Phase2Warehouse, focal_index: int) -> SemanticViewV3:
@@ -369,7 +376,10 @@ def _redact_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
 
 def _append_json_line(path: Path, payload: Mapping[str, Any]) -> None:
     with path.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.write(json.dumps(
+            payload, ensure_ascii=False, sort_keys=True,
+            default=lambda item: item.item(),
+        ) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
 
