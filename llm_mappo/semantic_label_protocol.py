@@ -12,6 +12,8 @@ from llm_mappo.semantic_v3 import SemanticRecordV3
 from llm_mappo.semantic_v3 import SemanticViewV3
 from llm_mappo.optimization_observation import ObservationSchema
 from llm_mappo.phase2 import Phase2Warehouse
+from llm_mappo.types import PriorityAdjustment
+from rware.warehouse import Direction
 
 FLASH_GO = "FLASH_GO"
 REGENERATE_FULL_PILOT_WITH_PRO = "REGENERATE_FULL_PILOT_WITH_PRO"
@@ -210,6 +212,7 @@ def generate_semantic_attempts(mode: str, *, per_stratum: int | None = None) -> 
         raise ValueError("Scenario quota must be positive.")
     base_seeds = (410, 411, 412) if mode == "pilot" else tuple(range(500, 510))
     attempts = []
+    seen_content_hashes = set()
     for rank, stratum in enumerate(STRATA):
         for index in range(quota):
             per_seed = 4 if mode == "pilot" else 16
@@ -223,16 +226,31 @@ def generate_semantic_attempts(mode: str, *, per_stratum: int | None = None) -> 
                 task_completion_target=50, initial_priority_label="A",
                 observation_schema=ObservationSchema.DIRECT_GOAL_V1,
             )
-            environment.reset(seed=derived_seed)
-            if stratum != "normal_transport":
-                _inject_label_only_stratum(environment, stratum, index)
-            view = _environment_semantic_view(environment, 0)
-            snapshot = _canonical_json(view.json_view)
+            for candidate_rank in range(128):
+                environment.reset(seed=derived_seed)
+                _inject_label_only_stratum(
+                    environment,
+                    stratum,
+                    derived_seed=derived_seed,
+                    within_seed_index=index % per_seed,
+                    candidate_rank=candidate_rank,
+                )
+                view = _environment_semantic_view(environment, 0)
+                snapshot = _canonical_json(view.json_view)
+                content_hash = _digest(snapshot + "|" + json.dumps(view.vector.tolist()))
+                if content_hash not in seen_content_hashes:
+                    break
+            else:
+                raise RuntimeError(
+                    "Semantic scenario content uniqueness is exhausted: "
+                    f"stratum={stratum}, derived_seed={derived_seed}."
+                )
             layout_hash = environment.env.shadow_layout_hash()
             scenario_id = _digest(
-                "semantic-scenario-v3|" + layout_hash + "|" + str(derived_seed) + "|" + _digest(snapshot)
+                "semantic-scenario-v3|" + layout_hash + "|" + str(derived_seed)
+                + "|" + _digest(snapshot)
             )
-            content_hash = _digest(snapshot + "|" + json.dumps(view.vector.tolist()))
+            seen_content_hashes.add(content_hash)
             attempts.append(SemanticScenarioAttempt(
                 scenario_id=scenario_id, content_hash=content_hash, stratum=stratum,
                 semantic_view=view.json_view, vector=view.vector.tolist(),
@@ -244,17 +262,203 @@ def generate_semantic_attempts(mode: str, *, per_stratum: int | None = None) -> 
 
 
 def _inject_label_only_stratum(
-    environment: Phase2Warehouse, stratum: str, candidate_index: int
+    environment: Phase2Warehouse, stratum: str, *, derived_seed: int,
+    within_seed_index: int,
+    candidate_rank: int = 0,
 ) -> None:
     """Construct a seed-indexed physical candidate; never step a policy or A*."""
-    from llm_mappo.phase4 import _inject_controlled_scenario
+    warehouse = environment.env
+    focal, peer = warehouse.agents[:2]
+    if stratum == "normal_transport":
+        first, second, direction = _normal_transport_pair(
+            warehouse, derived_seed, candidate_rank,
+        )
+        _place_semantic_agents(warehouse, first, second, direction)
+        if any(
+            _manhattan(first, (agent.x, agent.y)) <= 4
+            for agent in warehouse.agents[1:]
+        ):
+            raise RuntimeError("Normal transport candidate violates peer-distance invariant.")
+    elif stratum == "priority_conflict":
+        first, second, direction = _candidate_pair(
+            warehouse, derived_seed=derived_seed, candidate_rank=candidate_rank,
+            minimum_degree=3,
+        )
+        _place_semantic_agents(warehouse, first, second, direction)
+        _set_priority_contrast(
+            warehouse, focal.id if within_seed_index % 2 else peer.id,
+        )
+    elif stratum == "narrow_corridor_yield":
+        first, second, direction = _candidate_pair(
+            warehouse, derived_seed=derived_seed, candidate_rank=candidate_rank,
+            exact_degree=2,
+        )
+        _place_semantic_agents(warehouse, first, second, direction)
+        _set_loaded(warehouse, peer)
+    elif stratum == "low_battery_diversion":
+        first, second, direction = _candidate_pair(
+            warehouse, derived_seed=derived_seed, candidate_rank=candidate_rank,
+            minimum_degree=2,
+        )
+        _place_semantic_agents(warehouse, first, second, direction)
+        focal.battery = 0.15
+        _set_loaded(warehouse, focal)
+    elif stratum == "station_exit_congestion":
+        first, second, direction, peer_battery, peer_loaded = _station_exit_pair(
+            warehouse, derived_seed, candidate_rank,
+        )
+        _place_semantic_agents(warehouse, first, second, direction)
+        peer.battery = peer_battery
+        if peer_loaded:
+            _set_loaded(warehouse, peer)
+    else:
+        raise ValueError("Unsupported controlled semantic stratum.")
+    warehouse._recalc_grid()
 
-    _inject_controlled_scenario(environment, stratum)
-    # The historical helper deterministically chose its first legal geometry.
-    # A frozen candidate index must also alter observable physical state; otherwise
-    # distinct scenario IDs can silently carry identical 61D semantic content.
-    peer = environment.env.agents[1]
-    peer.battery = 0.20 + 0.004 * candidate_index
+
+def _normal_transport_pair(warehouse, derived_seed: int, candidate_rank: int):
+    """Return a physically ordinary placement with every peer more than four cells away."""
+    stations = set(warehouse.charging_stations) | set(warehouse.picking_stations)
+    cells = [point for point in _highway_cells(warehouse) if point not in stations]
+    candidates = []
+    for first in cells:
+        for second in cells:
+            if first == second or _manhattan(first, second) <= 4:
+                continue
+            candidates.extend((first, second, direction.name) for direction in Direction)
+            if len(candidates) >= 256:
+                return _select_semantic_candidate(
+                    warehouse, derived_seed, candidates, candidate_rank,
+                )
+    return _select_semantic_candidate(warehouse, derived_seed, candidates, candidate_rank)
+
+
+def _candidate_pair(
+    warehouse, *, derived_seed: int, candidate_rank: int, minimum_degree=None,
+    exact_degree=None,
+):
+    stations = set(warehouse.charging_stations) | set(warehouse.picking_stations)
+    pairs = []
+    for first in _highway_cells(warehouse):
+        if first in stations:
+            continue
+        neighbors = [point for point in _highway_neighbors(warehouse, first) if point not in stations]
+        if minimum_degree is not None and len(neighbors) < minimum_degree:
+            continue
+        if exact_degree is not None and len(neighbors) != exact_degree:
+            continue
+        pairs.extend(
+            (first, second, direction.name)
+            for second in neighbors for direction in Direction
+        )
+    if not pairs:
+        raise RuntimeError("No legal semantic scenario geometry exists.")
+    return _select_semantic_candidate(warehouse, derived_seed, pairs, candidate_rank)
+
+
+def _station_exit_pair(warehouse, derived_seed: int, candidate_rank: int):
+    stations = set(warehouse.charging_stations) | set(warehouse.picking_stations)
+    pairs = []
+    for station in sorted(warehouse.charging_stations, key=lambda point: (point[1], point[0])):
+        exits = sorted(
+            (point for point in _highway_neighbors(warehouse, station) if point not in stations),
+            key=lambda point: (point[1], point[0]),
+        )
+        if exits:
+            pairs.extend(
+                (exits[0], station, direction.name, battery, loaded)
+                for direction in Direction
+                for battery in (0.05, 0.10, 0.15, 0.20, 0.25, 0.29)
+                for loaded in (False, True)
+            )
+    if not pairs:
+        raise RuntimeError("Charging stations have no legal highway exit.")
+    return _select_semantic_candidate(warehouse, derived_seed, pairs, candidate_rank)
+
+
+def _select_semantic_candidate(warehouse, derived_seed: int, candidates, candidate_rank: int):
+    """Use the frozen SHA-256 candidate order, bounded to the first 128 candidates."""
+    canonical = sorted(set(candidates))
+    if not canonical:
+        raise RuntimeError("No legal semantic candidate exists.")
+    ordered = sorted(
+        canonical,
+        key=lambda candidate: _digest(
+            "semantic-scenario-v3|" + str(derived_seed) + "|"
+            + _canonical_json((_candidate_task_context(warehouse), candidate))
+        ),
+    )
+    if candidate_rank >= min(128, len(ordered)):
+        raise RuntimeError("Semantic candidate budget is exhausted.")
+    selected = ordered[candidate_rank]
+    return (*selected[:2], Direction[selected[2]], *selected[3:])
+
+
+def _candidate_task_context(warehouse):
+    """Stable task/shelf fields required by the frozen candidate-order contract."""
+    context = []
+    for agent in warehouse.agents[:2]:
+        task = warehouse.task_queue.task_for_agent(agent.id)
+        if task is None:
+            raise RuntimeError("Semantic candidate requires an active focal/peer task.")
+        context.append((task.label, task.shelf_id))
+    return tuple(context)
+
+
+def _place_semantic_agents(warehouse, first, second, focal_direction: Direction) -> None:
+    positions = _planned_positions(warehouse, first, second)
+    for index, (agent, position) in enumerate(zip(warehouse.agents, positions)):
+        agent.x, agent.y = position
+        agent.dir = focal_direction if index == 0 else Direction.RIGHT
+
+
+def _planned_positions(warehouse, first, second):
+    occupied = {first, second}
+    positions = [first, second]
+    candidates = [point for point in _highway_cells(warehouse) if point not in occupied]
+    while len(positions) < len(warehouse.agents):
+        point = max(candidates, key=lambda candidate: (
+            min(abs(candidate[0] - placed[0]) + abs(candidate[1] - placed[1]) for placed in positions),
+            candidate[1], candidate[0],
+        ))
+        positions.append(point)
+        candidates.remove(point)
+    return positions
+
+
+def _manhattan(first, second) -> int:
+    return abs(first[0] - second[0]) + abs(first[1] - second[1])
+
+
+def _set_priority_contrast(warehouse, lower_priority_agent_id: int) -> None:
+    task = warehouse.task_queue.task_for_agent(lower_priority_agent_id)
+    if task is None or task.label[0] != "A":
+        raise RuntimeError("Semantic priority contrast requires an assigned A task.")
+    replacement = "B" + task.label[1:]
+    peer = next((item for item in warehouse.task_queue.active_tasks if item.label == replacement), None)
+    if peer is None:
+        raise RuntimeError("Semantic priority contrast requires matching B task.")
+    warehouse.apply_priority_adjustments((
+        PriorityAdjustment(task.label, replacement, "semantic scenario contrast"),
+        PriorityAdjustment(peer.label, task.label, "semantic scenario contrast"),
+    ))
+
+
+def _set_loaded(warehouse, agent) -> None:
+    task = warehouse.task_queue.task_for_agent(agent.id)
+    if task is None:
+        raise RuntimeError("Semantic loaded state requires an assigned task.")
+    shelf = next(item for item in warehouse.shelfs if item.id == task.shelf_id)
+    shelf.x, shelf.y, agent.carrying_shelf = agent.x, agent.y, shelf
+
+
+def _highway_cells(warehouse):
+    return [(x, y) for y in range(warehouse.grid_size[0]) for x in range(warehouse.grid_size[1]) if warehouse._is_highway(x, y)]
+
+
+def _highway_neighbors(warehouse, point):
+    x, y = point
+    return [(next_x, next_y) for next_x, next_y in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)) if 0 <= next_x < warehouse.grid_size[1] and 0 <= next_y < warehouse.grid_size[0] and warehouse._is_highway(next_x, next_y)]
 
 
 def _environment_semantic_view(environment: Phase2Warehouse, focal_index: int) -> SemanticViewV3:
@@ -285,7 +489,7 @@ def _semantic_agent_state(environment, agent, target_kind: str) -> dict[str, Any
         "position": (agent.x, agent.y), "orientation": direction,
         "battery_ratio": float(agent.battery), "loaded": agent.carrying_shelf is not None,
         "dead": bool(agent.dead), "priority_present": warehouse.task_queue.task_for_agent(agent.id) is not None,
-        "priority_rank": 0.0, "target_kind": target_kind,
+        "priority_rank": _priority_rank(warehouse.task_queue.task_for_agent(agent.id)), "target_kind": target_kind,
         "on_highway": warehouse._is_highway(agent.x, agent.y),
         "at_charging_station": (agent.x, agent.y) in warehouse.charging_stations,
         "at_picking_station": (agent.x, agent.y) in warehouse.picking_stations,
@@ -293,6 +497,10 @@ def _semantic_agent_state(environment, agent, target_kind: str) -> dict[str, Any
                              "backward": highway((-forward[0], -forward[1])),
                              "left": highway((-right[0], -right[1]))},
     }
+
+
+def _priority_rank(task) -> float:
+    return 0.0 if task is None else (ord(task.label[0]) - ord("A")) / 25.0
 
 
 class FormalLabelSession:

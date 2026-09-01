@@ -11,8 +11,11 @@ from llm_mappo.semantic_label_protocol import (
     build_blind_review_pack,
     decide_pilot_model,
     generate_semantic_attempts,
+    _inject_label_only_stratum,
     validate_formal_dataset,
 )
+from llm_mappo.optimization_observation import ObservationSchema
+from llm_mappo.phase2 import Phase2Warehouse
 
 
 def _attempt(identifier="scenario-1", stratum="normal_transport"):
@@ -141,3 +144,89 @@ def test_scenario_generator_is_deterministic_and_never_uses_a_planner():
     assert [item.scenario_id for item in first] == [item.scenario_id for item in second]
     assert len({item.content_hash for item in first}) == 60
     assert all(len(item.vector) == 61 for item in first)
+
+
+def test_controlled_scenarios_preserve_their_frozen_semantic_invariants():
+    attempts = generate_semantic_attempts("pilot")
+    grouped = {}
+    for attempt in attempts:
+        grouped.setdefault(attempt.stratum, []).append(attempt)
+
+    priority = grouped["priority_conflict"]
+    assert {item.semantic_view["focal"]["priority_rank"] for item in priority} == {
+        0.0, 1.0 / 25.0,
+    }
+    assert all(any(
+        neighbor["mask"] and neighbor["priority_rank"] != item.semantic_view["focal"]["priority_rank"]
+        for neighbor in item.semantic_view["neighbors"]
+    ) for item in priority)
+    assert all(
+        not item.semantic_view["focal"]["loaded"]
+        and any(neighbor["mask"] and neighbor["loaded"] for neighbor in item.semantic_view["neighbors"])
+        for item in grouped["narrow_corridor_yield"]
+    )
+    assert all(
+        item.semantic_view["focal"]["battery_ratio"] == 0.15
+        and item.semantic_view["focal"]["loaded"]
+        and item.semantic_view["focal"]["target_kind"] == "charging"
+        for item in grouped["low_battery_diversion"]
+    )
+    assert all(
+        not item.semantic_view["focal"]["at_charging_station"]
+        and any(neighbor["mask"] and neighbor["at_charging_station"] for neighbor in item.semantic_view["neighbors"])
+        for item in grouped["station_exit_congestion"]
+    )
+
+
+def test_generator_enforces_normal_distance_and_station_first_exit_contract():
+    environment = Phase2Warehouse(
+        n_agents=5,
+        max_steps=1000,
+        env_id="llm-mappo-medium-3ag-v1",
+        charge_threshold=0.30,
+        charge_release_threshold=0.80,
+        battery_cost_scale=1.10,
+        deadlock_steps=180,
+        batch_interval=40,
+        batch_size_range=(4, 8),
+        request_queue_size=8,
+        task_completion_target=50,
+        initial_priority_label="A",
+        observation_schema=ObservationSchema.DIRECT_GOAL_V1,
+    )
+    environment.reset(seed=41000000)
+    _inject_label_only_stratum(
+        environment, "normal_transport", derived_seed=41000000, within_seed_index=0,
+    )
+    warehouse = environment.env
+    focal = warehouse.agents[0]
+    assert all(
+        abs(focal.x - peer.x) + abs(focal.y - peer.y) > 4
+        for peer in warehouse.agents[1:]
+    )
+
+    environment.reset(seed=41400000)
+    _inject_label_only_stratum(
+        environment, "station_exit_congestion", derived_seed=41400000,
+        within_seed_index=0,
+    )
+    focal, station_agent = environment.env.agents[:2]
+    stations = set(environment.env.charging_stations) | set(environment.env.picking_stations)
+    exits = sorted(
+        (
+            (x, y)
+            for x, y in (
+                (station_agent.x - 1, station_agent.y),
+                (station_agent.x + 1, station_agent.y),
+                (station_agent.x, station_agent.y - 1),
+                (station_agent.x, station_agent.y + 1),
+            )
+            if 0 <= x < environment.env.grid_size[1]
+            and 0 <= y < environment.env.grid_size[0]
+            and environment.env._is_highway(x, y)
+            and (x, y) not in stations
+        ),
+        key=lambda point: (point[1], point[0]),
+    )
+    assert (station_agent.x, station_agent.y) in environment.env.charging_stations
+    assert (focal.x, focal.y) == exits[0]

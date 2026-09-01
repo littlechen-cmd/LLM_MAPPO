@@ -7,8 +7,12 @@
   blind review boundary.
 - Fixed: E1-B's controlled semantic scenarios now vary their observable physical
   candidate state per pre-registered index and preserve NumPy-backed views during
-  atomic JSONL writes. This prevents duplicate content hashes and the prior first-record
-  serialization failure; 800 no-API formal attempts now have 800 unique IDs and hashes.
+  atomic JSONL writes. This prevents duplicate content hashes in the then-current Pilot
+  generator and the prior first-record serialization failure.
+- Fixed: E1-B's semantic-scenario-v3 injector no longer reuses the incompatible Phase 4
+  scenario helper or manufactures uniqueness through tiny battery perturbations. It now
+  constructs and verifies the frozen physical invariants, uses SHA-ordered geometry/task
+  candidates, and rejects duplicate semantic content before any API request.
 - Added: E1-B introduces an owner-only semantic-view-v3 label-session primitive and
   pilot/formal runner. It deidentifies prompt input, reads `DEEPSEEK_API_KEY` only
   from process scope, preserves redacted evidence and pauses formal generation on a

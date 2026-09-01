@@ -1293,15 +1293,17 @@ stratum_rank = 0..4 in the order above
 within_seed_index = 0..3 for pilot, 0..15 for formal
 ```
 
-每个 derived seed 重置环境后，确定性参数化 injector 先按坐标、任务 label、shelf ID 的 canonical
-tuple 枚举 highway/station/task 候选，再按
+每个 derived seed 重置环境后，确定性参数化 injector 先按坐标、焦点朝向、任务 label、shelf ID 的
+canonical tuple 枚举 highway/station/task 候选，再按
 `SHA256("semantic-scenario-v3"|derived_seed|canonical_candidate_tuple)` 升序检查，选择第一个满足
 invariant 的组合；最多检查前 128 个 candidates，耗尽即整个数据集 No-Go，不跨 seed 借配额，
 也不使用进程 RNG。五类 invariant 分别为：normal 的 focal 有 active task 且所有 peer Manhattan
 距离大于 4；priority conflict 的两车相邻且 focal 位于 degree>=3 highway，within-seed index 偶数时
 focal 优先级更高、奇数时更低；narrow corridor 的 empty focal 与 loaded peer 相邻且 focal 位于
 degree=2 highway；low battery 的 loaded focal battery 固定 0.15；station exit 的一车占据充电站、
-focal 占据该站 lexicographic 第一合法 highway 出口。其余机器人放置到使其与已放置机器人最小
+focal 占据该站 lexicographic 第一合法 highway 出口。station candidate 的站内 peer battery 只能取
+`{0.05,0.10,0.15,0.20,0.25,0.29}`，并枚举其 loaded/unloaded 状态；这些都是可见且物理有效的
+充电拥堵状态，不得以任意微小数值扰动制造唯一性。其余机器人放置到使其与已放置机器人最小
 Manhattan 距离最大的 highway cell，tie-break 为 `(y,x)` 升序。每条只记录一个 focal；环境
 invariant、61D view、JSON view 和 scenario content hash 必须同时通过。scenario ID 是
 `SHA256(generator_version|layout_hash|derived_seed|focal_snapshot_hash)`，pilot/formal ID 与 content
