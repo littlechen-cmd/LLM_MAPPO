@@ -2,6 +2,9 @@
 
 ## 2026-09-01
 
+- Fixed: E1 pilot review artifacts now keep scenario strata and IDs in an owner-only
+  review key; the reviewer-facing pack contains neither field, preserving the required
+  blind review boundary.
 - Fixed: E1-B's controlled semantic scenarios now vary their observable physical
   candidate state per pre-registered index and preserve NumPy-backed views during
   atomic JSONL writes. This prevents duplicate content hashes and the prior first-record

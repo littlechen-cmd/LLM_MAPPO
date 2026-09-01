@@ -135,7 +135,6 @@ def build_blind_review_pack(records: list[Mapping[str, Any]]) -> list[dict[str, 
         for ordinal, record in enumerate(ranked[:20]):
             selected.append({
                 "blind_id": f"review-{stratum}-{ordinal:02d}",
-                "stratum": stratum,
                 "semantic_view_version": record.get("semantic_view_version", "semantic-view-v3"),
                 "vector": record.get("vector"),
                 "scores": record.get("scores"),
@@ -143,6 +142,24 @@ def build_blind_review_pack(records: list[Mapping[str, Any]]) -> list[dict[str, 
                 "content_hash": record.get("content_hash"),
             })
     return selected
+
+
+def build_pilot_review_pack(records: list[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return a blinded 60-record pack plus an owner-only strata/key mapping."""
+    if len(records) != 60 or any(sum(item.get("stratum") == name for item in records) != 12
+                              for name in STRATA):
+        raise ValueError("Pilot review requires the full frozen 60-record matrix.")
+    pack, key = [], []
+    for ordinal, record in enumerate(records):
+        blind_id = f"pilot-{ordinal:03d}"
+        pack.append({
+            "blind_id": blind_id, "semantic_view": record.get("semantic_view"),
+            "scores": record.get("scores"), "reasons": record.get("reasons"),
+            "content_hash": record.get("content_hash"),
+        })
+        key.append({"blind_id": blind_id, "stratum": record.get("stratum"),
+                    "scenario_id": record.get("scenario_id")})
+    return pack, key
 
 
 def validate_formal_dataset(

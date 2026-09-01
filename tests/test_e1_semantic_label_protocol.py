@@ -129,7 +129,7 @@ def test_formal_gate_requires_complete_strata_single_backend_and_fixed_blind_pac
     receipt = validate_formal_dataset(records, review_verdicts={})
 
     assert len(pack) == 100
-    assert {item["stratum"] for item in pack} == {item["stratum"] for item in records}
+    assert all("stratum" not in item and "scenario_id" not in item for item in pack)
     assert receipt["gate"] == "GO"
 
 

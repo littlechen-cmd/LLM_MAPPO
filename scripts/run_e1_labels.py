@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from llm_mappo.semantic_label_protocol import (
     FormalLabelSession,
     build_blind_review_pack,
+    build_pilot_review_pack,
     build_semantic_prompt,
     generate_semantic_attempts,
     require_deepseek_api_key,
@@ -52,16 +53,17 @@ def run(arguments: argparse.Namespace) -> dict:
         session.consume_response(attempt, response)
     records = [json.loads(line) for line in (arguments.output / "records.jsonl").read_text(
         encoding="utf-8").splitlines() if line.strip()]
-    review_pack = (
-        [{"blind_id": f"pilot-{index:03d}", "stratum": record["stratum"],
-          "semantic_view": record["semantic_view"], "scores": record.get("scores"),
-          "reasons": record.get("reasons"), "content_hash": record["content_hash"]}
-         for index, record in enumerate(records)]
-        if arguments.mode == "pilot" else build_blind_review_pack(records)
+    review_pack, review_key = (
+        build_pilot_review_pack(records) if arguments.mode == "pilot"
+        else (build_blind_review_pack(records), [])
     )
     (arguments.output / "review_pack.json").write_text(
         json.dumps(review_pack, indent=2, sort_keys=True), encoding="utf-8"
     )
+    if review_key:
+        (arguments.output / "review_key_owner_only.json").write_text(
+            json.dumps(review_key, indent=2, sort_keys=True), encoding="utf-8"
+        )
     return {"mode": arguments.mode, "attempts": len(attempts), "prepared": False,
             "output": str(arguments.output), "network_calls": len(attempts)}
 
