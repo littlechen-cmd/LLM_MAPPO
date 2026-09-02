@@ -162,3 +162,43 @@ def test_e1_no_goal_hint_keeps_613d_shape_without_planner_queries():
         assert environment.planner_query_counter.count == 0
     finally:
         environment.close()
+
+
+def test_e1_calibration_import_initializes_the_cross_process_mirror(tmp_path):
+    from llm_mappo.e1_protocol import E1FormalRun
+    from llm_mappo.e1_training import E1Trainer, load_e1_raw_semantic_evidence
+    from llm_mappo.shadow_state import ShadowStateAdapter
+
+    labels = load_e1_raw_semantic_evidence(_write_raw_labels(tmp_path / "raw"))
+    run = E1FormalRun(
+        group="RC-AStarKD", seed=7, algorithm="mappo",
+        astar_kd="reward_calibrated", semantic_teacher="disabled",
+        semantic_control="none", observation_schema="direct-goal-observation-v1",
+        real_environment_steps=150000, checkpoint_rule="checkpoint_final.pt",
+        artifact_path="unused",
+    )
+    environment = {
+        "environment_id": "llm-mappo-medium-3ag-v1", "n_agents": 5,
+        "dynamic_ingress_interval": 40, "batch_size_range": [4, 8],
+        "queue_size": 8, "task_target": 50, "max_steps": 1000,
+        "deadlock_steps": 180, "charge_threshold": .30,
+        "charge_release_threshold": .8, "battery_cost_scale": 1.1,
+    }
+    trainer = E1Trainer(run=run, environment=environment,
+        training={"rollout_steps": 128, "rollout_length": 128,
+                  "num_env_workers": 16, "update_epochs": 1,
+                  "minibatch_steps": 64}, labels=labels, device="cpu")
+    source = trainer._new_environment()
+    try:
+        source.reset(seed=1_000_010)
+        snapshot = ShadowStateAdapter(source, code_commit="e1-vector-v1").capture(
+            run_seed=7, episode_index=0, episode_seed=1_000_010,
+            environment_index=1, real_global_step=1, episode_step=0,
+        )
+
+        restored = trainer._restore_worker_snapshot(snapshot.to_bytes())
+
+        assert trainer.real_adapter.state_hash() == restored.state_hash
+    finally:
+        source.close()
+        trainer.close()

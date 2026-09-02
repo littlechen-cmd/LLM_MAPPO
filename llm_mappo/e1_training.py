@@ -560,8 +560,7 @@ class E1Trainer:
                 item = payloads[index]
                 valid = item["astar_valid"]
                 if self.calibrator is not None and selected[index] and valid.any():
-                    snapshot = rebind_snapshot_rng_guard(ShadowSnapshotV1.from_bytes(response["snapshot"]))
-                    self.real_adapter.restore(snapshot)
+                    snapshot = self._restore_worker_snapshot(response["snapshot"])
                     result = self.calibrator.run_paired_shadows(
                         snapshot=snapshot, real_adapter=self.real_adapter,
                         student_adapter=self.student_adapter, teacher_adapter=self.teacher_adapter,
@@ -622,6 +621,15 @@ class E1Trainer:
         with torch.no_grad():
             values = self.updater.critic(torch.as_tensor(observations, dtype=torch.float32, device=self.device))
         return values.cpu().numpy().astype(np.float32)
+
+    def _restore_worker_snapshot(self, raw_snapshot: bytes) -> ShadowSnapshotV1:
+        """Prepare the learner-side mirror before importing a worker snapshot."""
+        source = ShadowSnapshotV1.from_bytes(raw_snapshot)
+        address = source.payload["address"]
+        self.environment.reset(seed=int(address["episode_seed"]))
+        snapshot = rebind_snapshot_rng_guard(source)
+        self.real_adapter.restore(snapshot)
+        return snapshot
 
     def _capture_vector_runtime(self, *, updates, counts, latest):
         addresses = []
