@@ -17,8 +17,10 @@
 - E1/E2 在 RTX 4090 上固定最多四个独立 learner 进程。MAPPO 系列每个 learner 固定使用
   `spawn` 启动 16 个 CPU-only 仓库环境 worker，由主进程集中完成 `16×5=80` 个智能体观测的
   GPU Actor/Critic 推理与 PPO 更新；QMIX-DG 保留单环境 trainer，但允许四个独立 seed run 并发；
-- MAPPO 正式 rollout 固定为 `num_env_workers=16`、`rollout_length=128`，即每次更新收集
-  `16×128=2048` 个累计 joint environment transitions。`formal_environment_steps=150000`
+- MAPPO 并行架构固定为 `num_env_workers=16`。旧 E1/E2 诊断产物使用
+  `rollout_length=128`（每次更新 2048 个累计 transitions）；R1 将以 `rollout_length=32`
+  （每次更新 512 个累计 transitions）作为主要候选，并只在可复现数值不稳定时考虑 64。R1
+  通过后由统一冻结合同确定新的 E2 正式值。`formal_environment_steps=150000`
   始终是所有 worker 的累计预算，一次 vector step 使全局计数增加 16，而不是每个 worker
   分别运行 150000 steps；
 - 环境 worker 不初始化 CUDA context，并限制 `OMP_NUM_THREADS/MKL_NUM_THREADS/

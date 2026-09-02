@@ -8,7 +8,7 @@
 
 ```text
              ┌──> O1 本地 ──> P1 ──> O1 CUDA Gate ──> O2 ──┐
-P0 ──> O0 ───┤                                             ├──> D1 ──> E1 ──> E2 ──> E3
+P0 ──> O0 ───┤                                             ├──> D1 ──> E1 ──> R1 ──> E2 ──> E3
  │           └──> O3 ──────────────────────────────────────┤
  └──> S1 ──> S2（可选预备训练）────────────────────────────┘
 ```
@@ -147,13 +147,32 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 - 稳定路线预算：核心 `2×2` 与 RuleKD 各 5 seed，NoWP 3 诊断 seed，启发式 A* 无训练；删除
   QMIX、ShuffleKD、未见拓扑和 8-AGV 压力实验。
 
+## Phase R1：正式训练前收敛恢复
+
+- [~] planning approved / reward contract pending
+- 唯一规格：`specs/2026-09-02-r1-convergence-recovery/`。
+- 触发原因：E1/E2 已完成产物的完整 episode、checkpoint worker snapshot 与旧 O2 曲线均表明
+  当前策略任务完成率极低；现有 summary 同时存在只展示单 worker 部分 episode 的证据缺陷。
+- 目标：先修复完整 episode/TensorBoard/恢复证据，再隔离诊断奖励塑形与 PPO 更新节奏，恢复
+  MAPPO-DG 基础学习趋势，并使无 LLM 的 RC-AStarKD 达到 canonical 环境任务完成率门槛。
+- R1-B 当前只批准奖励修正方向，正式公式由研究所有者后续提供；冻结前不得修改奖励实现。
+- R1-C 优先复用现有 3 AGV、目标 9、动态入库简单环境快速诊断；不可用时使用 canonical
+  5 AGV、目标 50 环境。简单环境结果不能替代最终 canonical 验收。
+- 每个测试训练完成后必须生成 TensorBoard、固定评估图与确定性 replay，并暂停交由研究所有者
+  人工检查。
+- Gate：MAPPO-DG 不设完成率硬门，只要求完整 episode 指标形成向好趋势；RC-AStarKD 在三个
+  训练 seed、每 seed 十个固定确定性 episode 上总体平均完成率≥90%，且每 seed 平均≥85%。
+- R1 未通过时不得恢复 E2 确认性矩阵或 learned-policy O3 评估。
+
 ## Phase E2：正式训练与独立评估
 
-- [~] in progress — 65-run matrix launched by owner
-- 本轮 canonical artifact root 冻结为
-  `artifacts/optimization/e2_formal_vector16_7de1f04`，启动实现为
-  `7de1f04c772ccf49d422a53aa0c1ad01deec9204`。当前矩阵不中断；完成后审计 resume、failed/
-  restarted run、最大 learner 并发、重复 artifact 和代码/配置身份，仅重跑实际受影响成员。
+- [ ] paused — blocked by R1 convergence Gate
+- 旧 canonical artifact root
+  `artifacts/optimization/e2_formal_vector16_7de1f04` 及其本地副本保留为 diagnostic-only。
+  已完成/中断成员可用于根因分析与工程审计，但不得作为确认性论文训练证据，也不得续接为新的
+  正式矩阵。
+- R1 通过后，从统一冻结 commit、奖励、rollout、环境、日志和 resume 合同重新启动完整矩阵；
+  不得混用旧 run 身份。
 - 研究所有者在批准的服务器上运行全部长任务；Codex 和项目工程师分别准备所负责路线的命令，并对
   产物进行独立分析和交叉审查。
 - 正式必需评估固定在 canonical core topology 使用 held-out evaluation seeds
@@ -173,4 +192,4 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## 开放问题
 
-无。每个阶段的实现细节、命令和测试矩阵由该阶段唯一 feature spec 定义。
+- R1-B 的正式奖励公式、系数和目标切换边界等待研究所有者提供；在冻结前 R1 不进入奖励实现。

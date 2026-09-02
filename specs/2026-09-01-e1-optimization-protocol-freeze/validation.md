@@ -1,10 +1,13 @@
 # Validation — E1 Optimization Protocol Freeze
 
+> 2026-09-02 R1 amendment: owner 提前启动的旧 E2 矩阵已暂停，现有 artifact 仅作诊断。
+> E1 closeout 不能把它转正；后续确认性 E2 受 R1 capability Gate 阻塞。
+
 ## Definition of done
 
 2026-09-02 状态说明：E1 实现链路与 owner CUDA smoke 已完成，但治理 receipt、运行后调度/
 恢复审计以及 `codex/optimization` 合并尚未完成，因此 E1 仍为 closeout in progress。E2 已由
-owner 提前启动，不得据此反向伪造 E1 原计划顺序。
+owner 曾提前启动，不得据此反向伪造 E1 原计划顺序；该矩阵随后因 R1 重规划暂停。
 
 - [ ] O0/P1/O1/O2/O3/D1 identities与 E1 frozen implementation/data/config hashes 可追溯，governance manifest 不再含旧 blocker 或 null formal budget。
 - [~] 65-run manifest 已精确展开为 32 core、8 Fixed、8 QMIX、8 RuleKD、9 diagnostic runs，

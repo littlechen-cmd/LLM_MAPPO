@@ -152,11 +152,21 @@
 | Learner（学习器主进程） | 真正持有神经网络并更新参数的训练主进程。 | 持有 Actor、centralized Critic、optimizer、PPO update 和唯一 CUDA context 的进程。 | RTX 4090 同时最多运行四个 learner；环境 worker 不复制 GPU 模型。 |
 | Environment Worker（环境工作进程） | 专门负责推进一个仓库仿真的 CPU 子进程。 | 通过 `spawn` 创建、独立 seed/reset、并行执行 `env.step()` 的 CPU-only process。 | 每个正式 MAPPO learner 固定 16 个 worker；QMIX-DG 当前仍为单环境 trainer。 |
 | Vector Step（向量步） | 16 个环境同时各向前走一步。 | learner 批量发出 16 组动作并收回 16 个 joint environment transitions 的一次同步交互。 | 一次 vector step 使 global environment steps 增加 16。 |
-| Rollout Length（采样窗口长度） | 每次更新网络前，每个环境连续采集多少步。 | vectorized MAPPO 两次 PPO update 之间的 vector-step 数。 | E1/E2 固定为 128；因此每次更新包含 `16×128=2048` 个累计 transitions。 |
+| Rollout Length（采样窗口长度） | 每次更新网络前，每个环境连续采集多少步。 | vectorized MAPPO 两次 PPO update 之间的 vector-step 数。 | 旧 E1/E2 产物为 128；R1 比较 128 与 32，R1 Gate 后才冻结新的正式值。 |
 | Global Environment Steps（累计环境步） | 所有 worker 合计完成的交互次数。 | 跨 stream 累加的 joint environment transition 计数，是 schedule、checkpoint 和预算的唯一横轴。 | 每个 run 的总预算仍为 150000，不是 16 个 worker 各跑 150000。 |
-| Provisional Run（待审计运行） | 训练已经完成或正在运行，但还没通过最终身份与恢复检查。 | 在 code/config/data identity、并发、resume、失败重启和 artifact 唯一性审计前暂不进入正式统计的 run。 | 当前 `7de1f04` 矩阵不中断；完成后只对实际受缺陷影响的成员作重跑裁决。 |
+| Provisional Run（待审计运行） | 训练已经完成或正在运行，但还没通过最终身份与恢复检查。 | 在 code/config/data identity、并发、resume、失败重启和 artifact 唯一性审计前暂不进入正式统计的 run。 | `7de1f04` 矩阵已因能力 Gate 缺失而暂停并降级为 diagnostic-only，不能转正。 |
 
-## 8. 术语维护规则
+## 8. R1 收敛恢复
+
+| 术语 | 通俗解释 | 专业定义 | 本项目中的作用 |
+|---|---|---|---|
+| Complete Episode（完整回合） | 从仓库初始化一直运行到成功或到达回合上限的一整局。 | 具有明确 reset 起点、terminal/truncated 终点和完整累计指标的单环境轨迹。 | R1 只用完整回合判断完成率；某个 worker 尚未结束的当前状态不能冒充评估结果。 |
+| Convergence Trend（收敛趋势） | 随训练推进，表现持续变好并在后期趋于稳定。 | 在相同固定评估集上，多个 checkpoint 的完整回合指标总体改善且后期无明显崩溃。 | MAPPO-DG 不设完成率硬门，但必须显示这种趋势，单看 reward 上升不够。 |
+| Capability Gate（能力门） | 先证明策略真的会完成任务，再花资源比较各种方法。 | 在预注册环境、seed、checkpoint 和确定性动作下设定的绝对任务能力准入条件。 | RC-AStarKD 总体完成率须≥90%，每个训练 seed 须≥85%，否则 E2 保持暂停。 |
+| TensorBoard | 把训练过程画成可交互曲线的查看工具。 | 读取训练事件日志并按 global environment steps 展示标量序列的可视化界面。 | 每个 R1 测试后由研究所有者检查完整回合完成率、任务数、reward、碰撞和优化指标。 |
+| Diagnostic-only（仅诊断） | 可以帮助找问题，但不能放进论文正式结果。 | 因身份、协议或能力 Gate 不满足而与确认性统计隔离的实验产物。 | 旧 E1/E2 训练用于定位奖励、更新节奏和 DirectGoal 风险，不得与新正式矩阵混合。 |
+
+## 9. 术语维护规则
 
 1. 方案、任务包或实验协议首次出现研究所有者可能不熟悉的概念时，先更新本文档；
 2. 同一概念只保留一个 canonical 名称；旧称必须标注弃用或历史范围；

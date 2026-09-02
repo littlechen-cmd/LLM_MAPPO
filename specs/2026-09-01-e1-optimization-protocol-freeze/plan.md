@@ -1,5 +1,12 @@
 # Plan — E1 Optimization Protocol Freeze
 
+> 2026-09-02 R1 amendment: the early E2 matrix was later paused after completed
+> episode/checkpoint evidence showed extremely low task capability and exposed
+> an absolute-capability Gate gap. Its artifacts are diagnostic-only. The
+> canonical successor is `specs/2026-09-02-r1-convergence-recovery/`; this file
+> remains the historical E1 contract and must not be read as authorization to
+> resume the old matrix.
+
 本计划原本只完成 E1，不在 E1 启动长训练。2026-09-02，研究所有者明确授权在治理文档
 收口前提前启动 E2 全部 65-run 正式矩阵，并批准 MAPPO 执行合同修订为四个 learner slot、
 每 learner 16 个 spawned CPU environment workers、`rollout_length=128`。本文件如实保留该
@@ -7,15 +14,16 @@
 
 ## 2026-09-02 重规划裁决
 
-- 当前 E1 状态为 `implementation complete / governance closeout in progress`；E2 已进入运行中。
+- 当前 E1 状态为 `implementation complete / governance closeout in progress`；E2 曾提前启动，
+  现已由 R1 收敛 Gate 暂停。
 - raw v5 Pro 数据保持 strict Gate No-Go，并作为 immutable exploratory noisy-teacher evidence：
   800 attempts、799 valid、单一 fingerprint，records SHA256 为
   `a108d35e8398114baec1cf88dbe34446efaefda4c9066725d5e7a57a0fed2512`。原 manifest 的
   `status: running` 是已接受但不得静默改写的元数据异常。
 - `5f56f20` CUDA smoke 已通过 8 个功能成员、2048 总 steps、GPU 0 only；它不覆盖后续
   `7de1f04` 16-worker 改造。owner 决定不补新 smoke，而以 E2 早期稳定运行作为工程健康证据。
-- E2 canonical artifact root 为 `artifacts/optimization/e2_formal_vector16_7de1f04`；当前矩阵
-  不因本轮文档收口中断，也不得在运行期间混入新实现 commit。
+- 旧 E2 artifact root 为 `artifacts/optimization/e2_formal_vector16_7de1f04`；该矩阵不再
+  续作确认性证据，不得混入 R1 后重新冻结的正式矩阵。
 - 矩阵完成后必须审计：是否发生 resume、failed/restarted run、超过四 learner、重复 artifact、
   code/config/data identity 漂移。仅实际受影响的成员进入重跑裁决。
 - E1-G 在 receipt、治理清单、上述运行审计和 `codex/optimization` 合并完成前保持未关闭。

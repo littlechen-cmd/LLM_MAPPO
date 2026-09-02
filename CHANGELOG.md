@@ -2,6 +2,19 @@
 
 ## 2026-09-02
 
+- Planned: Added the R1 convergence-recovery phase before confirmatory E2. R1
+  repairs complete-episode evidence, isolates reward shaping from PPO refresh
+  cadence, requires owner-reviewed TensorBoard and deterministic replays after
+  every test run, and gates E2 on RC-AStarKD reaching at least 90% overall task
+  completion with no training-seed mean below 85%.
+- Changed: Paused the existing 65-run E2 matrix and reclassified
+  `e2_formal_vector16_7de1f04` as diagnostic-only evidence. The reward redesign
+  direction is recorded, but implementation remains blocked until the owner
+  provides and approves the formal reward contract.
+- Changed: Updated the technical contract and terminology to distinguish the
+  old 128-step rollout from R1's 32-step candidate, and defined complete
+  episodes, convergence trends, capability gates, TensorBoard review and
+  diagnostic-only evidence for non-specialist review.
 - Changed: Formal MAPPO rollout now uses one centralized RTX 4090 learner with
   16 spawned CPU environment workers and a frozen 128-vector-step rollout,
   preserving the aggregate 150000-transition budget and per-stream GAE.

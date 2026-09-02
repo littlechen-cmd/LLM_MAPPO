@@ -149,10 +149,33 @@
 - [~] E1-G：治理收口进行中——补齐 exploratory raw-label identity、E1 receipt、规格/术语/
   CHANGELOG、当前矩阵运行偏差与完成后审计；`codex/optimization` 合并和 push 尚未完成。
 
+## R1 — 正式训练前收敛恢复
+
+- [x] R1-0：完成实现正确性、学习算法和规格/论文证据三视角复盘；确认低完成率不是单个 summary
+  字段造成的假象，暂停 E2 并将旧训练产物降级为 diagnostic-only；
+- [ ] R1-A：记录每个 worker 的完整 episode，修复 summary 聚合、TensorBoard 指标、RC EMA
+  恢复及日志/checkpoint 一致边界；
+- [ ] R1-B：等待研究所有者提供并批准正式奖励方案；当前只登记对称、循环非正、完成任务支配
+  移动塑形的方向，不得按临时建议修改实现；
+- [ ] R1-C：使用 seed `9107` 完成新奖励-only、`16×32`-only、组合方案三个 50k 诊断；优先
+  复用 3 AGV/目标 9/动态入库简单环境，不可用时使用 canonical 环境；
+- [ ] R1-C-V：每个诊断完成后生成 TensorBoard、固定评估图、固定 replay 和最低完成率失败
+  replay，暂停等待研究所有者检查；
+- [ ] R1-D：在 canonical 5 AGV/目标 50 环境训练 MAPPO-DG 至 50k/100k/150k；不设完成率
+  硬门，以完整 episode 向好趋势及人工可视化检查决定是否进入 RC；
+- [ ] R1-E：先运行 RC-AStarKD seed `9107` 并人工检查，再运行 `9117/9127`；三个 final
+  checkpoint 分别在 `9200–9209` 确定性评估；
+- [ ] R1 Gate：RC-AStarKD 30 个 episode 总体平均完成率≥90%，每个训练 seed 平均≥85%；
+- [ ] R1-F：仅在前述方案失败时依次检查教师/观测、课程训练和旧 waypoint 诊断；执行期
+  waypoint 正式回退或最终环境降级必须另行批准；
+- [ ] R1-G：冻结统一实现与实验合同、形成 receipt，并批准从头重启 E2。
+
 ## E2 — 正式训练与独立评估
 
-- [~] 研究所有者已在批准的服务器启动全部 65-run 矩阵，canonical root 为
-  `artifacts/optimization/e2_formal_vector16_7de1f04`；训练完成和运行身份审计待完成；
+- [ ] 当前 65-run 矩阵已暂停；`artifacts/optimization/e2_formal_vector16_7de1f04` 只作为
+  diagnostic/infrastructure evidence，不得进入确认性论文统计；
+- [ ] R1 Gate 通过后，从统一 commit 和合同重新启动完整矩阵，不续接旧 RC run、不混用旧
+  run 身份；
 - [ ] 正式必需评估固定在 canonical core topology 使用 `200–209 × 20`、确定性动作和 final
   checkpoint；
 - [ ] 仅当 E1 已预先选择执行时，完整运行并报告 O3 探索矩阵；不设最低性能阈值，不得按结果

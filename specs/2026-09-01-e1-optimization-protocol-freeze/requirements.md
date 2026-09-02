@@ -1,5 +1,10 @@
 # Requirements — E1 Optimization Protocol Freeze
 
+> 2026-09-02 R1 amendment: E1 的 65-run 合同保留为历史冻结记录，但旧矩阵因绝对任务能力
+> 不足和证据缺陷被暂停并降级为 diagnostic-only。任何新的确认性训练必须先通过
+> `specs/2026-09-02-r1-convergence-recovery/`，再由统一合同重新冻结；本文件中“不修改奖励/
+> rollout”的限制不阻止经 owner 批准的 R1 纠偏。
+
 ## Scope
 
 E1 将已经通过 O0/P1/O1/O2/O3/D1 的优化路线整理为唯一、可恢复、可审计的正式实验实现，供研究所有者在 E2 启动长训练与长评估。范围包括：
