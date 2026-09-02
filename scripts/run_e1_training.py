@@ -10,7 +10,12 @@ import subprocess
 import torch
 import yaml
 
-from llm_mappo.e1_evidence import E1EvidenceWriter, load_e1_checkpoint, save_e1_checkpoint
+from llm_mappo.e1_evidence import (
+    E1EvidenceWriter,
+    E1TensorBoardWriter,
+    load_e1_checkpoint,
+    save_e1_checkpoint,
+)
 from llm_mappo.e1_protocol import (
     expand_e1_formal_matrix,
     load_e1_governance_manifest,
@@ -67,8 +72,12 @@ def main():  # noqa: C901
         directory = Path(args.output_root) / run.group.lower().replace("+", "-plus-") / f"seed_{run.seed:03d}_{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
         writer = E1EvidenceWriter.create(directory, {"schema": "e1-run-manifest-v1", "identity": identity,
             "device": device_provenance(args.device), "real_env_steps_budget": run.real_environment_steps,
-            "diagnostic_only": args.stop_at is not None, "label_provenance": labels.provenance(),
-            "rollout_execution": {"num_env_workers": 16, "rollout_length": 128,
+            "diagnostic_only": args.stop_at is not None,
+            "smoke": bool(args.smoke),
+            "requires_completed_episodes": run.algorithm == "mappo" and not args.smoke,
+            "label_provenance": labels.provenance(),
+            "rollout_execution": {"num_env_workers": training["num_env_workers"],
+                                  "rollout_length": training["rollout_length"],
                                   "global_step_unit": "joint_environment_transition"}})
     if run.algorithm == "qmix":
         trainer = E1QMIXDGTrainer(run=run, environment={**environment,
@@ -88,24 +97,49 @@ def main():  # noqa: C901
             trainer.close()
         return
     trainer = E1Trainer(run=run, environment=environment, training=training, labels=labels, device=args.device)
+    board = E1TensorBoardWriter(directory / "tensorboard")
     try:
         if args.resume:
             checkpoint = load_e1_checkpoint(directory / "checkpoint_latest.pt", expected_identity=identity, actor=trainer.updater.actor, critic=trainer.updater.critic, optimizer=trainer.updater.optimizer)
+            pending = checkpoint["evidence_state"]
+            if pending is not None:
+                reconciled = writer.reconcile_checkpoint_evidence(pending)
+                if reconciled["update_appended"]:
+                    board.add_update(pending["update_row"])
+                appended = int(reconciled["episodes_appended"])
+                for row in pending["episode_rows"][-appended:] if appended else ():
+                    board.add_episode(row)
+            trainer.restore_calibration_state(checkpoint["calibration_state"])
             trainer.restore_runtime_state(checkpoint["trainer_state"])
-        def update(metrics, runtime):
+        def update(metrics, runtime, episode_rows):
             state = trainer.schedule.state_dict(); step = state["global_env_steps"]
-            writer.append("updates.csv", {"real_env_steps": step,
-                **{key: metrics[key] for key in ("policy_loss", "value_loss", "astar_loss", "semantic_loss", "semantic_valid_denominator", "num_env_workers", "rollout_length", "global_environment_steps", "environment_steps_per_second", "rollout_wall_time", "policy_inference_time", "ppo_update_time", "total_elapsed_time", "peak_cuda_memory_allocated", "peak_cuda_memory_reserved")},
-                "lambda_a": state["lambda_a"], "lambda_l": state["lambda_l"]})
-            save_e1_checkpoint(directory / "checkpoint_latest.pt", identity=identity, actor=trainer.updater.actor, critic=trainer.updater.critic, optimizer=trainer.updater.optimizer, schedule_state=state, calibration_state=None if trainer.calibrator is None else trainer.calibrator.ema.state_dict(), trainer_state=runtime)
+            update_row = {"real_env_steps": step,
+                **{key: metrics[key] for key in ("policy_loss", "value_loss", "entropy", "astar_loss", "semantic_loss", "semantic_valid_denominator", "num_env_workers", "rollout_length", "global_environment_steps", "environment_steps_per_second", "rollout_wall_time", "policy_inference_time", "ppo_update_time", "total_elapsed_time", "peak_cuda_memory_allocated", "peak_cuda_memory_reserved")},
+                "lambda_a": state["lambda_a"], "lambda_l": state["lambda_l"]}
+            evidence = {"update_row": update_row,
+                        "episode_rows": [dict(row) for row in episode_rows]}
+            save_e1_checkpoint(directory / "checkpoint_latest.pt", identity=identity,
+                actor=trainer.updater.actor, critic=trainer.updater.critic,
+                optimizer=trainer.updater.optimizer, schedule_state=state,
+                calibration_state=None if trainer.calibrator is None else trainer.calibrator.ema.state_dict(),
+                trainer_state=runtime, evidence_state=evidence)
+            reconciled = writer.reconcile_checkpoint_evidence(evidence)
+            if reconciled["update_appended"]:
+                board.add_update(update_row)
+            appended = int(reconciled["episodes_appended"])
+            for row in episode_rows[-appended:] if appended else ():
+                board.add_episode(row)
         summary = trainer.run_prefix(target, on_update=update)
         writer.append("teacher_step_counts.csv", {key: summary[key] for key in ("real_env_steps", "teacher_queries", "shadow_calls", "ema_updates", "semantic_valid_slots", "semantic_total_slots", "planner_query_count")})
-        save_e1_checkpoint(directory / ("checkpoint_final.pt" if target == run.real_environment_steps else "checkpoint_latest.pt"), identity=identity, actor=trainer.updater.actor, critic=trainer.updater.critic, optimizer=trainer.updater.optimizer, schedule_state=trainer.schedule.state_dict(), calibration_state=None if trainer.calibrator is None else trainer.calibrator.ema.state_dict(), trainer_state=trainer.runtime_state())
-        (writer.complete if target == run.real_environment_steps else lambda value: None)(summary)
+        save_e1_checkpoint(directory / ("checkpoint_final.pt" if target == run.real_environment_steps else "checkpoint_latest.pt"), identity=identity, actor=trainer.updater.actor, critic=trainer.updater.critic, optimizer=trainer.updater.optimizer, schedule_state=trainer.schedule.state_dict(), calibration_state=None if trainer.calibrator is None else trainer.calibrator.ema.state_dict(), trainer_state=trainer.runtime_state(), evidence_state=None)
+        if target == run.real_environment_steps:
+            summary = writer.complete(summary)
         print(json.dumps({"run_directory": str(directory), **summary}, sort_keys=True))
     except Exception as error:
         writer.fail(type(error).__name__); raise
-    finally: trainer.close()
+    finally:
+        board.close()
+        trainer.close()
 
 
 if __name__ == "__main__": main()

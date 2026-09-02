@@ -8,11 +8,11 @@
 
 ## 日志与恢复
 
-- [ ] `episodes.csv` 包含每个 worker 的完整 episode，计数可与 checkpoint worker state 对账。
-- [ ] summary 的 episode 聚合可由原始 episode 行复算，不读取部分 episode 冒充最终表现。
-- [ ] TensorBoard 显示完整 episode 完成率、任务数、reward、碰撞和优化指标。
-- [ ] RC 中断恢复完整保留 calibration EMA、计步、worker、RNG 和 learner 状态。
-- [ ] worker 异常可传播至主进程且所有子进程退出；失败运行不能标记 complete。
+- [x] `episodes.csv` 包含每个 worker 的完整 episode，计数可与 checkpoint worker state 对账。
+- [x] summary 的 episode 聚合可由原始 episode 行复算，不读取部分 episode 冒充最终表现。
+- [x] TensorBoard 显示完整 episode 完成率、任务数、reward、碰撞和优化指标。
+- [x] RC 中断恢复完整保留 calibration EMA、计步、worker、RNG 和 learner 状态。
+- [x] worker 异常可传播至主进程且所有子进程退出；失败运行不能标记 complete。
 
 ## R1-C 因果诊断
 

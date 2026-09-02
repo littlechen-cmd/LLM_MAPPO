@@ -34,7 +34,10 @@ from llm_mappo.pure_motion_teacher import PureMotionQuery, PureMotionTeacher
 from llm_mappo.reward_calibration import RewardCalibrator
 from llm_mappo.shadow_state import ShadowStateAdapter
 from llm_mappo.shadow_state import ShadowSnapshotV1, rebind_snapshot_rng_guard
-from llm_mappo.e1_vector_env import E1VectorEnvironmentPool
+from llm_mappo.e1_vector_env import (
+    E1VectorEnvironmentPool,
+    completed_episode_record,
+)
 
 
 _RAW_LABEL_PROMPT = "semantic-prompt-v5-state-contract"
@@ -467,6 +470,7 @@ class E1Trainer:
             updates, episode_index, episode_step = (self._runtime[name] for name in ("updates", "episode_index", "episode_step"))
             counts, latest = dict(self._runtime["counts"]), dict(self._runtime["latest_metrics"])
         rollout = E1Rollout(self.environment_values["n_agents"])
+        pending_episodes: list[dict[str, Any]] = []
         metrics = {"semantic_loss": 0.0, "semantic_valid_denominator": 0}
         for step in range(self.schedule.global_env_steps, max_steps):
             semantic, targets, valid_semantic, ood = self._semantic_batch(self.environment)
@@ -487,7 +491,23 @@ class E1Trainer:
             counts["semantic_valid_slots"] += int((valid_semantic > 0).sum())
             counts["semantic_total_slots"] += len(valid_semantic)
             self.schedule.advance_real_env_steps(1)
-            observations, latest = transition.observations, transition.metrics.as_dict()
+            observations = transition.observations
+            terminal_metrics = transition.metrics.as_dict()
+            if done:
+                pending_episodes.append(completed_episode_record(
+                    terminal_metrics,
+                    worker_index=0,
+                    episode_index=episode_index,
+                    episode_seed=int(self.run.seed) + episode_index,
+                    terminal_global_step=self.schedule.global_env_steps,
+                ))
+                latest = terminal_metrics
+                episode_index, episode_step = episode_index + 1, 0
+                observations = self.environment.reset(
+                    seed=int(self.run.seed) + episode_index
+                )
+            else:
+                episode_step += 1
             if len(rollout) == int(self.training["rollout_steps"]) or step + 1 == max_steps:
                 last = 0.0 if done else self._value(observations)
                 metrics = self.updater.update(rollout, last_value=last,
@@ -497,12 +517,11 @@ class E1Trainer:
                 self._runtime = self._capture_runtime(episode_index=episode_index,
                     episode_step=episode_step, updates=updates, counts=counts, latest=latest)
                 if on_update is not None:
-                    on_update(dict(metrics), self.runtime_state())
-            if done:
-                episode_index, episode_step = episode_index + 1, 0
-                observations = self.environment.reset(seed=self.run.seed + episode_index)
-            else:
-                episode_step += 1
+                    on_update(
+                        dict(metrics), self.runtime_state(),
+                        [dict(row) for row in pending_episodes],
+                    )
+                pending_episodes.clear()
         self._runtime = self._capture_runtime(episode_index=episode_index,
             episode_step=episode_step, updates=updates, counts=counts, latest=latest)
         return {"group": self.run.group, "seed": self.run.seed,
@@ -529,6 +548,7 @@ class E1Trainer:
                   if self._runtime is None else dict(self._runtime["counts"]))
         latest = {} if self._runtime is None else dict(self._runtime["latest_metrics"])
         rollout = E1Rollout(self.environment_values["n_agents"])
+        pending_episodes: list[dict[str, Any]] = []
         vector_ticks = 0
         metrics = {"semantic_loss": 0.0, "semantic_valid_denominator": 0}
         started = time.perf_counter()
@@ -582,7 +602,9 @@ class E1Trainer:
                     done=response["done"], value=float(values[index]), stream_id=index)
                 counts["semantic_valid_slots"] += int((item["semantic_validity"] > 0).sum())
                 counts["semantic_total_slots"] += len(item["semantic_validity"])
-                latest = response["latest_metrics"]
+                if response["completed_episode"] is not None:
+                    latest = response["latest_metrics"]
+                    pending_episodes.append(dict(response["completed_episode"]))
                 planner_queries += int(response["planner_query_count"])
             self.schedule.advance_real_env_steps(self.num_env_workers)
             vector_ticks += 1
@@ -595,7 +617,12 @@ class E1Trainer:
                 updates += 1; rollout = E1Rollout(self.environment_values["n_agents"]); vector_ticks = 0
                 self._runtime = self._capture_vector_runtime(updates=updates, counts=counts, latest=latest)
                 metrics.update(self._performance_metrics(started, rollout_wall, policy_wall, update_wall))
-                if on_update is not None: on_update(dict(metrics), self.runtime_state())
+                if on_update is not None:
+                    on_update(
+                        dict(metrics), self.runtime_state(),
+                        [dict(row) for row in pending_episodes],
+                    )
+                pending_episodes.clear()
         self._runtime = self._capture_vector_runtime(updates=updates, counts=counts, latest=latest)
         metrics.update(self._performance_metrics(started, rollout_wall, policy_wall, update_wall))
         return {"group": self.run.group, "seed": self.run.seed, "real_env_steps": self.schedule.global_env_steps,
@@ -686,6 +713,29 @@ class E1Trainer:
             raise ValueError("E1 runtime budget is incompatible.")
         self.schedule.global_env_steps = int(schedule["global_env_steps"])
         self._runtime = dict(state)
+
+    def restore_calibration_state(self, state: Mapping[str, Any] | None) -> None:
+        """Restore the exact Reward Calibration EMA or fail closed."""
+        if self.calibrator is None:
+            if state is not None:
+                raise ValueError("A non-RC E1 run cannot restore calibration state.")
+            return
+        if state is None:
+            raise ValueError("RC-AStarKD resume requires calibration state.")
+        ema = self.calibrator.ema
+        frozen = {
+            "schema_version": ema.state_dict()["schema_version"],
+            "decay": ema.decay,
+            "minimum_scale": ema.minimum_scale,
+            "initialization_sample_count": ema.initialization_sample_count,
+            "weight_clip": [0.0, 1.0],
+        }
+        if any(state.get(name) != value for name, value in frozen.items()):
+            raise ValueError("E1 calibration state violates the frozen EMA contract.")
+        for name in ("count", "mean", "m2", "variance", "initialized"):
+            if name not in state:
+                raise ValueError("E1 calibration state is incomplete.")
+            setattr(ema, name, state[name])
 
     def _capture_runtime(self, *, episode_index, episode_step, updates, counts, latest):
         address = {"run_seed": int(self.run.seed), "episode_index": int(episode_index),

@@ -153,7 +153,8 @@
 
 - [x] R1-0：完成实现正确性、学习算法和规格/论文证据三视角复盘；确认低完成率不是单个 summary
   字段造成的假象，暂停 E2 并将旧训练产物降级为 diagnostic-only；
-- [ ] R1-A：记录每个 worker 的完整 episode，修复 summary 聚合、TensorBoard 指标、RC EMA
+- [x] R1-A：记录每个 worker 的完整 episode，修复 summary 最近 100 个完整回合聚合、
+  TensorBoard 指标、RC EMA
   恢复及日志/checkpoint 一致边界；
 - [ ] R1-B：等待研究所有者提供并批准正式奖励方案；当前只登记对称、循环非正、完成任务支配
   移动塑形的方向，不得按临时建议修改实现；

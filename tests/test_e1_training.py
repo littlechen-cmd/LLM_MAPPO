@@ -270,3 +270,143 @@ def test_e1_worker_snapshot_runs_a_paired_rc_shadow_without_cardinality_error(tm
     finally:
         source.close()
         trainer.close()
+
+
+def test_e1_resume_restores_reward_calibration_ema(tmp_path):
+    from llm_mappo.e1_protocol import E1FormalRun
+    from llm_mappo.e1_training import E1Trainer, load_e1_raw_semantic_evidence
+
+    labels = load_e1_raw_semantic_evidence(_write_raw_labels(tmp_path / "raw"))
+    run = E1FormalRun(
+        group="RC-AStarKD", seed=7, algorithm="mappo",
+        astar_kd="reward_calibrated", semantic_teacher="disabled",
+        semantic_control="none", observation_schema="direct-goal-observation-v1",
+        real_environment_steps=150000, checkpoint_rule="checkpoint_final.pt",
+        artifact_path="unused",
+    )
+    environment = {
+        "environment_id": "llm-mappo-medium-3ag-v1", "n_agents": 5,
+        "dynamic_ingress_interval": 40, "batch_size_range": [4, 8],
+        "queue_size": 8, "task_target": 50, "max_steps": 1000,
+        "deadlock_steps": 180, "charge_threshold": .30,
+        "charge_release_threshold": .8, "battery_cost_scale": 1.1,
+    }
+    trainer = E1Trainer(
+        run=run, environment=environment,
+        training={"rollout_steps": 128, "rollout_length": 128,
+                  "num_env_workers": 16, "update_epochs": 1,
+                  "minibatch_steps": 64},
+        labels=labels, device="cpu",
+    )
+    try:
+        state = trainer.calibrator.ema.state_dict()
+        state.update({
+            "count": 73,
+            "mean": 1.25,
+            "m2": 8.0,
+            "variance": 0.5,
+            "initialized": True,
+        })
+
+        trainer.restore_calibration_state(state)
+
+        restored = trainer.calibrator.ema.state_dict()
+        assert {key: restored[key] for key in (
+            "count", "mean", "m2", "variance", "initialized"
+        )} == {
+            "count": 73,
+            "mean": 1.25,
+            "m2": 8.0,
+            "variance": 0.5,
+            "initialized": True,
+        }
+    finally:
+        trainer.close()
+
+
+def test_e1_update_callback_receives_only_completed_episode_rows(tmp_path):
+    from llm_mappo.e1_protocol import E1FormalRun
+    from llm_mappo.e1_training import E1Trainer, load_e1_raw_semantic_evidence
+
+    labels = load_e1_raw_semantic_evidence(_write_raw_labels(tmp_path / "raw"))
+    run = E1FormalRun(
+        group="MAPPO-DG", seed=9107, algorithm="mappo",
+        astar_kd="disabled", semantic_teacher="disabled",
+        semantic_control="none", observation_schema="direct-goal-observation-v1",
+        real_environment_steps=4, checkpoint_rule="checkpoint_final.pt",
+        artifact_path="unused",
+    )
+    trainer = E1Trainer(
+        run=run,
+        environment={
+            "environment_id": "llm-mappo-medium-3ag-v1", "n_agents": 2,
+            "dynamic_ingress_interval": 40, "batch_size_range": [4, 8],
+            "queue_size": 8, "task_target": 9, "max_steps": 1,
+            "deadlock_steps": 180, "charge_threshold": .30,
+            "charge_release_threshold": .8, "battery_cost_scale": 1.1,
+        },
+        training={"rollout_steps": 1, "rollout_length": 1,
+                  "num_env_workers": 1, "update_epochs": 1,
+                  "minibatch_steps": 1},
+        labels=labels,
+        device="cpu",
+    )
+    batches = []
+    try:
+        trainer.run_prefix(
+            1,
+            on_update=lambda metrics, runtime, episodes: batches.append(episodes),
+        )
+    finally:
+        trainer.close()
+
+    assert len(batches) == 1
+    assert len(batches[0]) == 1
+    assert batches[0][0]["worker_index"] == 0
+    assert batches[0][0]["episode_index"] == 0
+    assert batches[0][0]["episode_seed"] == 9107
+    assert batches[0][0]["real_env_steps"] == 1
+    assert batches[0][0]["steps"] == 1
+
+
+def test_e1_vector_callback_keeps_completed_episodes_separate_by_worker(tmp_path):
+    from llm_mappo.e1_protocol import E1FormalRun
+    from llm_mappo.e1_training import E1Trainer, load_e1_raw_semantic_evidence
+
+    labels = load_e1_raw_semantic_evidence(_write_raw_labels(tmp_path / "raw"))
+    run = E1FormalRun(
+        group="MAPPO-DG", seed=9107, algorithm="mappo",
+        astar_kd="disabled", semantic_teacher="disabled",
+        semantic_control="none", observation_schema="direct-goal-observation-v1",
+        real_environment_steps=4, checkpoint_rule="checkpoint_final.pt",
+        artifact_path="unused",
+    )
+    trainer = E1Trainer(
+        run=run,
+        environment={
+            "environment_id": "llm-mappo-medium-3ag-v1", "n_agents": 2,
+            "dynamic_ingress_interval": 40, "batch_size_range": [4, 8],
+            "queue_size": 8, "task_target": 9, "max_steps": 1,
+            "deadlock_steps": 180, "charge_threshold": .30,
+            "charge_release_threshold": .8, "battery_cost_scale": 1.1,
+        },
+        training={"rollout_steps": 1, "rollout_length": 1,
+                  "num_env_workers": 2, "update_epochs": 1,
+                  "minibatch_steps": 2},
+        labels=labels,
+        device="cpu",
+    )
+    batches = []
+    try:
+        trainer.run_prefix(
+            2,
+            on_update=lambda metrics, runtime, episodes: batches.append(episodes),
+        )
+    finally:
+        trainer.close()
+
+    assert len(batches) == 1
+    assert [row["worker_index"] for row in batches[0]] == [0, 1]
+    assert [row["episode_index"] for row in batches[0]] == [0, 0]
+    assert [row["episode_seed"] for row in batches[0]] == [9107, 1_009_110]
+    assert [row["real_env_steps"] for row in batches[0]] == [1, 2]

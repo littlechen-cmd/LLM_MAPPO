@@ -20,6 +20,38 @@ from llm_mappo.semantic_v3 import SemanticViewV3
 from llm_mappo.shadow_state import ShadowStateAdapter
 
 
+_EPISODE_METRIC_FIELDS = (
+    "completed_tasks", "created_tasks", "task_completion_target",
+    "task_completion_rate", "reward", "collisions", "deadlocked",
+    "agent_deaths", "picked_tasks", "blocked_forwards",
+    "low_battery_triggers", "charging_target_steps",
+    "charging_exposure_rate", "charger_arrivals", "charged_events",
+    "charging_wait_steps", "task_recoveries", "energy_deaths",
+    "minimum_battery", "steps", "success",
+)
+
+
+def completed_episode_record(
+    metrics: Mapping[str, Any],
+    *,
+    worker_index: int,
+    episode_index: int,
+    episode_seed: int,
+    terminal_global_step: int,
+) -> dict[str, Any]:
+    """Bind one terminal metric snapshot to its exact worker episode."""
+    missing = set(_EPISODE_METRIC_FIELDS) - set(metrics)
+    if missing:
+        raise ValueError(f"Completed E1 episode metrics are incomplete: {sorted(missing)}")
+    return {
+        "real_env_steps": int(terminal_global_step),
+        "worker_index": int(worker_index),
+        "episode_index": int(episode_index),
+        "episode_seed": int(episode_seed),
+        **{name: metrics[name] for name in _EPISODE_METRIC_FIELDS},
+    }
+
+
 def _new_environment(values: Mapping[str, Any], run) -> Phase2Warehouse:
     return Phase2Warehouse(
         n_agents=int(values["n_agents"]), max_steps=int(values["max_steps"]),
@@ -145,14 +177,23 @@ def _worker(connection, values, run, dataset, worker_index):
                 transition = environment.step(actions)
                 done = bool(transition.terminated or transition.truncated or transition.metrics.deadlocked)
                 latest = transition.metrics.as_dict()
+                completed_episode = None
                 if done:
+                    completed_episode = completed_episode_record(
+                        latest,
+                        worker_index=worker_index,
+                        episode_index=episode_index,
+                        episode_seed=base_seed + episode_index,
+                        terminal_global_step=int(message["global_step"]) + 1,
+                    )
                     episode_index += 1
                     episode_step = 0
                     environment.reset(seed=base_seed + episode_index)
                 else:
                     episode_step += 1
                 connection.send(("ok", {"team_reward": float(transition.team_reward), "done": done,
-                    "latest_metrics": latest, "payload": _current_payload(environment, dataset, run.semantic_control, teacher, episode_index=episode_index, episode_step=episode_step, episode_seed=base_seed + episode_index),
+                    "latest_metrics": latest, "completed_episode": completed_episode,
+                    "payload": _current_payload(environment, dataset, run.semantic_control, teacher, episode_index=episode_index, episode_step=episode_step, episode_seed=base_seed + episode_index),
                     "snapshot": snapshot, "episode_index": episode_index, "episode_step": episode_step,
                     "planner_query_count": environment.planner_query_counter.count}))
             elif command == "snapshot":

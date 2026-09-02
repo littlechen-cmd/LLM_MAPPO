@@ -2,6 +2,15 @@
 
 ## 2026-09-02
 
+- Fixed: R1-A now records terminal episodes independently for every spawned
+  environment worker, builds final summaries from the latest 100 complete
+  episodes, and fails closed when a required non-smoke run has no episode
+  evidence. Partial worker state is no longer presented as convergence.
+- Added: R1-A writes complete-episode and optimization scalars to TensorBoard,
+  restores the exact Reward Calibration EMA on resume, and stores each pending
+  CSV evidence batch inside the atomic checkpoint before idempotently
+  materializing it. A crash between checkpoint and CSV writes can therefore be
+  reconciled without duplicate or missing committed rows.
 - Planned: Added the R1 convergence-recovery phase before confirmatory E2. R1
   repairs complete-episode evidence, isolates reward shaping from PPO refresh
   cadence, requires owner-reviewed TensorBoard and deterministic replays after

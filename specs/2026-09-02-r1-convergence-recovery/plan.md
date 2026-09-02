@@ -2,17 +2,18 @@
 
 ## 状态
 
-`[~] 规划已批准，R1-B 正式奖励合同待研究所有者提供；尚未开始实现。`
+`[~] R1-A 已完成；R1-B 正式奖励合同待研究所有者提供。`
 
 ## R1-A：修复可观测性与恢复语义
 
-- 为 16 个 worker 分别记录完整 episode，至少包含 worker、episode、seed、终止时累计环境步、
+- [x] 为 16 个 worker 分别记录完整 episode，至少包含 worker、episode、seed、终止时累计环境步、
   完成任务数/完成率、reward、碰撞、充电、死亡、死锁和 episode steps。
-- `summary.json` 从完整 episode 聚合最近窗口，不再用最后一个 worker 的部分 episode。
-- 非短 smoke 运行若没有产生合法完整 episode 记录，证据检查 fail closed。
-- checkpoint 恢复同时恢复 learner、worker、计步、RNG 和 RC calibration/EMA 状态；修正日志与
+- [x] `summary.json` 从最近 100 个完整 episode 聚合；不足 100 个时使用全部已有完整 episode，
+  不再用最后一个 worker 的部分 episode。
+- [x] 非短 smoke 运行若没有产生合法完整 episode 记录，证据检查 fail closed。
+- [x] checkpoint 恢复同时恢复 learner、worker、计步、RNG 和 RC calibration/EMA 状态；修正日志与
   checkpoint 的更新边界，避免日志领先于可恢复状态。
-- TensorBoard 至少记录完整 episode 完成率、完成任务数、team reward、碰撞、policy/value loss、
+- [x] TensorBoard 至少记录完整 episode 完成率、完成任务数、team reward、碰撞、policy/value loss、
   entropy、更新步和吞吐量。
 
 ## R1-B：冻结并实现正式奖励方案
