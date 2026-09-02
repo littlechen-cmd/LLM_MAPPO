@@ -191,14 +191,82 @@ def test_e1_calibration_import_initializes_the_cross_process_mirror(tmp_path):
     source = trainer._new_environment()
     try:
         source.reset(seed=1_000_010)
+        address = {
+            "run_seed": 7, "episode_index": 0, "episode_seed": 1_000_010,
+            "environment_index": 1, "episode_step": 0,
+        }
+        address["real_global_step"] = next(
+            step for step in range(1, 128)
+            if trainer.calibrator.select(**{**address, "real_global_step": step})
+        )
         snapshot = ShadowStateAdapter(source, code_commit="e1-vector-v1").capture(
-            run_seed=7, episode_index=0, episode_seed=1_000_010,
-            environment_index=1, real_global_step=1, episode_step=0,
+            **address,
         )
 
         restored = trainer._restore_worker_snapshot(snapshot.to_bytes())
 
         assert trainer.real_adapter.state_hash() == restored.state_hash
+    finally:
+        source.close()
+        trainer.close()
+
+
+def test_e1_worker_snapshot_runs_a_paired_rc_shadow_without_cardinality_error(tmp_path):
+    from llm_mappo.e1_protocol import E1FormalRun
+    from llm_mappo.e1_training import E1Trainer, load_e1_raw_semantic_evidence
+    from llm_mappo.shadow_state import ShadowStateAdapter
+
+    labels = load_e1_raw_semantic_evidence(_write_raw_labels(tmp_path / "raw"))
+    run = E1FormalRun(
+        group="RC-AStarKD", seed=7, algorithm="mappo",
+        astar_kd="reward_calibrated", semantic_teacher="disabled",
+        semantic_control="none", observation_schema="direct-goal-observation-v1",
+        real_environment_steps=150000, checkpoint_rule="checkpoint_final.pt",
+        artifact_path="unused",
+    )
+    environment = {
+        "environment_id": "llm-mappo-medium-3ag-v1", "n_agents": 5,
+        "dynamic_ingress_interval": 40, "batch_size_range": [4, 8],
+        "queue_size": 8, "task_target": 50, "max_steps": 1000,
+        "deadlock_steps": 180, "charge_threshold": .30,
+        "charge_release_threshold": .8, "battery_cost_scale": 1.1,
+    }
+    trainer = E1Trainer(run=run, environment=environment,
+        training={"rollout_steps": 128, "rollout_length": 128,
+                  "num_env_workers": 16, "update_epochs": 1,
+                  "minibatch_steps": 64}, labels=labels, device="cpu")
+    source = trainer._new_environment()
+    try:
+        source.reset(seed=1_000_010)
+        address = {
+            "run_seed": 7, "episode_index": 0, "episode_seed": 1_000_010,
+            "environment_index": 1, "episode_step": 0,
+        }
+        address["real_global_step"] = next(
+            step for step in range(1, 128)
+            if trainer.calibrator.select(**{**address, "real_global_step": step})
+        )
+        snapshot = ShadowStateAdapter(source, code_commit="e1-vector-v1").capture(
+            **address,
+        )
+        restored = trainer._restore_worker_snapshot(snapshot.to_bytes())
+        _, valid = trainer._teacher_batch(trainer.environment)
+
+        result = trainer.calibrator.run_paired_shadows(
+            snapshot=restored,
+            real_adapter=trainer.real_adapter,
+            student_adapter=trainer.student_adapter,
+            teacher_adapter=trainer.teacher_adapter,
+            student_logits=lambda env, obs: trainer._shadow_logits(env, obs),
+            teacher_preferences=lambda env: trainer._teacher_batch(env),
+            initial_valid_mask=valid,
+            critic_value=lambda obs: trainer._value(obs),
+            gamma=0.99,
+            address=restored.payload["address"],
+        )
+
+        assert np.isfinite(result.delta_g)
+        assert 0.0 <= result.confidence <= 1.0
     finally:
         source.close()
         trainer.close()

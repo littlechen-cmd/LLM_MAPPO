@@ -623,10 +623,13 @@ class E1Trainer:
         return values.cpu().numpy().astype(np.float32)
 
     def _restore_worker_snapshot(self, raw_snapshot: bytes) -> ShadowSnapshotV1:
-        """Prepare the learner-side mirror before importing a worker snapshot."""
+        """Prepare all learner-side branches before importing a worker snapshot."""
         source = ShadowSnapshotV1.from_bytes(raw_snapshot)
         address = source.payload["address"]
-        self.environment.reset(seed=int(address["episode_seed"]))
+        for environment in (
+            self.environment, self.student_shadow, self.teacher_shadow,
+        ):
+            environment.reset(seed=int(address["episode_seed"]))
         snapshot = rebind_snapshot_rng_guard(source)
         self.real_adapter.restore(snapshot)
         return snapshot
