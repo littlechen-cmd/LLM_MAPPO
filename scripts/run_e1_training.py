@@ -36,6 +36,12 @@ def _arguments():
     parser.add_argument("--resume")
     parser.add_argument("--stop-at", type=int, help="Diagnostic interruption boundary.")
     parser.add_argument("--diagnostic-rollout-steps", type=int)
+    parser.add_argument(
+        "--reward-version",
+        choices=("legacy-v1", "reward-v2"),
+        default="reward-v2",
+        help="Versioned environment reward contract; R1 defaults to Reward-v2.",
+    )
     parser.add_argument("--smoke", action="store_true")
     return parser.parse_args()
 
@@ -53,10 +59,12 @@ def main():  # noqa: C901
     labels = load_e1_raw_semantic_evidence(args.records)
     identity = {"code_commit": _commit(), "governance_sha256": sha256(Path(args.governance).read_bytes()).hexdigest(),
                 "group": run.group, "seed": run.seed, "raw_records_sha256": labels.records_sha256,
-                "exploratory_noisy_teacher": True}
+                "exploratory_noisy_teacher": True,
+                "reward_version": args.reward_version}
     environment = {"environment_id": "llm-mappo-medium-3ag-v1", "n_agents": 5,
         "dynamic_ingress_interval": 40, "batch_size_range": [4, 8], "queue_size": 8,
         "task_target": 50, "max_steps": 1000, "deadlock_steps": 180,
+        "reward_version": args.reward_version,
         **manifest["route_profiles"]["optimization"]["energy"]}
     if args.diagnostic_rollout_steps is not None and args.stop_at is None and not args.resume:
         raise ValueError("Diagnostic rollout override requires --stop-at.")

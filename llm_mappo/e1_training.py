@@ -754,6 +754,7 @@ class E1Trainer:
             deadlock_steps=int(values["deadlock_steps"]), batch_interval=int(values["dynamic_ingress_interval"]),
             batch_size_range=tuple(values["batch_size_range"]), initial_priority_label="A",
             request_queue_size=int(values["queue_size"]), task_completion_target=int(values["task_target"]),
+            reward_version=str(values.get("reward_version", "legacy-v1")),
             observation_schema=ObservationSchema(self.run.observation_schema))
 
     def _semantic_batch(self, environment):

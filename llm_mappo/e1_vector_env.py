@@ -64,6 +64,7 @@ def _new_environment(values: Mapping[str, Any], run) -> Phase2Warehouse:
         batch_size_range=tuple(values["batch_size_range"]),
         initial_priority_label="A", request_queue_size=int(values["queue_size"]),
         task_completion_target=int(values["task_target"]),
+        reward_version=str(values.get("reward_version", "legacy-v1")),
         observation_schema=ObservationSchema(run.observation_schema),
     )
 

@@ -14,6 +14,14 @@ from llm_mappo.optimization_observation import (
     build_direct_goal_observation,
     build_no_goal_hint_observation,
 )
+from llm_mappo.reward_v2 import (
+    LEGACY_REWARD_V1,
+    REWARD_V2,
+    SUPPORTED_REWARD_VERSIONS,
+    RewardGoalSnapshot,
+    reward_v2_progress_deltas,
+    reward_v2_team_reward,
+)
 from rware.warehouse import Action
 
 
@@ -121,6 +129,7 @@ class Phase2Warehouse:
     battery_cost_scale: float = 1.0
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
+    reward_version: str = LEGACY_REWARD_V1
     include_waypoint_features: bool = True
     oracle_interaction_mask: bool = True
     priority_schedule: Optional[Sequence[str]] = None
@@ -164,6 +173,10 @@ class Phase2Warehouse:
             raise ValueError("Phase 2 requires at least one AGV.")
         if self.waypoint_reward < 0.0:
             raise ValueError("waypoint_reward must not be negative.")
+        if self.reward_version not in SUPPORTED_REWARD_VERSIONS:
+            raise ValueError(
+                "reward_version must be 'legacy-v1' or 'reward-v2'."
+            )
         if self.battery_cost_scale <= 0.0:
             raise ValueError("battery_cost_scale must be positive.")
         if not self.charge_threshold < self.charge_release_threshold <= 1.0:
@@ -255,8 +268,20 @@ class Phase2Warehouse:
 
         charging_targets = self._charging_targets()
         before = self._waypoint_distances(charging_targets)
+        reward_goals_before = self._reward_goal_snapshots(charging_targets)
+        task_weights = {
+            task.task_id: self.env.task_queue.priority_weight(task.label)
+            for task in self.env.task_queue.active_tasks
+        }
+        assigned_before = {
+            agent.id: self._assigned_task_reward_state(agent.id)
+            for agent in self.env.agents
+        }
         carrying_before = {
-            agent.id: agent.carrying_shelf is not None for agent in self.env.agents
+            agent.id: (
+                agent.carrying_shelf.id if agent.carrying_shelf is not None else None
+            )
+            for agent in self.env.agents
         }
         positions_before = {
             agent.id: (agent.x, agent.y) for agent in self.env.agents
@@ -266,20 +291,45 @@ class Phase2Warehouse:
         }
         raw_obs, rewards, terminated, truncated, info = self._env.step(actions)
         self._raw_observations = raw_obs
-        shaped_rewards = np.asarray(rewards, dtype=np.float32)
-        movement_rewards = self._movement_rewards(before, charging_targets)
-        shaped_rewards += movement_rewards
-        shaped_rewards -= 0.01
-        shaped_rewards += self._low_battery_penalties(actions)
+        low_battery_penalties = self._low_battery_penalties(actions)
         picked_tasks = sum(
-            not carrying_before[agent.id] and agent.carrying_shelf is not None
+            carrying_before[agent.id] is None and agent.carrying_shelf is not None
             for agent in self.env.agents
         )
+        if self.reward_version == REWARD_V2:
+            charging_targets_after = self._charging_targets()
+            reward_goals_after = self._reward_goal_snapshots(
+                charging_targets_after
+            )
+            progress_deltas = reward_v2_progress_deltas(
+                reward_goals_before, reward_goals_after
+            )
+            pickup_weights = self._successful_pickup_weights(
+                carrying_before, assigned_before
+            )
+            team_reward = reward_v2_team_reward(
+                raw_rewards=rewards,
+                events=info["events"],
+                task_weights=task_weights,
+                pickup_weights=pickup_weights,
+                progress_deltas=progress_deltas,
+                low_battery_penalties=low_battery_penalties,
+                legacy_blocked_forward_penalty=self.env.blocked_forward_penalty,
+            )
+            waypoint_progress = bool(np.any(progress_deltas > 0.0))
+        else:
+            shaped_rewards = np.asarray(rewards, dtype=np.float32)
+            movement_rewards = self._movement_rewards(before, charging_targets)
+            shaped_rewards += movement_rewards
+            shaped_rewards -= 0.01
+            shaped_rewards += low_battery_penalties
+            team_reward = float(np.mean(shaped_rewards))
+            waypoint_progress = bool(np.any(movement_rewards))
 
         self._update_metrics(
             info,
-            float(np.mean(shaped_rewards)),
-            bool(np.any(movement_rewards)),
+            team_reward,
+            waypoint_progress,
             picked_tasks,
             charging_targets,
             positions_before,
@@ -289,7 +339,7 @@ class Phase2Warehouse:
         observations = self._observations()
         return Phase2Step(
             observations=observations,
-            team_reward=float(np.mean(shaped_rewards)),
+            team_reward=team_reward,
             terminated=bool(
                 terminated
                 or (
@@ -696,6 +746,61 @@ class Phase2Warehouse:
             target, _ = self._target_for_agent(agent.id, charging_targets)
             distances.append(abs(target[0] - agent.x) + abs(target[1] - agent.y))
         return distances
+
+    def _reward_goal_snapshots(
+        self, charging_targets: Dict[int, Tuple[int, int]]
+    ) -> List[RewardGoalSnapshot]:
+        snapshots = []
+        for agent in self.env.agents:
+            target, target_kind = self._target_for_agent(
+                agent.id, charging_targets
+            )
+            task = self.env.task_queue.task_for_agent(agent.id)
+            if target_kind == "task" and task is not None:
+                entity = ("task_id", task.task_id)
+            elif target_kind == "delivery" and agent.carrying_shelf is not None:
+                entity = ("shelf_id", agent.carrying_shelf.id)
+            elif target_kind == "charging":
+                entity = ("station", target[0], target[1])
+            else:
+                entity = ("agent_id", agent.id)
+            snapshots.append(
+                RewardGoalSnapshot(
+                    identity=(target_kind, *entity, target[0], target[1]),
+                    coordinate=(int(target[0]), int(target[1])),
+                    distance=abs(target[0] - agent.x) + abs(target[1] - agent.y),
+                )
+            )
+        return snapshots
+
+    def _assigned_task_reward_state(self, agent_id: int) -> Optional[dict]:
+        task = self.env.task_queue.task_for_agent(agent_id)
+        if task is None:
+            return None
+        return {
+            "task_id": task.task_id,
+            "shelf_id": task.shelf_id,
+            "weight": self.env.task_queue.priority_weight(task.label),
+        }
+
+    def _successful_pickup_weights(
+        self,
+        carrying_before: Dict[int, Optional[int]],
+        assigned_before: Dict[int, Optional[dict]],
+    ) -> Dict[int, float]:
+        weights = {}
+        for agent in self.env.agents:
+            assigned = assigned_before[agent.id]
+            carried = (
+                agent.carrying_shelf.id if agent.carrying_shelf is not None else None
+            )
+            if (
+                carrying_before[agent.id] is None
+                and assigned is not None
+                and carried == assigned["shelf_id"]
+            ):
+                weights[agent.id] = float(assigned["weight"])
+        return weights
 
     def _movement_rewards(
         self,

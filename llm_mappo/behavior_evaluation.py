@@ -92,6 +92,7 @@ def _environment_from_config(config: Dict[str, object]) -> Phase2Warehouse:
         charge_release_threshold=float(config.get("charge_release_threshold", 0.8)),
         battery_cost_scale=float(config.get("battery_cost_scale", 1.0)),
         waypoint_reward=float(config.get("waypoint_reward", 0.01)),
+        reward_version=str(config.get("reward_version", "legacy-v1")),
         oracle_interaction_mask=bool(config.get("oracle_interaction_mask", True)),
         deadlock_steps=int(config.get("deadlock_steps", 180)),
         priority_schedule=(

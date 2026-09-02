@@ -285,6 +285,7 @@ class ShadowStateAdapter:
                 "battery_cost_scale": environment.battery_cost_scale,
                 "deadlock_steps": environment.deadlock_steps,
                 "waypoint_reward": environment.waypoint_reward,
+                "reward_version": environment.reward_version,
                 "observation_schema": environment.observation_schema.value,
                 "oracle_interaction_mask": environment.oracle_interaction_mask,
                 "batch_interval": environment.batch_interval,

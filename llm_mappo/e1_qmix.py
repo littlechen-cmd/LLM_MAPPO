@@ -40,6 +40,7 @@ class E1QMIXDGTrainer:
             batch_interval=int(self.values["dynamic_ingress_interval"]),
             batch_size_range=tuple(self.values["batch_size_range"]), initial_priority_label="A",
             request_queue_size=int(self.values["queue_size"]), task_completion_target=int(self.values["task_target"]),
+            reward_version=str(self.values.get("reward_version", "legacy-v1")),
             observation_schema=ObservationSchema.DIRECT_GOAL_V1,
         )
         self.rng = np.random.default_rng(int(run.seed))

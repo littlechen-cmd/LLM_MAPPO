@@ -2,6 +2,15 @@
 
 ## 2026-09-02
 
+- Added: R1-B freezes and implements versioned Reward-v2. Task completion is
+  now an undiluted team `+10W`, pickup is local `+2W`, same-goal progress is
+  signed `0.1(d_t-d_{t+1})`, target switches suppress progress, blocked forward
+  is local `-0.15`, and the team step cost remains `-0.01`. Existing collision
+  and energy terms are preserved.
+- Changed: Optimization training now defaults to `reward-v2`, while explicit
+  `legacy-v1` remains available only for the R1-C causal control. The reward
+  version is bound into run and shadow identities to prevent cross-version
+  resume or Reward Calibration branch mixing.
 - Fixed: R1-A now records terminal episodes independently for every spawned
   environment worker, builds final summaries from the latest 100 complete
   episodes, and fails closed when a required non-smoke run has no episode
@@ -18,8 +27,7 @@
   completion with no training-seed mean below 85%.
 - Changed: Paused the existing 65-run E2 matrix and reclassified
   `e2_formal_vector16_7de1f04` as diagnostic-only evidence. The reward redesign
-  direction is recorded, but implementation remains blocked until the owner
-  provides and approves the formal reward contract.
+  was subsequently frozen and implemented as Reward-v2 in R1-B.
 - Changed: Updated the technical contract and terminology to distinguish the
   old 128-step rollout from R1's 32-step candidate, and defined complete
   episodes, convergence trends, capability gates, TensorBoard review and

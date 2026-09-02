@@ -2,7 +2,7 @@
 
 ## 文档与身份
 
-- [ ] R1-B 正式奖励公式、系数、目标切换和充电目标边界已获研究所有者批准。
+- [x] R1-B Reward-v2 公式、系数、目标切换和充电目标边界已获研究所有者批准并实现。
 - [ ] 所有 R1 run 绑定唯一 commit、配置、环境、seed 与 checkpoint。
 - [ ] R1 seed 未进入 E2 正式统计；旧 `e2_formal_vector16_7de1f04` 保持 diagnostic-only。
 
@@ -13,6 +13,13 @@
 - [x] TensorBoard 显示完整 episode 完成率、任务数、reward、碰撞和优化指标。
 - [x] RC 中断恢复完整保留 calibration EMA、计步、worker、RNG 和 learner 状态。
 - [x] worker 异常可传播至主进程且所有子进程退出；失败运行不能标记 complete。
+
+## Reward-v2
+
+- [x] 完成奖励是未除以 AGV 数的团队 `+10W`，成功取货是局部 `+2W`。
+- [x] 同目标距离变化为有符号 `0.1(d_t-d_{t+1})`，目标切换当步为 0。
+- [x] 阻塞、碰撞、单步成本、NOOP 和既有能源项与正式合同一致。
+- [x] `legacy-v1/reward-v2` 可显式选择且进入 shadow/运行身份；优化入口默认 Reward-v2。
 
 ## R1-C 因果诊断
 
