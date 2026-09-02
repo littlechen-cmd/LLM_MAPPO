@@ -158,8 +158,10 @@
   恢复及日志/checkpoint 一致边界；
 - [x] R1-B：冻结并实现 Reward-v2；完成任务采用不被 AGV 均值稀释的团队 `+10W`，取货采用
   局部 `+2W`，距离采用目标不变时的有符号 `0.1Δd`，并完成奖励版本/恢复身份隔离与回归；
-- [ ] R1-C：使用 seed `9107` 完成新奖励-only、`16×32`-only、组合方案三个 50k 诊断；优先
-  复用 3 AGV/目标 9/动态入库简单环境，不可用时使用 canonical 环境；
+- [ ] R1-C0：建立独立 R1 runner、4-AGV LowLoad profile、环境/checkpoint身份校验及可加载E1
+  checkpoint的确定性评估与replay接口；不得改E1 formal matrix或新增Gym topology；
+- [ ] R1-C1：在同一4-AGV LowLoad、seed `9107`、50k预算下完成
+  `legacy/reward-v2 × 16×128/16×32` 四个MAPPO-DG scratch诊断；
 - [ ] R1-C-V：每个诊断完成后生成 TensorBoard、固定评估图、固定 replay 和最低完成率失败
   replay，暂停等待研究所有者检查；
 - [ ] R1-D：在 canonical 5 AGV/目标 50 环境训练 MAPPO-DG 至 50k/100k/150k；不设完成率

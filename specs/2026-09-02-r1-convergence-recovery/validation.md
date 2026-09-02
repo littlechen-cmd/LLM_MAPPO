@@ -23,10 +23,16 @@
 
 ## R1-C 因果诊断
 
-- [ ] 旧失败证据作为基线，未重复消耗一轮相同训练。
-- [ ] 新奖励-only、`16×32`-only、组合方案使用相同 seed、预算、环境和评估集。
-- [ ] 若使用简单环境，已证明它是现有 3 AGV/目标 9/动态入库环境；不可用时直接使用 canonical。
-- [ ] 每项结束后均生成 TensorBoard、定量图和两类 replay，并取得 owner 继续结论。
+- [ ] 四组均绑定同一4-AGV LowLoad profile/layout hash、seed `9107`、50k预算、初始参数hash、
+  worker seed派生规则、初始环境RNG和evaluation seeds `9300–9304`。
+- [ ] profile 同时冻结 `initial_priority_label=A`、无额外 priority schedule，以及现有充耗电机制；
+  不得为LowLoad新增任务限流或修改动作掩码。
+- [ ] `legacy/reward-v2 × 16×128/16×32` 四格完整；旧 5-AGV 产物未冒充同环境 control。
+- [ ] 四组均仅运行 MAPPO-DG、从零初始化，未启用教师、跨组恢复或 4→5 checkpoint 迁移。
+- [ ] run/checkpoint identity 包含完整环境 hash；跨 AGV 数、负载、奖励或 rollout 恢复 fail closed。
+- [ ] 每组至少40个完整episode，最后20个平均完成率高于最早20个；否则不得声称向好趋势。
+- [ ] 每项结束后均生成TensorBoard、固定评估、seed9300与最低完成率replay；有成功episode时
+  另生成成功replay，无成功时显式记录unavailable；每项均取得owner继续结论。
 
 ## 能力 Gate
 

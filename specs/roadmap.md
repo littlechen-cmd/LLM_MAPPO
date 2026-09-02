@@ -157,8 +157,9 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
   MAPPO-DG 基础学习趋势，并使无 LLM 的 RC-AStarKD 达到 canonical 环境任务完成率门槛。
 - R1-B 已冻结并实现 Reward-v2：完成任务为团队 `+10W`，成功取货为局部 `+2W`，同目标距离
   塑形为有符号 `0.1Δd`；旧奖励只保留给 R1-C 因果对照。
-- R1-C 优先复用现有 3 AGV、目标 9、动态入库简单环境快速诊断；不可用时使用 canonical
-  5 AGV、目标 50 环境。简单环境结果不能替代最终 canonical 验收。
+- R1-C 固定使用同一正式拓扑上的 4-AGV LowLoad profile，以严格
+  `legacy/reward-v2 × 16×128/16×32` 四格 MAPPO-DG scratch 诊断隔离奖励与更新节奏。
+  LowLoad 不是 curriculum stage，checkpoint 不迁移；结果不能替代最终 5-AGV canonical Gate。
 - 每个测试训练完成后必须生成 TensorBoard、固定评估图与确定性 replay，并暂停交由研究所有者
   人工检查。
 - Gate：MAPPO-DG 不设完成率硬门，只要求完整 episode 指标形成向好趋势；RC-AStarKD 在三个

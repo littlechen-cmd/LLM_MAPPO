@@ -168,6 +168,10 @@
 | Reward-v2 | 新的“得分规则”，让真正完成搬运远比来回移动更有价值。 | R1 冻结的版本化团队奖励：完成任务为团队 `+10W`，成功取货为局部 `+2W`，同目标距离变化为有符号 `0.1Δd`，并保留碰撞与能源项。 | R1-C 及后续优化训练默认使用；旧 `legacy-v1` 只作为因果对照。 |
 | Goal Switch（目标切换） | 机器人刚取货、刚送达或转去充电时，“要去哪里”发生了变化。 | 相邻 transition 的 DirectGoal 身份发生变化，包括任务、送达目标或充电站变化。 | Reward-v2 在切换当步把距离进展设为 0，避免新旧目标距离不可比却产生虚假奖励。 |
 | Reward Version Identity（奖励版本身份） | 给每次训练注明用了哪套得分规则。 | 纳入 run manifest、shadow 配置 hash 与恢复校验的不可变奖励版本字段。 | 防止 Reward-v2 训练误接 legacy checkpoint，也防止 RC 两个影子分支使用不同奖励。 |
+| LowLoad Profile（低负载配置） | 地图不变，但减少同时到来的任务，让机器人先证明基本任务链能学会。 | 保持 topology/action/observation/reward 不变，只降低任务到达与队列压力的诊断环境参数集。 | R1-C 固定为4 AGV、batch 2–4、target20；只用于诊断，不是最终环境。 |
+| `2×2` Diagnostic | 用四组实验分别组合两种奖励和两种更新节奏。 | 两个二水平因素的完整四格诊断设计，可在同一环境下计算主效应及交互线索。 | 避免把旧5 AGV结果当作4 AGV control；R1-C四组均为MAPPO-DG。 |
+| Curriculum（课程训练） | 先学简单任务，再逐步进入困难任务。 | 按预注册 difficulty schedule 跨环境阶段训练，并把所有阶段交互计入总预算。 | R1-C暂不采用；仅在5 AGV Formal scratch失败且5 AGV LowLoad成功后考虑。 |
+| Warm Start（预训练初始化） | 用已经学过的模型作为新训练起点。 | 从其他run载入部分或全部policy参数，而非随机初始化。 | R1-C/D/E暂禁使用4 AGV warm start，避免污染教师效应和scratch主张。 |
 
 ## 9. 术语维护规则
 

@@ -39,7 +39,7 @@ R1 插入 E1 与 E2 正式训练之间，用于解决当前策略任务完成率
 ## 4. Reward-v2 正式合同
 
 研究所有者已批准 Reward-v2。它只改变奖励，不改变环境动力学、动作/观测、Student、A*、RC 或
-LLM。对 5 AGV 环境，一个真实环境步的团队奖励固定为：
+LLM。对任意 `N` 个 AGV，一个真实环境步的团队奖励固定为：
 
 `10 × Σ完成任务W + mean_i(0.1Δd_i + 2W_i I_pickup - 0.15I_blocked - 2I_collision + r_i_energy) - 0.01`
 
@@ -55,10 +55,21 @@ LLM。对 5 AGV 环境，一个真实环境步的团队奖励固定为：
 
 ## 5. 快速诊断环境
 
-R1-C 优先复用现有的 3 AGV、任务目标 9、动态入库简单环境进行快速因果诊断。该环境仅用于
-比较奖励和更新节奏，不构成 R1 最终验收环境。如果该环境在当前代码中不存在、接口不兼容或
-无法产生同口径完整 episode 指标，则直接使用 canonical 5 AGV、任务目标 50、动态入库环境，
-不得为此另建第三套环境。
+R1-C 唯一诊断环境为 canonical medium formal topology 上的 `4-AGV LowLoad` profile：
+
+- `n_agents=4`、`batch_size_range=[2,4]`、`queue_size=4`、`task_target=20`；
+- `dynamic_ingress_interval=40`、`max_steps=1000`、`deadlock_steps=180`；
+- `initial_priority_label=A`，不设置额外 `priority_schedule`；
+- 电量配置 `battery_cost_scale=1.10`、`charge_threshold=0.30`、
+  `charge_release_threshold=0.80`；
+- DirectGoal、动作空间、动作掩码、优先级语义、地图布局与正式 5-AGV 环境一致。
+
+`queue_size=4` 不是活动任务硬上限。两个初始批次各产生 2–4 个任务，因此初始活动任务为
+4–8 个；之后每 40 步继续加入 2–4 个任务。R1-C 不新增限流规则或 Gym topology ID。
+
+4 AGV 正好让每台机器人拥有三个真实 peer，填满 semantic-view-v3 的三个匿名邻居槽；相较旧
+3-AGV/目标9诊断，它与正式 5-AGV 观测分布更接近。该 profile 仅用于可学习性和条件效应诊断，
+不构成 curriculum stage、warm start 或最终论文验收环境。
 
 最终 RC-AStarKD 能力验收始终优先使用 canonical 5 AGV、目标 50 环境。若必须退回简单环境
 作为最终论文环境，须由研究所有者另行批准并同步缩小论文主张。
@@ -73,3 +84,23 @@ R1-C 优先复用现有的 3 AGV、任务目标 9、动态入库简单环境进�
   指标。
 - 默认训练预算为 150k 累计 joint environment transitions。若 RC 在 150k 未达门槛但曲线仍
   明确向好，可经研究所有者批准延长到 300k；低水平停滞不得仅靠增加预算解决。
+
+## 7. R1-C 允许主张
+
+R1-C 是单 seed、50k 步的 diagnostic `2×2`，不进入论文正式统计。四个 MAPPO-DG arm 在相同
+4-AGV LowLoad、Actor/Critic初始参数hash、训练seed `9107`、worker seed派生规则、初始环境RNG、
+预算和评估集下运行。策略行为分化后不要求各环境维持逐步相同随机轨迹：
+
+1. `legacy-r128`：`legacy-v1 + 16×128`；
+2. `reward-v2-r128`：`reward-v2 + 16×128`；
+3. `legacy-r32`：`legacy-v1 + 16×32`；
+4. `reward-v2-r32`：`reward-v2 + 16×32`。
+
+旧 5-AGV 失败产物只作背景证据，不能替代上述任一 arm。四组不得加载彼此 checkpoint，不启用
+A*、RC 或 LLM 教师，也不得把 4-AGV checkpoint 迁移到 R1-D/E。R1-C 只允许判断该诊断环境中
+reward 与更新节奏的可学习性和条件效应，不允许宣称正式 5-AGV 性能或 curriculum 有效。
+
+R1-C 的唯一配置、runner 和 artifact root 分别为
+`configs/optimization/r1_4agv_lowload.yaml`、`scripts/run_r1_diagnostics.py` 与
+`artifacts/optimization/r1_convergence/r1c_4agv_lowload/`。每个arm必须在manifest记录profile、
+layout、代码、初始参数与评估身份，禁止依靠目录名推断实验条件。

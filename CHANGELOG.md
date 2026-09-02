@@ -2,6 +2,13 @@
 
 ## 2026-09-02
 
+- Planned: Replaced the former 3-AGV R1-C diagnostic with a 4-AGV LowLoad
+  profile on the formal topology and expanded the reward/cadence comparison to
+  a strict four-cell `2×2`. R1-C remains MAPPO-DG scratch-only; 4-AGV
+  checkpoints cannot initialize the 5-AGV capability Gate.
+- Planned: Added environment-identity, E1 deterministic evaluation and replay
+  prerequisites before R1-C. Curriculum is deferred until 5-AGV Formal scratch
+  fails and a separate 5-AGV LowLoad diagnosis supports a load bottleneck.
 - Added: R1-B freezes and implements versioned Reward-v2. Task completion is
   now an undiluted team `+10W`, pickup is local `+2W`, same-goal progress is
   signed `0.1(d_t-d_{t+1})`, target switches suppress progress, blocked forward
