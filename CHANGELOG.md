@@ -8,6 +8,11 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 - Added: S1 history-diff audit and minimal recovery plan trace the pre-`f6f0650` A*
   baseline `119f20d`, reduce the divergence to five behavioral deltas, and smoke-verify
   `--reservation-mode legacy --coordinator-yield-action right` restores the legacy gate.
+- Added: S1 frozen config `configs/s1_phase3_dynamic_ingress.yaml` (3 AGV, target 9,
+  dynamic ingress, `1.10/0.30/0.80`) plus freeze-assertion, legacy terminal-reservation,
+  and coordinator-yield regression tests; frozen-config smoke passes the gate.
+- Changed: S1 owner-run commands now target the Linux server (`lzx@10.181.115.40`) with
+  `nohup`, logs to `/home/lzx/`, and GPU/memory inspection before long jobs.
 
 ## 2026-08-24
 
