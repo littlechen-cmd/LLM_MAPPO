@@ -63,6 +63,20 @@ def test_s1_coordinator_yield_action_right_restores_legacy_turn():
     assert list(noop) == [Action.NOOP.value, Action.NOOP.value]
 
 
+def test_s2_predecision_config_freezes_contract_with_astar_llm_kd():
+    config = Phase3TrainingConfig.from_yaml(
+        "configs/s2_phase3b_dynamic_ingress_astar_kl.yaml"
+    )
+    assert config.n_agents == 3
+    assert config.task_completion_target == 9
+    assert config.battery_cost_scale == 1.1
+    assert config.charge_threshold == 0.3
+    assert config.charge_release_threshold == 0.8
+    assert config.phase == "3b"
+    assert config.astar_kl_enabled is True
+    assert config.ppo.engagement_coefficient == 0.1
+
+
 class _FakeAgent:
     def __init__(self, x, y, direction):
         self.x = x

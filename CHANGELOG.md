@@ -13,6 +13,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
   and coordinator-yield regression tests; frozen-config smoke passes the gate.
 - Changed: S1 owner-run commands now target the Linux server (`lzx@10.181.115.40`) with
   `nohup`, logs to `/home/lzx/`, and GPU/memory inspection before long jobs.
+- Added: S2 predecision training config `configs/s2_phase3b_dynamic_ingress_astar_kl.yaml`
+  (frozen contract + full MAPPO-WP+A*KD+LLMKD) and its owner-run command, isolated to
+  `artifacts/stable/predecision/` with predeclared non-formal seeds.
 
 ## 2026-08-24
 

@@ -123,3 +123,38 @@ python -c "import json;d=json.load(open('artifacts/stable/s1_acceptance/run_<ts>
 
 不依据 smoke 或单次验收声称 S1 通过；不主张复现 99.72%；不主张未见拓扑或 8-AGV 泛化；不把
 S2 预备结果计入最终统计。
+
+## 9. S2 决策前预备训练（仅 S1 通过后启动）
+
+- 启动条件：S1 验收通过、稳定路线配置已冻结、Linux 服务器 GPU 0 空闲。
+- 隔离：产物写入 `artifacts/stable/predecision/`；结果不参与路线选择、不进入最终统计、不作为论文
+  正式实验；若最终正式实验，必须按冻结协议从头重跑。
+- seed：预声明且与正式 seed（`7/17/27/37/47`）不同。提议 `1/11/21` 三个诊断 seed，请研究所有者
+  确认后再跑（本命令仅为链路验证与资源估算）。
+
+运行前检查 GPU（仅用 GPU 0，不得占用他人进程）：
+
+```bash
+nvidia-smi; free -g; uptime
+```
+
+```bash
+cd /home/lzx/llm-a-mappo
+for S in 1 11 21; do
+  OUT=artifacts/stable/predecision/mappo_wp_astar_llm_kd/seed_$S
+  mkdir -p $OUT
+  nohup /home/lzx/.conda/envs/llm-a-mappo-py310/bin/python \
+    train/train_phase3.py \
+    --config configs/s2_phase3b_dynamic_ingress_astar_kl.yaml \
+    --seed $S --episodes 200 --device cuda --parallel-envs 12 \
+    --output-dir $OUT \
+    > /home/lzx/s2_predecision_seed_$S.log 2>&1 &
+  echo $! > /home/lzx/s2_predecision_seed_$S.pid
+done
+```
+
+- 变体：`configs/s2_phase3b_dynamic_ingress_astar_kl.yaml` 为完整方法（MAPPO-WP + A*KD + LLMKD，
+  `reservation_kl_coefficient: 0.05`、`engagement_coefficient: 0.10`）。
+- 预算：每 seed 200 episodes（资源估算用）；正式预算由 E1 冻结，不由 S2 决定。
+- 检查：训练结束后核对 `episodes.csv`/`updates.csv`/`summary.json` 与 `checkpoint_final.pt` 存在、
+  无 NaN/Inf；GPU 显存峰值与 wall-clock 记录进资源估算。
