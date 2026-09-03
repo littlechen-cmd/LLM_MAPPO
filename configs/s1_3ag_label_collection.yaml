@@ -1,0 +1,51 @@
+environment:
+  id: llm-mappo-medium-3ag-v1
+  n_agents: 3
+  max_steps: 1000
+  battery_cost_scale: 1.1
+  charge_threshold: 0.3
+  charge_release_threshold: 0.8
+  waypoint_reward: 0.01
+  oracle_interaction_mask: true
+  deadlock_steps: 180
+  batch_interval: 40
+  batch_size_range: [1, 3]
+  initial_priority_label: A
+  priority_schedule: null
+  request_queue_size: 4
+  task_completion_target: 9
+
+training:
+  phase: 3a
+  seed: 7
+  training_seed_groups: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]
+  device: cpu
+  torch_num_threads: 1
+  episodes: 1000
+  rollout_steps: 512
+  checkpoint_interval: 200
+  metrics_write_interval: 20
+  output_dir: artifacts/stable/s1_label_collection
+
+label_sampling:
+  normal_transport: 120
+  priority_conflict: 100
+  narrow_corridor_yield: 80
+  low_battery_diversion: 60
+  station_exit_congestion: 40
+
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  value_coefficient: 0.5
+  entropy_coefficient: 0.01
+  learning_rate: 0.0003
+  max_grad_norm: 0.5
+  update_epochs: 4
+  minibatch_steps: 64
+  engagement_coefficient: 0.10
+  reservation_kl_coefficient: 0.0
+  reservation_kl_decay_interval: 2000
+  reservation_kl_decay_factor: 0.90
+  reservation_kl_minimum: 0.0

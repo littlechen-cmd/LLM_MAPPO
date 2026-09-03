@@ -19,6 +19,9 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 - Added: E1 protocol-freeze draft (`docs/handoffs/e1-protocol-freeze-draft.md`) records the
   D1 stable-route decision rationale, the E1 freeze checklist, the stable comparison matrix,
   and three open gaps (3-AGV offline-LLM labels, 3-AGV formal configs, server GitHub SSH).
+- Added: 3-AGV offline-LLM 2D label collection config `configs/s1_3ag_label_collection.yaml`
+  (frozen env + `label_sampling` quotas) for regenerating the historical
+  `task_commitment`/`local_assertiveness` dataset at the 3-AGV stable contract.
 
 ## 2026-08-24
 
