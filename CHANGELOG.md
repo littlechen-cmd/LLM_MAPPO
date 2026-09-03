@@ -22,6 +22,10 @@ changes. Completing a `TASKS.md` subtask requires a matching entry here.
 - Added: 3-AGV offline-LLM 2D label collection config `configs/s1_3ag_label_collection.yaml`
   (frozen env + `label_sampling` quotas) for regenerating the historical
   `task_commitment`/`local_assertiveness` dataset at the 3-AGV stable contract.
+- Added: regenerated 3-AGV 2D label datasets (LLM 400 + RuleKD 400, `artifacts/stable/labels/`)
+  and six 3-AGV formal training configs `configs/stable_*.yaml` (MAPPO-WP / +A*KD / +LLMKD /
+  +A*KD+LLMKD / RuleKD / NoWP) with `environment_step_budget: 150000` and freeze-assertion tests;
+  E1 freeze checklist now records the frozen budget and resolved label/config gaps.
 
 ## 2026-08-24
 

@@ -20,12 +20,12 @@
 | 1 | 代码 commit | `codex/stable` 在 E1 结束时的 `git rev-parse HEAD`（当前 `bf08c5f`，S2 后前移） | 待 E1 定格 |
 | 2 | 环境 | 3 AGV、任务目标 9、动态入库（`batch_interval 40`、`batch_size_range [1,3]`）、能源 `1.10/0.30/0.80` | 已冻结（S1） |
 | 3 | A* 教师语义 | legacy 行为：`reservation_mode=legacy` + `coordinator_yield_action=right`；只提供路径/运动先验，不做任务分配/优先级/充电决策 | 已冻结（S1） |
-| 4 | 离线 LLM 教师语义 | 二维 `task_commitment`/`local_assertiveness`，整记录 validity×共享 OOD reliability | **缺口 #1（3-AGV 数据集）** |
+| 4 | 离线 LLM 教师语义 | 二维 `task_commitment`/`local_assertiveness`，整记录 validity×共享 OOD reliability；3-AGV 数据集已生成（`deepseek_medium_3ag_400_v2.jsonl`，400 条） | 已解决 |
 | 5 | 规则层 | 任务队列、合法目标、固定阈值充电安全、动作合法性与硬约束；不输出逐步动作/不分配 AGV | 已冻结 |
 | 6 | 奖励 | 环境代码 + `waypoint_reward 0.01`、优先级奖励 `5.0*priority_weight`、team reward；训练/执行零在线 LLM | 由代码 commit 冻结 |
 | 7 | 训练 seed | 核心 2×2 与 RuleKD 各 `7/17/27/37/47`；NoWP 诊断 `7/17/27` | 已定 |
 | 8 | 评估 seed | 正式评估 `200–209 × 20 episodes`，确定性动作 | 已定 |
-| 9 | 交互预算 | 正式环境 step/训练预算：**待定**（由 S2 资源估算 + 你决策；候选 `150000 steps` 见 manifest） | **待定** |
+| 9 | 交互预算 | 正式预算 **150000 env steps/seed**（S2 实测 ~75 steps/s，单 seed ≈33 min） | 已定 |
 | 10 | checkpoint 规则 | 统一 `checkpoint_final.pt`，禁止按结果选最佳 checkpoint | 已定 |
 | 11 | 日志 schema | `episodes.csv`/`updates.csv`/`summary.json`/`config.json`/`runtime.json` + 评估 `aggregate.json` | 已定 |
 | 12 | 失败处理 | 基础设施故障→同 seed 同配置重跑并保留记录；数值/安全失败（NaN/碰撞/能量死亡/死锁）→保留为结果，不静默重试 | 已定 |
@@ -55,32 +55,30 @@
 
 （QMIX 比较删除；Holm 校正按上述 4 项比较族，具体以你最终裁定为准。）
 
-## 3. 三个缺口与可选方案（需你决策）
+## 3. 缺口状态（已解决 2 / 待办 1）
 
-### 缺口 #1：离线 LLM 二维教师的 3-AGV 数据集
+### 缺口 #1：离线 LLM 二维教师的 3-AGV 数据集 —— ✅ 已解决
 
-- 现状：现有离线标签是 5-AGV Phase 4 数据集（`deepseek_medium_5ag_400_v2_repaired_r2.jsonl`，400 条）。
-- 方案 A（推荐先探）：确认 `OfflineSemanticTeacher` 的近邻检索是否 AGV 数无关；若观测特征与 AGV 数
-  解耦，可复用 5-AGV 标签（需审计其 observation 维度/特征语义）。
-- 方案 B：离线重新生成 3-AGV 二维标签集（一次性离线生成，训练/执行期仍零在线 LLM；需你的 LLM API 预算）。
-- 方案 C：从 5-AGV 标签中按场景类型抽取/降采样适配到 3-AGV（需验证标签一致性）。
-- 影响：MAPPO-WP+LLMKD、MAPPO-WP+A*KD+LLMKD、RuleKD 三个组的正式训练都依赖此数据集。
+- 已按方案 B 离线生成 3-AGV 二维标签：`artifacts/stable/labels/deepseek_medium_3ag_400_v2.jsonl`
+  （400 条，5 类配额 120/100/80/60/40，观测维度 615，provider `deepseek:deepseek-v4-flash`）。
+- 已派生 RuleKD 控制集：`artifacts/stable/labels/rule_kd_3ag_v1.jsonl`（400 条）。
+- LLM 标签 SHA-256：`a480360c981be11cc5390f899cd97e9e9b8ca4ee0007bb909479c94f81f0668f`。
 
-### 缺口 #2：正式实验冻结配置（3 AGV / 目标 9）
+### 缺口 #2：正式实验冻结配置（3 AGV / 目标 9）—— ✅ 已解决
 
-- 现状：`g3_core_*` / `g3_q2_*` 是 5 AGV/目标 50，与稳定路线不符。
-- 需为 §2.1 的 7 个组各建 3-AGV 冻结配置（基于 `s1_phase3_dynamic_ingress.yaml`（3a）与
-  `s2_phase3b_dynamic_ingress_astar_kl.yaml`（3b）扩展），并各配冻结断言测试。
-- 待 S2 验证训练链路后，由我逐个生成并提交你审核。
+- 已生成 6 个 3-AGV 冻结配置（`configs/stable_*.yaml`）：`mappo_wp`、`mappo_wp_astar_kd`、
+  `mappo_wp_llm_kd`、`mappo_wp_astar_llm_kd`、`rule_kd`、`mappo_no_wp`，均带
+  `environment_step_budget: 150000` 与冻结能源，并配冻结断言测试
+  （`tests/test_s1_stable_route.py::test_stable_formal_configs_freeze_the_contract`，5 项通过）。
 
-### 缺口 #3：服务器 GitHub SSH
+### 缺口 #3：服务器 GitHub SSH —— 待办
 
 - 现状：服务器 `git fetch` 报 `Permission denied (publickey)`。
 - 方案：服务器生成 ed25519 密钥 + 公钥加到 GitHub（步骤已给），或改用 HTTPS + token。
 
 ## 4. 下一步
 
-1. 你运行 S2 预备训练（GPU 0，seed `1/11/21` × 200），返回 `summary.json`/`episodes.csv`。
-2. 我基于 S2 结果出「训练链路 + 资源估算」结论，并定稿 §2 中「交互预算」。
-3. 你裁定三个缺口方案；我据此生成 §2.1 的 7 个冻结配置 + 冻结断言。
-4. 你正式记录 D1 决策与 E1 冻结结果到 `TASKS.md`/`CHANGELOG.md`（我可先备好文字）。
+1. 你正式记录 D1 决策（选稳定路线）与 E1 冻结结果到 `TASKS.md`/`CHANGELOG.md`（我可先备好文字）。
+2. 你同步 `codex/stable` 到服务器并跑正式训练（E2 核心 2×2 + RuleKD 各 `7/17/27/37/47`、NoWP
+   `7/17/27`，GPU 0，`nohup`，产物落 `artifacts/stable/formal_training/<slug>/seed_<NNN>/`）。
+3. 正式评估 `200–209 × 20`（确定性动作，`checkpoint_final.pt`），我逐 seed 分析。

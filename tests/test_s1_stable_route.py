@@ -77,6 +77,34 @@ def test_s2_predecision_config_freezes_contract_with_astar_llm_kd():
     assert config.ppo.engagement_coefficient == 0.1
 
 
+def test_stable_formal_configs_freeze_the_contract():
+    llm_ds = "artifacts/stable/labels/deepseek_medium_3ag_400_v2.jsonl"
+    rule_ds = "artifacts/stable/labels/rule_kd_3ag_v1.jsonl"
+    cases = {
+        "stable_mappo_wp": ("3a", False, False, 0.0, 0.0, None, True),
+        "stable_mappo_wp_astar_kd": ("3b", True, False, 0.05, 0.0, None, True),
+        "stable_mappo_wp_llm_kd": ("4", False, True, 0.0, 0.1, llm_ds, True),
+        "stable_mappo_wp_astar_llm_kd": ("4", True, True, 0.05, 0.1, llm_ds, True),
+        "stable_rule_kd": ("4", True, True, 0.05, 0.1, rule_ds, True),
+        "stable_mappo_no_wp": ("3a", False, False, 0.0, 0.0, None, False),
+    }
+    for name, (phase, astar, llm, kl, eng, dataset, wp) in cases.items():
+        config = Phase3TrainingConfig.from_yaml(f"configs/{name}.yaml")
+        assert config.n_agents == 3
+        assert config.task_completion_target == 9
+        assert config.battery_cost_scale == 1.1
+        assert config.charge_threshold == 0.3
+        assert config.charge_release_threshold == 0.8
+        assert config.environment_step_budget == 150000
+        assert config.phase == phase
+        assert config.astar_kl_enabled is astar
+        assert config.offline_llm_enabled is llm
+        assert config.ppo.reservation_kl_coefficient == kl
+        assert config.ppo.engagement_coefficient == eng
+        assert config.offline_semantic_dataset == dataset
+        assert config.include_waypoint_features is wp
+
+
 class _FakeAgent:
     def __init__(self, x, y, direction):
         self.x = x
