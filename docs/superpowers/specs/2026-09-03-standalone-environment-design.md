@@ -37,10 +37,12 @@ LLM_MAPPO/
   pyproject.toml
   README.md
   src/llm_mappo_env/
-    core/          # rware 地图、任务、AGV、动态入库与充电
-    adapter/       # Gym Phase2 环境、DirectGoal、动作掩码和指标
-    rewards/       # 唯一的 Reward-v2
-    rendering/     # headless 帧和 GIF
+    warehouse/     # 地图、任务、AGV、动态入库与充电
+    environment.py # Gymnasium 环境、动作掩码和 episode 指标
+    observation.py # 唯一的 DirectGoal 613D 观测
+    reward.py      # 唯一的团队奖励定义（当前为 Reward-v2）
+    rendering.py   # headless 帧和 GIF
+    config.py      # 环境配置加载与校验
     configs/       # 4-AGV LowLoad、5-AGV Formal
   scripts/
     run_random_policy.py
@@ -51,19 +53,19 @@ LLM_MAPPO/
     migration-map.md
 ```
 
-`core` 不依赖任何训练模块；`adapter` 只依赖 `core`；`rewards` 只依赖
-环境状态；`rendering` 只读取环境状态。这个单向依赖关系保证替换训练
-算法时不必触及环境代码。
+`warehouse` 不依赖训练模块；`environment.py` 只依赖 `warehouse`、
+`observation.py` 和 `reward.py`；`rendering.py` 只读取环境状态。这个
+单向依赖关系保证替换训练算法时不必触及环境代码。
 
 ## 迁移映射
 
 | 当前来源 | 新职责 | 迁移处理 |
 |---|---|---|
-| `rware/` | `core/` | 保留必要的 Gym 仓库动力学；移除与旧训练无关的包装 |
-| `llm_mappo/phase2.py` | `adapter/environment.py` | 仅保留 DirectGoal、动态任务、充电、动作掩码和 episode 指标 |
-| `llm_mappo/optimization_observation.py` | `adapter/observation.py` | 仅保留 DirectGoal 构建器与 613D 合同 |
-| `llm_mappo/reward_v2.py` | `rewards/reward_v2.py` | 原样迁移并删除 legacy 分支 |
-| `llm_mappo/visualization.py` | `rendering/headless.py` | 原样迁移，保持无 GUI |
+| `rware/` | `warehouse/` | 保留必要的 Gym 仓库动力学；移除与旧训练无关的包装 |
+| `llm_mappo/phase2.py` | `environment.py` | 仅保留 DirectGoal、动态任务、充电、动作掩码和 episode 指标 |
+| `llm_mappo/optimization_observation.py` | `observation.py` | 仅保留 DirectGoal 构建器与 613D 合同 |
+| `llm_mappo/reward_v2.py` | `reward.py` | 原样迁移并删除 legacy 分支 |
+| `llm_mappo/visualization.py` | `rendering.py` | 原样迁移，保持无 GUI |
 | 环境回归测试 | `tests/` | 只保留环境、奖励、观测、充电、任务和渲染测试 |
 
 ## 对外接口
