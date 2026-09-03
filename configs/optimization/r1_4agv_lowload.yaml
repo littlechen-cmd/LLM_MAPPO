@@ -1,0 +1,38 @@
+schema: r1c-4agv-lowload-v1
+artifact_root: artifacts/optimization/r1_convergence/r1c_4agv_lowload
+profile:
+  environment_id: llm-mappo-medium-3ag-v1
+  n_agents: 4
+  dynamic_ingress_interval: 40
+  batch_size_range: [2, 4]
+  queue_size: 4
+  task_target: 20
+  max_steps: 1000
+  deadlock_steps: 180
+  initial_priority_label: A
+  battery_cost_scale: 1.10
+  charge_threshold: 0.30
+  charge_release_threshold: 0.80
+  observation_schema: direct-goal-observation-v1
+training:
+  seed: 9107
+  real_environment_steps: 50000
+  num_env_workers: 16
+  update_epochs: 4
+  minibatch_steps: 64
+arms:
+  legacy-r128:
+    reward_version: legacy-v1
+    rollout_length: 128
+  reward-v2-r128:
+    reward_version: reward-v2
+    rollout_length: 128
+  legacy-r32:
+    reward_version: legacy-v1
+    rollout_length: 32
+  reward-v2-r32:
+    reward_version: reward-v2
+    rollout_length: 32
+evaluation:
+  seeds: [9300, 9301, 9302, 9303, 9304]
+  deterministic_policy: argmax

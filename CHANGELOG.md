@@ -2,6 +2,15 @@
 
 ## 2026-09-02
 
+- Added: R1-C0 now provides the isolated 4-AGV LowLoad `2×2` diagnostic
+  configuration and runner. Every run/checkpoint binds its full environment
+  profile, layout, reward version, rollout length, worker count, raw-label
+  evidence and initial parameter hash; incompatible resume is rejected.
+- Added: Each completed R1-C arm automatically writes TensorBoard evidence,
+  the pre-registered deterministic five-seed evaluation, fixed/lowest-case
+  headless GIF replays, an explicit unavailable-success marker when applicable,
+  and a complete-episode trend receipt for owner review.
+
 - Planned: Replaced the former 3-AGV R1-C diagnostic with a 4-AGV LowLoad
   profile on the formal topology and expanded the reward/cadence comparison to
   a strict four-cell `2×2`. R1-C remains MAPPO-DG scratch-only; 4-AGV

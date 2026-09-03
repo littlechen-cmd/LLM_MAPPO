@@ -29,16 +29,16 @@
 
 ### R1-C0：诊断基础设施
 
-- [ ] 增加独立配置 `configs/optimization/r1_4agv_lowload.yaml` 与 runner
+- [x] 增加独立配置 `configs/optimization/r1_4agv_lowload.yaml` 与 runner
   `scripts/run_r1_diagnostics.py`；不得修改 E1 formal matrix 或建立新的 Gym topology ID。唯一
   artifact root 为 `artifacts/optimization/r1_convergence/r1c_4agv_lowload/`。
-- [ ] 冻结 requirements 定义的 4-AGV LowLoad profile，并把完整环境配置、layout hash、奖励版本、
+- [x] 冻结 requirements 定义的 4-AGV LowLoad profile，并把完整环境配置、layout hash、奖励版本、
   worker 数和 rollout length 纳入 run/checkpoint/resume identity；跨 profile 恢复必须拒绝。
-- [ ] 补齐 E1 checkpoint 的确定性评估与 replay 接口，能够复建同一 4-AGV profile。始终输出
+- [x] 补齐 E1 checkpoint 的确定性评估与 replay 接口，能够复建同一 4-AGV profile。始终输出
   seed `9300` 固定回放和最低完成率回放；若五个评估 episode 中存在成功场景，再输出一段成功
   回放，否则显式记录 `successful_replay=unavailable`；最低完成率或成功场景并列时选择最小
   evaluation seed；不得用旧 Phase2/3 loader 代替。
-- [ ] 验证 4-AGV 的 613D/61D observation、三邻居无 padding、action mask、Critic、A* query=0、
+- [x] 验证 4-AGV 的 613D/61D observation、三邻居无 padding、action mask、Critic、A* query=0、
   16-worker stream/GAE 隔离和 Reward-v2 团队完成奖励不随 `N=4` 稀释。
 
 ### R1-C1：严格 `2×2` MAPPO-DG 诊断

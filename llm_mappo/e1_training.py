@@ -752,7 +752,8 @@ class E1Trainer:
             env_id=str(values["environment_id"]), charge_threshold=float(values["charge_threshold"]),
             charge_release_threshold=float(values["charge_release_threshold"]), battery_cost_scale=float(values["battery_cost_scale"]),
             deadlock_steps=int(values["deadlock_steps"]), batch_interval=int(values["dynamic_ingress_interval"]),
-            batch_size_range=tuple(values["batch_size_range"]), initial_priority_label="A",
+            batch_size_range=tuple(values["batch_size_range"]),
+            initial_priority_label=str(values.get("initial_priority_label", "A")),
             request_queue_size=int(values["queue_size"]), task_completion_target=int(values["task_target"]),
             reward_version=str(values.get("reward_version", "legacy-v1")),
             observation_schema=ObservationSchema(self.run.observation_schema))
