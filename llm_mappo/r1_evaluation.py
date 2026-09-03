@@ -15,6 +15,10 @@ from llm_mappo.optimization_student import O0StudentActor
 from llm_mappo.visualization import render_warehouse_frame
 
 
+_REPLAY_FRAME_STRIDE = 2
+_REPLAY_FRAME_DURATION_MS = 250
+
+
 def evaluate_r1c_checkpoint(
     *,
     directory: str | Path,
@@ -74,6 +78,8 @@ def evaluate_r1c_checkpoint(
         "checkpoint_sha256": _sha256(checkpoint_path),
         "identity": dict(identity),
         "policy": "deterministic_argmax",
+        "replay_frame_stride": _REPLAY_FRAME_STRIDE,
+        "replay_frame_duration_ms": _REPLAY_FRAME_DURATION_MS,
         "episodes": results,
         "mean_task_completion_rate": float(np.mean([
             item["metrics"]["task_completion_rate"] for item in results
@@ -103,7 +109,7 @@ def _episode(actor, values, run, dataset, seed, device, replay_path=None):
     try:
         observations = environment.reset(seed=seed)
         for step in range(int(values["max_steps"])):
-            if replay_path is not None and step % 10 == 0:
+            if replay_path is not None and step % _REPLAY_FRAME_STRIDE == 0:
                 frames.append(render_warehouse_frame(environment.env, cell_size=16))
             semantic, _, _, _ = _semantic_batch(environment, dataset, "none")
             masks = environment.action_masks()
@@ -141,7 +147,8 @@ def _write_gif(path: Path, frames: list[np.ndarray]) -> None:
     from PIL import Image
     images = [Image.fromarray(frame) for frame in frames]
     images[0].save(
-        path, save_all=True, append_images=images[1:], duration=100,
+        path, save_all=True, append_images=images[1:],
+        duration=_REPLAY_FRAME_DURATION_MS,
         loop=0, optimize=False,
     )
 

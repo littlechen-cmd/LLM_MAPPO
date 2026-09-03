@@ -122,7 +122,18 @@ def main():  # noqa: C901
         def update(metrics, runtime, episode_rows):
             state = trainer.schedule.state_dict(); step = state["global_env_steps"]
             update_row = {"real_env_steps": step,
-                **{key: metrics[key] for key in ("policy_loss", "value_loss", "entropy", "astar_loss", "semantic_loss", "semantic_valid_denominator", "num_env_workers", "rollout_length", "global_environment_steps", "environment_steps_per_second", "rollout_wall_time", "policy_inference_time", "ppo_update_time", "total_elapsed_time", "peak_cuda_memory_allocated", "peak_cuda_memory_reserved")},
+                **{key: metrics[key] for key in (
+                    "policy_loss", "value_loss", "entropy", "total_loss",
+                    "approx_kl", "clip_fraction", "explained_variance", "grad_norm",
+                    "learning_rate", "astar_loss", "astar_valid_rate",
+                    "calibration_sample_rate", "delta_g_mean",
+                    "delta_g_positive_rate", "rc_confidence_mean", "semantic_loss",
+                    "semantic_valid_rate", "semantic_reliability_mean",
+                    "semantic_valid_denominator", "num_env_workers", "rollout_length",
+                    "global_environment_steps", "environment_steps_per_second",
+                    "rollout_wall_time", "policy_inference_time", "ppo_update_time",
+                    "total_elapsed_time", "peak_cuda_memory_allocated",
+                    "peak_cuda_memory_reserved")},
                 "lambda_a": state["lambda_a"], "lambda_l": state["lambda_l"]}
             evidence = {"update_row": update_row,
                         "episode_rows": [dict(row) for row in episode_rows]}

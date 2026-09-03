@@ -24,8 +24,12 @@ class E1EvidenceWriter:
     """Compact formal artifact writer; full state/teacher arrays are prohibited."""
 
     _fields = {
-        "updates.csv": ("real_env_steps", "policy_loss", "value_loss", "entropy", "astar_loss",
-                        "semantic_loss", "semantic_valid_denominator", "lambda_a", "lambda_l",
+        "updates.csv": ("real_env_steps", "policy_loss", "value_loss", "entropy", "total_loss",
+                        "approx_kl", "clip_fraction", "explained_variance", "grad_norm",
+                        "learning_rate", "astar_loss", "astar_valid_rate", "lambda_a",
+                        "calibration_sample_rate", "delta_g_mean", "delta_g_positive_rate",
+                        "rc_confidence_mean", "semantic_loss", "semantic_valid_rate",
+                        "semantic_reliability_mean", "lambda_l", "semantic_valid_denominator",
                         "num_env_workers", "rollout_length", "global_environment_steps",
                         "environment_steps_per_second", "rollout_wall_time", "policy_inference_time",
                         "ppo_update_time", "total_elapsed_time", "peak_cuda_memory_allocated",
@@ -209,15 +213,40 @@ class E1TensorBoardWriter:
             "train/policy_loss": "policy_loss",
             "train/value_loss": "value_loss",
             "train/entropy": "entropy",
+            "train/total_loss": "total_loss",
+            "train/approx_kl": "approx_kl",
+            "train/clip_fraction": "clip_fraction",
+            "train/explained_variance": "explained_variance",
+            "train/grad_norm": "grad_norm",
+            "train/learning_rate": "learning_rate",
+            "teacher/astar_loss": "astar_loss",
+            "teacher/astar_valid_rate": "astar_valid_rate",
+            "teacher/astar_lambda": "lambda_a",
+            "teacher/calibration_sample_rate": "calibration_sample_rate",
+            "teacher/delta_g_mean": "delta_g_mean",
+            "teacher/delta_g_positive_rate": "delta_g_positive_rate",
+            "teacher/rc_confidence_mean": "rc_confidence_mean",
+            "teacher/semantic_loss": "semantic_loss",
+            "teacher/semantic_valid_rate": "semantic_valid_rate",
+            "teacher/semantic_reliability_mean": "semantic_reliability_mean",
+            "teacher/semantic_lambda": "lambda_l",
             "train/astar_loss": "astar_loss",
             "train/semantic_loss": "semantic_loss",
             "performance/environment_steps_per_second": "environment_steps_per_second",
+            "performance/rollout_seconds": "rollout_wall_time",
+            "performance/inference_seconds": "policy_inference_time",
+            "performance/ppo_update_seconds": "ppo_update_time",
             "performance/rollout_wall_time": "rollout_wall_time",
             "performance/policy_inference_time": "policy_inference_time",
             "performance/ppo_update_time": "ppo_update_time",
         }
         for tag, name in tags.items():
             self._writer.add_scalar(tag, float(row[name]), step)
+        self._writer.add_scalar(
+            "performance/gpu_memory_mb",
+            float(row["peak_cuda_memory_allocated"]) / (1024.0 * 1024.0),
+            step,
+        )
         self._writer.flush()
 
     def add_episode(self, row: Mapping[str, Any]) -> None:
@@ -229,9 +258,15 @@ class E1TensorBoardWriter:
             "episode/collisions": "collisions",
             "episode/deadlocked": "deadlocked",
             "episode/charging_exposure_rate": "charging_exposure_rate",
+            "episode/tasks_per_1000_steps": None,
+            "episode/episode_length": "steps",
+            "episode/blocked_forward": "blocked_forwards",
+            "episode/energy_deaths": "energy_deaths",
         }
         for tag, name in tags.items():
-            self._writer.add_scalar(tag, float(row[name]), step)
+            value = (1000.0 * float(row["completed_tasks"]) / max(float(row["steps"]), 1.0)
+                     if name is None else float(row[name]))
+            self._writer.add_scalar(tag, value, step)
         self._writer.flush()
 
     def close(self) -> None:

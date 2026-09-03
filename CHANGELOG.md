@@ -2,6 +2,11 @@
 
 ## 2026-09-02
 
+- Changed: R1/E1 TensorBoard now records PPO stability, complete-episode,
+  teacher/calibration, semantic-reliability and performance signals. R1-C
+  replay GIFs sample every two environment steps at 250 ms per frame, and an
+  evaluation-only entry point can regenerate them without retraining.
+
 - Added: R1-C0 now provides the isolated 4-AGV LowLoad `2×2` diagnostic
   configuration and runner. Every run/checkpoint binds its full environment
   profile, layout, reward version, rollout length, worker count, raw-label

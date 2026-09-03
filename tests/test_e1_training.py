@@ -125,6 +125,12 @@ def test_e1_llm_updater_produces_nonzero_three_dimensional_loss():
 
     assert metrics["semantic_loss"] > 0.0
     assert metrics["semantic_valid_denominator"] == 4
+    assert {
+        "total_loss", "approx_kl", "clip_fraction", "explained_variance",
+        "grad_norm", "learning_rate", "astar_valid_rate",
+        "calibration_sample_rate", "rc_confidence_mean", "semantic_valid_rate",
+        "semantic_reliability_mean",
+    } <= set(metrics)
 
 
 def test_e1_checkpoint_rejects_missing_rng_or_raw_evidence_identity(tmp_path):

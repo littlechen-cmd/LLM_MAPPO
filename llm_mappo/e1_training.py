@@ -345,8 +345,26 @@ class E1PPOUpdater:
         )
         sums = {name: 0.0 for name in (
             "policy_loss", "value_loss", "entropy", "astar_loss", "semantic_loss",
-            "total_loss",
+            "total_loss", "approx_kl", "clip_fraction", "grad_norm",
         )}
+        with torch.no_grad():
+            predicted = self.critic(data.physical_observations)
+            return_variance = torch.var(data.returns, unbiased=False)
+            explained_variance = 0.0 if float(return_variance) == 0.0 else float(
+                1.0 - torch.var(data.returns - predicted, unbiased=False)
+                / return_variance
+            )
+        astar_valid_rate = float(data.astar_valid.float().mean())
+        calibration_sample_rate = float(data.calibration_selected.float().mean())
+        selected_confidence = data.reward_confidence[data.calibration_selected]
+        rc_confidence_mean = 0.0 if not len(selected_confidence) else float(
+            selected_confidence.mean()
+        )
+        semantic_valid = data.semantic_validity > 0.0
+        semantic_valid_rate = float(semantic_valid.float().mean())
+        semantic_reliability_mean = 0.0 if not bool(semantic_valid.any()) else float(
+            data.semantic_ood_reliability[semantic_valid].mean()
+        )
         denominator, count = 0, 0
         for _ in range(self.update_epochs):
             order = torch.randperm(len(rollout), device=self.device)
@@ -356,6 +374,7 @@ class E1PPOUpdater:
                 logits = output.action_logits.masked_fill(~data.action_masks[index], -1e9)
                 distribution = Categorical(logits=logits)
                 ratio = torch.exp(distribution.log_prob(data.actions[index]) - data.old_log_probs[index])
+                log_ratio = distribution.log_prob(data.actions[index]) - data.old_log_probs[index]
                 advantage = advantages[index].unsqueeze(-1)
                 policy_loss = -torch.minimum(
                     ratio * advantage, torch.clamp(ratio, 0.8, 1.2) * advantage
@@ -370,17 +389,33 @@ class E1PPOUpdater:
                     raise RuntimeError("E1 MAPPO produced a non-finite loss.")
                 self.optimizer.zero_grad(set_to_none=True)
                 total.backward()
-                torch.nn.utils.clip_grad_norm_(
+                grad_norm = torch.nn.utils.clip_grad_norm_(
                     list(self.actor.parameters()) + list(self.critic.parameters()), 0.5
                 )
                 self.optimizer.step()
-                values = (policy_loss, value_loss, distribution.entropy().mean(), astar_loss, semantic_loss, total)
+                approx_kl = ((ratio - 1.0) - log_ratio).mean()
+                clip_fraction = ((ratio - 1.0).abs() > 0.2).float().mean()
+                values = (
+                    policy_loss, value_loss, distribution.entropy().mean(),
+                    astar_loss, semantic_loss, total, approx_kl, clip_fraction,
+                    grad_norm,
+                )
                 for name, value in zip(sums, values):
                     sums[name] += float(value.detach().cpu())
                 denominator += active
                 count += 1
-        return {**{name: value / count for name, value in sums.items()},
-                "semantic_valid_denominator": denominator, "finite": 1}
+        return {
+            **{name: value / count for name, value in sums.items()},
+            "semantic_valid_denominator": denominator,
+            "explained_variance": explained_variance,
+            "learning_rate": float(self.optimizer.param_groups[0]["lr"]),
+            "astar_valid_rate": astar_valid_rate,
+            "calibration_sample_rate": calibration_sample_rate,
+            "rc_confidence_mean": rc_confidence_mean,
+            "semantic_valid_rate": semantic_valid_rate,
+            "semantic_reliability_mean": semantic_reliability_mean,
+            "finite": 1,
+        }
 
     def _astar_loss(self, data, logits, index, lambda_a):
         if self.method not in {"RC-AStarKD", "RC-AStarKD+LLMKD", "Fixed-AStarKD+LLMKD", "RuleKD-v3", "ShuffleKD-v3", "NoOOD-v1", "NoGoalHint-v1"}:
@@ -441,6 +476,7 @@ class E1Trainer:
         self.teacher_adapter = ShadowStateAdapter(self.teacher_shadow, code_commit="e1-vector-v1")
         self.vector_pool = None
         self._runtime = None
+        self._last_calibration_delta_g: float | None = None
         if self.device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(self.device)
 
@@ -472,6 +508,7 @@ class E1Trainer:
         rollout = E1Rollout(self.environment_values["n_agents"])
         pending_episodes: list[dict[str, Any]] = []
         metrics = {"semantic_loss": 0.0, "semantic_valid_denominator": 0}
+        calibration_deltas: list[float] = []
         for step in range(self.schedule.global_env_steps, max_steps):
             semantic, targets, valid_semantic, ood = self._semantic_batch(self.environment)
             masks = self.environment.action_masks()
@@ -479,6 +516,8 @@ class E1Trainer:
             preferences, valid_astar = self._teacher_batch(self.environment)
             confidence, selected = self._calibration(observations, valid_astar, episode_index,
                 episode_step, step, counts)
+            if self._last_calibration_delta_g is not None:
+                calibration_deltas.append(self._last_calibration_delta_g)
             transition = self.environment.step(actions)
             done = bool(transition.terminated or transition.truncated or transition.metrics.deadlocked)
             rollout.add(physical_observations=observations, semantic_observations=semantic,
@@ -512,6 +551,8 @@ class E1Trainer:
                 last = 0.0 if done else self._value(observations)
                 metrics = self.updater.update(rollout, last_value=last,
                     lambda_a=self.schedule.weights()[0], lambda_l=self.schedule.weights()[1])
+                metrics.update(self._calibration_metrics(calibration_deltas))
+                calibration_deltas.clear()
                 updates += 1
                 rollout = E1Rollout(self.environment_values["n_agents"])
                 self._runtime = self._capture_runtime(episode_index=episode_index,
@@ -551,6 +592,7 @@ class E1Trainer:
         pending_episodes: list[dict[str, Any]] = []
         vector_ticks = 0
         metrics = {"semantic_loss": 0.0, "semantic_valid_denominator": 0}
+        calibration_deltas: list[float] = []
         started = time.perf_counter()
         rollout_wall = policy_wall = update_wall = 0.0
         planner_queries = 0
@@ -590,6 +632,8 @@ class E1Trainer:
                         gamma=0.99, address=snapshot.payload["address"])
                     confidences[index] = 1.0 if self.run.astar_kd == "fixed" else float(result.confidence)
                     counts["shadow_calls"] += 1; counts["ema_updates"] += 1
+                    if result.delta_g is not None:
+                        calibration_deltas.append(float(result.delta_g))
                 elif self.calibrator is not None:
                     result = self.calibrator.record_delta_g(selected=bool(selected[index]), any_valid=bool(valid.any()), delta_g=0.0)
                     confidences[index] = 1.0 if self.run.astar_kd == "fixed" and selected[index] else float(result.confidence)
@@ -613,6 +657,8 @@ class E1Trainer:
                 update_started = time.perf_counter()
                 metrics = self.updater.update(rollout, last_value=bootstrap,
                     lambda_a=self.schedule.weights()[0], lambda_l=self.schedule.weights()[1])
+                metrics.update(self._calibration_metrics(calibration_deltas))
+                calibration_deltas.clear()
                 update_wall += time.perf_counter() - update_started
                 updates += 1; rollout = E1Rollout(self.environment_values["n_agents"]); vector_ticks = 0
                 self._runtime = self._capture_vector_runtime(updates=updates, counts=counts, latest=latest)
@@ -629,6 +675,15 @@ class E1Trainer:
                 "updates": updates, "latest_episode_metrics": latest, "planner_query_count": planner_queries,
                 "lambda_a": self.schedule.weights()[0], "lambda_l": self.schedule.weights()[1],
                 "exploratory_noisy_teacher": self.run.semantic_control == "llm", **counts, **metrics}
+
+    @staticmethod
+    def _calibration_metrics(deltas: list[float]) -> dict[str, float]:
+        """Keep calibration diagnostics observational and out of optimization."""
+        if not deltas:
+            return {"delta_g_mean": 0.0, "delta_g_positive_rate": 0.0}
+        values = np.asarray(deltas, dtype=np.float64)
+        return {"delta_g_mean": float(values.mean()),
+                "delta_g_positive_rate": float((values > 0.0).mean())}
 
     def _actions_batch(self, observations, semantic, masks):
         physical = torch.as_tensor(observations, dtype=torch.float32, device=self.device)
@@ -827,6 +882,7 @@ class E1Trainer:
         return np.stack([item.motion_preferences[1:4] for item in results]), np.asarray([item.valid for item in results], dtype=bool)
 
     def _calibration(self, observations, valid, episode_index, episode_step, step, counts):
+        self._last_calibration_delta_g = None
         if self.calibrator is None:
             return 0.0, False
         address = {"run_seed": self.run.seed, "episode_index": episode_index,
@@ -843,6 +899,8 @@ class E1Trainer:
                 teacher_preferences=lambda env: self._teacher_batch(env), initial_valid_mask=valid,
                 critic_value=lambda obs: self._value(obs), gamma=0.99, address=address)
             counts["shadow_calls"] += 1; counts["ema_updates"] += 1
+        if result.delta_g is not None:
+            self._last_calibration_delta_g = float(result.delta_g)
         return (1.0 if self.run.astar_kd == "fixed" and selected else float(result.confidence)), selected
 
     def _shadow_logits(self, environment, observations):
