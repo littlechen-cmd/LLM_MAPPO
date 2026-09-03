@@ -25,7 +25,7 @@ training:
   rollout_steps: 512
   checkpoint_interval: 100
   metrics_write_interval: 20
-  output_dir: artifacts/stable/predecision/mappo_wp_astar_llm_kd
+  output_dir: artifacts/stable/predecision/mappo_wp_astar_kd_eng
 
 ppo:
   gamma: 0.99

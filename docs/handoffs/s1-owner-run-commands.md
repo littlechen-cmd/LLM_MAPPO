@@ -140,14 +140,13 @@ nvidia-smi; free -g; uptime
 
 ```bash
 cd /home/lzx/llm-a-mappo
+BASE=artifacts/stable/predecision/mappo_wp_astar_kd_eng
 for S in 1 11 21; do
-  OUT=artifacts/stable/predecision/mappo_wp_astar_llm_kd/seed_$S
-  mkdir -p $OUT
   CUDA_VISIBLE_DEVICES=0 nohup /home/lzx/.conda/envs/llm-a-mappo-py310/bin/python \
     train/train_phase3.py \
     --config configs/s2_phase3b_dynamic_ingress_astar_kl.yaml \
     --seed $S --episodes 200 --device cuda --parallel-envs 12 \
-    --output-dir $OUT \
+    --output-dir $BASE \
     > /home/lzx/s2_predecision_seed_$S.log 2>&1 &
   echo $! > /home/lzx/s2_predecision_seed_$S.pid
 done
@@ -155,8 +154,10 @@ done
 
 - GPU：训练只用 RTX 4090（GPU 0）。`device: cuda` 在代码里解析为 `cuda:0`（`_resolve_device`），
   再加 `CUDA_VISIBLE_DEVICES=0` 显式隐藏 4080 SUPER（GPU 1），双重保证不占用 GPU 1。
-- 变体：`configs/s2_phase3b_dynamic_ingress_astar_kl.yaml` 为完整方法（MAPPO-WP + A*KD + LLMKD，
-  `reservation_kl_coefficient: 0.05`、`engagement_coefficient: 0.10`）。
+- 变体：`configs/s2_phase3b_dynamic_ingress_astar_kl.yaml` 为 Phase 3b（MAPPO-WP + A*KD +
+  规则 engagement，`reservation_kl_coefficient: 0.05`、`engagement_coefficient: 0.10`）。
+  离线 LLM 二维教师（`task_commitment`/`local_assertiveness`）属 E1 正式协议冻结项，本预备
+  训练暂用规则 engagement 验证训练链路与资源。
 - 预算：每 seed 200 episodes（资源估算用）；正式预算由 E1 冻结，不由 S2 决定。
 - 检查：训练结束后核对 `episodes.csv`/`updates.csv`/`summary.json` 与 `checkpoint_final.pt` 存在、
   无 NaN/Inf；GPU 显存峰值与 wall-clock 记录进资源估算。
