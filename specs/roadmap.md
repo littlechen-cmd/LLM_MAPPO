@@ -149,7 +149,7 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 
 ## Phase R1：正式训练前收敛恢复
 
-- [~] planning approved / reward contract pending
+- [~] MAPPO-FP-DG implementation complete / owner 500k capability run pending
 - 唯一规格：`specs/2026-09-02-r1-convergence-recovery/`。
 - 触发原因：E1/E2 已完成产物的完整 episode、checkpoint worker snapshot 与旧 O2 曲线均表明
   当前策略任务完成率极低；现有 summary 同时存在只展示单 worker 部分 episode 的证据缺陷。
@@ -160,6 +160,9 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
 - R1-C 固定使用同一正式拓扑上的 4-AGV LowLoad profile，以严格
   `legacy/reward-v2 × 16×128/16×32` 四格 MAPPO-DG scratch 诊断隔离奖励与更新节奏。
   LowLoad 不是 curriculum stage，checkpoint 不迁移；结果不能替代最终 5-AGV canonical Gate。
+- R1-C 四格诊断未恢复有效完成率后，已插入 R1-C2：以符合 MAPPO FP 形式的独立无教师实现，
+  在 3-AGV LowLoad + DirectGoal 上从零训练 500k steps。实现与本地回归已完成；只有 owner-run
+  final checkpoint 在 `9400–9409` 的平均完成率达到 90%，才允许恢复后续 5-AGV/RC 工作。
 - 每个测试训练完成后必须生成 TensorBoard、固定评估图与确定性 replay，并暂停交由研究所有者
   人工检查。
 - Gate：MAPPO-DG 不设完成率硬门，只要求完整 episode 指标形成向好趋势；RC-AStarKD 在三个

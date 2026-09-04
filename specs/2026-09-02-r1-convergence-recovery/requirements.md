@@ -104,3 +104,36 @@ R1-C 的唯一配置、runner 和 artifact root 分别为
 `configs/optimization/r1_4agv_lowload.yaml`、`scripts/run_r1_diagnostics.py` 与
 `artifacts/optimization/r1_convergence/r1c_4agv_lowload/`。每个arm必须在manifest记录profile、
 layout、代码、初始参数与评估身份，禁止依靠目录名推断实验条件。
+
+## 8. R1-C2 MAPPO-FP-DG 基线恢复合同
+
+R1-C 的四格诊断均未恢复有效任务完成能力后，研究所有者批准以纯 MAPPO 重构替代继续修改
+教师链路。唯一基线为 `MAPPO-FP-DG`：共享前馈 Actor 只读取 613D DirectGoal 执行观测；共享
+centralized Critic 对每个机器人读取一条 Feature-Pruned agent-specific global state，并分别
+输出 `V_i(s)`。FP 状态由当前环境公共真值与非重复的机器人特有信息组成，禁止包含 A*、LLM、
+语义分数、Reward Calibration、Student disagreement、未来状态或规划轨迹。
+
+实现必须包含逐 worker、逐 timestep、逐 agent 的 value/return/GAE，ValueNorm、clipped Huber
+value loss、active/death mask、正交初始化、独立 Actor/Critic optimizer、优势标准化和线性学习率
+衰减。旧 attention-pooled team scalar Critic、团队 advantage 复制和带零权重语义分支的
+`MAPPO-DG` 均不得作为该基线实现。
+
+唯一能力诊断使用 3 AGV LowLoad 动力学：`max_steps=1000`、动态入库间隔 40、批量 `[1,3]`、
+队列 4、目标 9、能源 `1.10/0.30/0.80`、DirectGoal、`goal_progress_reward=0.10`、legacy-v1
+任务奖励与现有 hard action mask。`goal_progress_reward` 是到当前规则目标的曼哈顿距离进展，
+不得查询 A*。训练预算固定为 500000 个所有 worker 累计的 joint environment transitions，
+16 workers、rollout length 64、5 PPO epochs、1 minibatch，从零初始化。
+
+本阶段只验证纯 MAPPO 基线，不加载或修改 A*、LLM、RC 或语义模块。final checkpoint 必须在
+预注册 held-out seeds 上 deterministic argmax 评估；训练与评估任务完成率不得混为同一证据。
+
+FP 状态的正式数值账本固定为 212 维。所有机器人共享的 204 维前缀包括：6 个 episode/任务/充电
+进度量；按机器人 ID 排序的 3×18 个位置、朝向、电量、载货、死亡、取货锁、当前目标类型与坐标；
+以及按固定 144 个货架 ID 排列的活跃任务优先级图。每个机器人再追加 3 维 critic-agent one-hot
+与自身 5 维 hard action mask。存活机器人的公共前缀仍能看到死亡队友；死亡机器人自己的 critic
+行采用全零状态加 agent one-hot 的 death mask，并通过逐机器人 active mask 排除 policy/value
+loss。该账本不拼接其他机器人的 613D 局部观察，也不包含未来信息或教师信息。
+
+正式训练 seed 固定为 `9107`，独立确定性评估 seeds 固定为 `9400–9409`。能力门槛只读取 final
+checkpoint 的十个评估 episode：平均任务完成率达到 `90%` 才可通过；训练曲线只用于诊断，不能
+代替该门槛。评估同时输出固定 seed 与最低完成率 seed 的慢速 replay。

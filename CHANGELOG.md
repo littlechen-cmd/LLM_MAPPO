@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-04
+
+- Added: R1-C2 introduces a teacher-free MAPPO-FP-DG baseline with a shared
+  DirectGoal actor, a 212D feature-pruned agent-specific centralized critic,
+  per-worker/per-agent GAE, ValueNorm, clipped Huber value loss, independent
+  actor/critic optimizers, and canonical PPO update semantics.
+- Added: The R1-C2 owner runner uses 16 spawned CPU environments, 64-step
+  rollouts, exact cumulative-step and checkpoint-resume accounting, complete
+  episode/TensorBoard evidence, and final-checkpoint deterministic evaluation
+  on held-out seeds `9400–9409`. The 500k capability run remains pending.
+- Changed: DirectGoal construction now loads the legacy planner lazily, so the
+  MAPPO-FP-DG process does not import or instantiate it.
+
 ## 2026-09-02
 
 - Changed: R1/E1 TensorBoard now records PPO stability, complete-episode,

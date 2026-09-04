@@ -36,6 +36,20 @@
 
 ## 能力 Gate
 
+### R1-C2 MAPPO-FP-DG 实现与能力验证
+
+- [x] Actor 只读取逐机器人 613D DirectGoal observation；Critic 读取逐机器人 212D FP state
+  并输出逐机器人价值，未复用旧 attention-pooled team scalar critic。
+- [x] rollout 保留 time/worker/agent 轴；GAE 不跨 worker 或 episode；死亡机器人由 active mask
+  排除；Actor/Critic 使用独立 optimizer。
+- [x] ValueNorm、clipped Huber value loss、正交初始化、优势标准化、5 PPO epochs、1 minibatch
+  与线性学习率衰减均由聚焦回归覆盖。
+- [x] DirectGoal 构造不导入执行期 planner；多进程 worker 的 step、snapshot/restore 与单次 PPO
+  update 已在本地 canonical Python 通过。
+- [ ] owner-run 训练达到 500000 个累计 joint environment transitions，且 final checkpoint、完整
+  episode、TensorBoard、固定/最低场景 replay 均存在。
+- [ ] final checkpoint 在预注册 seeds `9400–9409` 的 deterministic argmax 平均任务完成率≥90%。
+
 - [ ] MAPPO-DG 的完整 episode 指标总体向好、后期无明显崩溃，owner 已批准进入 RC。
 - [ ] RC-AStarKD 三个训练 seed 均使用 final checkpoint 和 seeds `9200–9209` 确定性评估。
 - [ ] 30 个 episode 总体平均任务完成率 `≥90%`。

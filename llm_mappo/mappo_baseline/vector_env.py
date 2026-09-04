@@ -1,0 +1,260 @@
+"""Spawned CPU environments for the teacher-free MAPPO baseline."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import multiprocessing as mp
+import os
+import traceback
+
+import numpy as np
+
+from llm_mappo.mappo_baseline.fp_state import (
+    FPStateSchema,
+    build_active_masks,
+    build_fp_state,
+)
+from llm_mappo.optimization_observation import ObservationSchema
+from llm_mappo.phase2 import Phase2Warehouse
+
+
+def new_baseline_environment(values) -> Phase2Warehouse:
+    """Construct the exact DirectGoal environment from its frozen profile."""
+
+    if values["observation_schema"] != ObservationSchema.DIRECT_GOAL_V1.value:
+        raise ValueError("MAPPO-FP-DG only accepts the DirectGoal observation.")
+    return Phase2Warehouse(
+        n_agents=int(values["n_agents"]),
+        max_steps=int(values["max_steps"]),
+        env_id=str(values["environment_id"]),
+        charge_threshold=float(values["charge_threshold"]),
+        charge_release_threshold=float(values["charge_release_threshold"]),
+        battery_cost_scale=float(values["battery_cost_scale"]),
+        deadlock_steps=int(values["deadlock_steps"]),
+        waypoint_reward=float(values["goal_progress_reward"]),
+        reward_version=str(values["reward_version"]),
+        oracle_interaction_mask=bool(values["oracle_interaction_mask"]),
+        batch_interval=int(values["dynamic_ingress_interval"]),
+        batch_size_range=tuple(values["batch_size_range"]),
+        initial_priority_label=str(values["initial_priority_label"]),
+        request_queue_size=int(values["queue_size"]),
+        task_completion_target=int(values["task_target"]),
+        observation_schema=ObservationSchema.DIRECT_GOAL_V1,
+    )
+
+
+def _payload(environment, schema):
+    return {
+        "observations": environment._observations(),
+        "fp_states": build_fp_state(environment, schema),
+        "action_masks": environment.action_masks(),
+        "active_masks": build_active_masks(environment),
+    }
+
+
+def _snapshot(environment, episode_index, episode_step):
+    return {
+        "warehouse": environment.env.export_shadow_state(),
+        "adapter": environment.export_shadow_state(),
+        "episode_index": int(episode_index),
+        "episode_step": int(episode_step),
+    }
+
+
+def _worker(connection, values, worker_index, base_seed):  # noqa: C901
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    environment = None
+    try:
+        import torch
+
+        torch.set_num_threads(1)
+        environment = new_baseline_environment(values)
+        schema = FPStateSchema(int(values["n_agents"]), n_shelves=144)
+        episode_index = 0
+        episode_step = 0
+        worker_seed = int(base_seed) + int(worker_index) * 1_000_003
+        environment.reset(seed=worker_seed)
+        connection.send(("ok", _payload(environment, schema)))
+        while True:
+            command, message = connection.recv()
+            if command == "step":
+                transition = environment.step(message["actions"])
+                done = bool(
+                    transition.terminated
+                    or transition.truncated
+                    or transition.metrics.deadlocked
+                )
+                episode = None
+                if done:
+                    episode = {
+                        "global_environment_steps": int(message["global_step"]),
+                        "worker_index": int(worker_index),
+                        "episode_index": int(episode_index),
+                        "episode_seed": worker_seed + episode_index,
+                        **transition.metrics.as_dict(),
+                    }
+                    episode_index += 1
+                    episode_step = 0
+                    environment.reset(seed=worker_seed + episode_index)
+                else:
+                    episode_step += 1
+                connection.send(("ok", {
+                    "reward": float(transition.team_reward),
+                    "done": done,
+                    "episode": episode,
+                    "planner_query_count": environment.planner_query_counter.count,
+                    "payload": _payload(environment, schema),
+                }))
+            elif command == "snapshot":
+                connection.send(("ok", _snapshot(
+                    environment, episode_index, episode_step
+                )))
+            elif command == "restore":
+                environment.env.import_shadow_state(message["warehouse"])
+                environment.import_shadow_state(message["adapter"])
+                episode_index = int(message["episode_index"])
+                episode_step = int(message["episode_step"])
+                connection.send(("ok", _payload(environment, schema)))
+            elif command == "close":
+                connection.send(("ok", {}))
+                break
+            else:
+                raise ValueError(f"Unknown MAPPO worker command: {command}")
+    except EOFError:
+        pass
+    except BaseException:
+        try:
+            connection.send(("error", traceback.format_exc()))
+        except (BrokenPipeError, EOFError, OSError):
+            pass
+    finally:
+        if environment is not None:
+            environment.close()
+        connection.close()
+
+
+@dataclass(frozen=True)
+class VectorStep:
+    rewards: np.ndarray
+    dones: np.ndarray
+    active_masks: np.ndarray
+    episodes: tuple[dict, ...]
+    planner_query_count: int
+
+
+class MAPPOVectorEnvironment:
+    """Persistent processes; all step requests are sent before any receive."""
+
+    def __init__(self, values, count: int, base_seed: int) -> None:
+        if count < 1:
+            raise ValueError("MAPPO requires at least one environment worker.")
+        self.values = dict(values)
+        self.count = int(count)
+        self.num_agents = int(values["n_agents"])
+        self._closed = False
+        context = mp.get_context("spawn")
+        self._connections = []
+        self._processes = []
+        for index in range(self.count):
+            parent, child = context.Pipe()
+            process = context.Process(
+                target=_worker,
+                args=(child, self.values, index, int(base_seed)),
+                name=f"mappo-fp-env-{index:02d}",
+            )
+            process.start()
+            child.close()
+            self._connections.append(parent)
+            self._processes.append(process)
+        self._set_payloads([self._receive(index) for index in range(self.count)])
+
+    def _receive(self, index):
+        try:
+            status, payload = self._connections[index].recv()
+        except EOFError as error:
+            raise RuntimeError(
+                f"MAPPO environment worker {index} exited with "
+                f"code {self._processes[index].exitcode}."
+            ) from error
+        if status != "ok":
+            raise RuntimeError(f"MAPPO environment worker {index} failed:\n{payload}")
+        return payload
+
+    def _set_payloads(self, payloads) -> None:
+        self.observations = np.stack([item["observations"] for item in payloads])
+        self.fp_states = np.stack([item["fp_states"] for item in payloads])
+        self.action_masks = np.stack([item["action_masks"] for item in payloads])
+        self.active_masks = np.stack([item["active_masks"] for item in payloads])
+
+    def step(self, actions, *, global_step: int) -> VectorStep:
+        actions = np.asarray(actions, dtype=np.int64)
+        expected = (self.count, self.num_agents)
+        if actions.shape != expected:
+            raise ValueError(f"MAPPO actions must have shape {expected}.")
+        terminal_step = int(global_step) + self.count
+        for connection, worker_actions in zip(self._connections, actions):
+            connection.send(("step", {
+                "actions": worker_actions,
+                "global_step": terminal_step,
+            }))
+        responses = [self._receive(index) for index in range(self.count)]
+        payloads = [item["payload"] for item in responses]
+        self._set_payloads(payloads)
+        rewards = np.repeat(
+            np.asarray(
+                [item["reward"] for item in responses], dtype=np.float32
+            )[:, None],
+            self.num_agents,
+            axis=1,
+        )
+        dones = np.repeat(
+            np.asarray([item["done"] for item in responses], dtype=bool)[:, None],
+            self.num_agents,
+            axis=1,
+        )
+        return VectorStep(
+            rewards=rewards,
+            dones=dones,
+            active_masks=self.active_masks.copy(),
+            episodes=tuple(item["episode"] for item in responses if item["episode"]),
+            planner_query_count=sum(
+                int(item["planner_query_count"]) for item in responses
+            ),
+        )
+
+    def snapshot(self) -> list[dict]:
+        for connection in self._connections:
+            connection.send(("snapshot", None))
+        return [self._receive(index) for index in range(self.count)]
+
+    def restore(self, states) -> None:
+        if len(states) != self.count:
+            raise ValueError("MAPPO checkpoint has a different worker count.")
+        for connection, state in zip(self._connections, states):
+            connection.send(("restore", state))
+        self._set_payloads([self._receive(index) for index in range(self.count)])
+
+    def close(self) -> None:  # noqa: C901
+        if self._closed:
+            return
+        self._closed = True
+        for connection, process in zip(self._connections, self._processes):
+            if process.is_alive():
+                try:
+                    connection.send(("close", None))
+                except (BrokenPipeError, EOFError, OSError):
+                    pass
+        for index, process in enumerate(self._processes):
+            if process.is_alive():
+                try:
+                    self._receive(index)
+                except RuntimeError:
+                    pass
+            self._connections[index].close()
+            process.join(timeout=10)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)

@@ -66,6 +66,15 @@ arm 均无向好趋势，R1-C No-Go，先返回根因分析，不进入 R1-D。
 
 ## R1-D：MAPPO-DG 基础学习能力
 
+R1-C 四格诊断已完成但未恢复任务完成能力。原 5-AGV/150k R1-D 暂停，由下列 R1-C2
+MAPPO-FP-DG 基线恢复任务先行：
+
+- 重构无教师的共享前馈 Actor、FP agent-specific centralized Critic、逐机器人 GAE、ValueNorm
+  与 canonical PPO update；
+- 使用 3 AGV LowLoad、DirectGoal、500k 累计 environment steps、16 workers、64-step rollout；
+- final checkpoint 完成独立确定性评估和人工 replay 后，才决定是否恢复 5-AGV 与 RC 任务；
+- 不在该任务中加载、修改或评价 A*、LLM、RC 和语义分支。
+
 - 采用 R1-C 选定的奖励与更新节奏，在 canonical 5 AGV、目标 50、动态入库环境训练。
 - 从随机初始化开始，禁止加载 R1-C 的 4-AGV checkpoint；本阶段首先检验 5-AGV Formal scratch。
 - 使用训练 seed `9107`，保存 50k、100k、150k checkpoint。

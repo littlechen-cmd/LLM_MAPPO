@@ -160,10 +160,15 @@
   局部 `+2W`，距离采用目标不变时的有符号 `0.1Δd`，并完成奖励版本/恢复身份隔离与回归；
 - [x] R1-C0：建立独立 R1 runner、4-AGV LowLoad profile、环境/checkpoint身份校验及可加载E1
   checkpoint的确定性评估与replay接口；不得改E1 formal matrix或新增Gym topology；
-- [ ] R1-C1：在同一4-AGV LowLoad、seed `9107`、50k预算下完成
+- [x] R1-C1：在同一4-AGV LowLoad、seed `9107`、50k预算下完成
   `legacy/reward-v2 × 16×128/16×32` 四个MAPPO-DG scratch诊断；
-- [ ] R1-C-V：每个诊断完成后生成 TensorBoard、固定评估图、固定 replay 和最低完成率失败
+- [x] R1-C-V：每个诊断完成后生成 TensorBoard、固定评估图、固定 replay 和最低完成率失败
   replay，暂停等待研究所有者检查；
+- [x] R1-C2-I：实现独立的 `MAPPO-FP-DG` 纯基线：613D DirectGoal Actor、212D FP
+  agent-specific Critic、逐 worker/agent GAE、ValueNorm、canonical PPO 更新、16-worker runner、
+  精确恢复、TensorBoard 与 final-checkpoint 确定性评估；本地回归通过；
+- [ ] R1-C2-V：由研究所有者在服务器从零运行 3-AGV LowLoad、500k steps、seed `9107`，并
+  检查 seeds `9400–9409` 的 final-checkpoint 平均完成率是否达到 90%及慢速 replay；
 - [ ] R1-D：在 canonical 5 AGV/目标 50 环境训练 MAPPO-DG 至 50k/100k/150k；不设完成率
   硬门，以完整 episode 向好趋势及人工可视化检查决定是否进入 RC；
 - [ ] R1-E：先运行 RC-AStarKD seed `9107` 并人工检查，再运行 `9117/9127`；三个 final

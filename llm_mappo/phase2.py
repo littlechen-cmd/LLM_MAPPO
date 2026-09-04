@@ -1,13 +1,12 @@
 """Phase 2 oracle-waypoint environment adapter and evaluation metrics."""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple
 
 import gymnasium as gym
 import numpy as np
 
 import rware  # noqa: F401 - importing registers the dynamic environment.
-from llm_mappo.planner import AStarPlanner
 from llm_mappo.optimization_observation import (
     ObservationSchema,
     PlannerQueryCounter,
@@ -23,6 +22,10 @@ from llm_mappo.reward_v2 import (
     reward_v2_team_reward,
 )
 from rware.warehouse import Action
+
+
+if TYPE_CHECKING:
+    from llm_mappo.planner import AStarPlanner
 
 
 ACTION_COUNT = len(Action)
@@ -145,7 +148,9 @@ class Phase2Warehouse:
         kw_only=True,
     )
     _env: gym.Env = field(init=False, repr=False)
-    _planner: Optional[AStarPlanner] = field(init=False, default=None, repr=False)
+    _planner: Optional["AStarPlanner"] = field(
+        init=False, default=None, repr=False
+    )
     _planner_query_counter: PlannerQueryCounter = field(
         init=False,
         default_factory=PlannerQueryCounter,
@@ -219,6 +224,8 @@ class Phase2Warehouse:
             make_options["render_mode"] = self.render_mode
         self._env = gym.make(self.env_id, **make_options)
         if self.observation_schema == ObservationSchema.LEGACY_WAYPOINT_V1:
+            from llm_mappo.planner import AStarPlanner
+
             self._planner = AStarPlanner()
 
     @property
