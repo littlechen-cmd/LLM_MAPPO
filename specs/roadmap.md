@@ -161,8 +161,11 @@ O3 已在 O1 等待服务器期间完成。P1 是优化路线所有剩余服务�
   `legacy/reward-v2 × 16×128/16×32` 四格 MAPPO-DG scratch 诊断隔离奖励与更新节奏。
   LowLoad 不是 curriculum stage，checkpoint 不迁移；结果不能替代最终 5-AGV canonical Gate。
 - R1-C 四格诊断未恢复有效完成率后，已插入 R1-C2：以符合 MAPPO FP 形式的独立无教师实现，
-  在 3-AGV LowLoad + DirectGoal 上从零训练 500k steps。实现与本地回归已完成；只有 owner-run
-  final checkpoint 在 `9400–9409` 的平均完成率达到 90%，才允许恢复后续 5-AGV/RC 工作。
+  在 3-AGV LowLoad + DirectGoal + Reward-v2 上从零训练 500k steps。实现与本地回归已完成；只有
+  owner-run final checkpoint 在 `9400–9409` 的平均完成率达到 90%，才允许恢复后续 5-AGV/RC 工作。
+- 在 R1-C2 后新增 R1-C3 Goal-Interface 诊断：同一 MAPPO-FP/Reward-v2 条件下严格比较 300k 的
+  DirectGoal 与执行期 waypoint 提示；使用独立 `9500–9509` 评估 seeds，只诊断几何提示瓶颈，
+  不进入论文统计或自动改变“DirectGoal 执行”主张。
 - 每个测试训练完成后必须生成 TensorBoard、固定评估图与确定性 replay，并暂停交由研究所有者
   人工检查。
 - Gate：MAPPO-DG 不设完成率硬门，只要求完整 episode 指标形成向好趋势；RC-AStarKD 在三个

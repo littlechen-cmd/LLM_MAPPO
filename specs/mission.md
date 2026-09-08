@@ -9,9 +9,9 @@ LLM-A-MAPPO 多教师蒸馏多智能体路径规划与调度研究
 - 论文语言：英文；
 - 现实投稿目标：以中科院二区方法论文为目标，一区仅在创新性与正式证据明显超预期时上探；
 - 暂定英文题目：*Multi-Teacher Knowledge Distillation for Multi-Agent
-  Reinforcement Learning-Based Path Planning and Scheduling*；
-- 仓储 AGV 是验证载体，论文贡献必须落在多教师蒸馏、MARL 路径规划与调度方法，而非特定
-  仓库应用系统。
+  Reinforcement Learning-Based Path Planning*；
+- 仓储 AGV 是验证载体，论文核心贡献必须落在多教师蒸馏与 MARL 多智能体路径规划/局部协同，
+  而非特定仓库应用系统或自主高层任务调度。
 
 ## 一句话概述
 
@@ -34,7 +34,7 @@ LLM-A-MAPPO 多教师蒸馏多智能体路径规划与调度研究
 先验；优化路线离线 LLM 提供 `task_persistence`、`yielding_preference` 和
 `coordination_risk` 三维语义监督，稳定路线保留历史 `task_commitment` 与
 `local_assertiveness` 二维监督；MAPPO 通过环境交互、team reward 与集中式 critic 学习最终
-运动动作和多智能体协同。
+运动动作和多智能体局部协同；任务优先级、任务队列和安全充电目标仍由规则层处理。
 
 当前项目同时面临创新风险与截止期限风险，因此采用双路线并行、正式实验单路线选择：
 

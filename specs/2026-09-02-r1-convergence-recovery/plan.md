@@ -75,6 +75,20 @@ MAPPO-FP-DG 基线恢复任务先行：
 - final checkpoint 完成独立确定性评估和人工 replay 后，才决定是否恢复 5-AGV 与 RC 任务；
 - 不在该任务中加载、修改或评价 A*、LLM、RC 和语义分支。
 
+## R1-C3：Goal-Interface 诊断
+
+- 在 R1-C2 与后续 5-AGV/RC 工作前，运行独立的 300k paired diagnostic：纯 MAPPO-FP 的
+  DirectGoal 与 legacy waypoint 两臂均使用 Reward-v2、3 AGV LowLoad、16 workers、64-step
+  rollout、5 PPO epochs、1 minibatch、同一训练 seed `9107` 与相同初始化；
+- 唯一变量是 Actor 的九个几何提示槽。DirectGoal 臂 planner query 必须为零；waypoint 臂允许
+  仅用于几何提示的执行期 A*，但不得启用 reservation、coordinator、A* KD、LLM、RC、动作强制
+  或 checkpoint transfer；
+- 两臂 final checkpoint 在独立 seeds `9500–9509` 上以 deterministic argmax 评估，并输出
+  完整 episode 曲线、固定/最低完成率慢速 replay 与 planner query 审计；
+- 只有 waypoint 平均完成率 `>=85%`、至少领先 DirectGoal 20 个百分点、优势在配对 seeds 稳定、
+  DirectGoal 未明确向好且 replay 证实实际绕障价值时，才提交研究所有者讨论 R1-F；不得自动
+  回退执行期 waypoint，也不得作为论文正式统计。
+
 - 采用 R1-C 选定的奖励与更新节奏，在 canonical 5 AGV、目标 50、动态入库环境训练。
 - 从随机初始化开始，禁止加载 R1-C 的 4-AGV checkpoint；本阶段首先检验 5-AGV Formal scratch。
 - 使用训练 seed `9107`，保存 50k、100k、150k checkpoint。

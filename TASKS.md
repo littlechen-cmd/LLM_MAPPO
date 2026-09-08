@@ -167,8 +167,13 @@
 - [x] R1-C2-I：实现独立的 `MAPPO-FP-DG` 纯基线：613D DirectGoal Actor、212D FP
   agent-specific Critic、逐 worker/agent GAE、ValueNorm、canonical PPO 更新、16-worker runner、
   精确恢复、TensorBoard 与 final-checkpoint 确定性评估；本地回归通过；
-- [ ] R1-C2-V：由研究所有者在服务器从零运行 3-AGV LowLoad、500k steps、seed `9107`，并
-  检查 seeds `9400–9409` 的 final-checkpoint 平均完成率是否达到 90%及慢速 replay；
+- [ ] R1-C2-V：将能力验证合同升级为 Reward-v2 / `r1-mappo-fp-dg-v2`，由研究所有者在服务器
+  从零运行 3-AGV LowLoad + DirectGoal、500k steps、seed `9107`，并检查 seeds `9400–9409` 的
+  final-checkpoint 平均完成率是否达到 90%及慢速 replay；历史 legacy-v1 只保留为 R1-C 对照；
+- [ ] R1-C3：运行独立纯 MAPPO-FP 的 300k Goal-Interface 诊断：`DirectGoal` 与仅提供执行期
+  A* 几何提示的 `legacy-waypoint` 两臂均使用 Reward-v2、16×64、seed `9107`，在 `9500–9509`
+  评估。只在 waypoint 平均完成率≥85%、至少领先 DirectGoal 20 个百分点、配对优势稳定且 replay
+  确认绕障价值时，提交 R1-F 人工讨论；不得自动回退 waypoint 或写入论文正式统计；
 - [ ] R1-D：在 canonical 5 AGV/目标 50 环境训练 MAPPO-DG 至 50k/100k/150k；不设完成率
   硬门，以完整 episode 向好趋势及人工可视化检查决定是否进入 RC；
 - [ ] R1-E：先运行 RC-AStarKD seed `9107` 并人工检查，再运行 `9117/9127`；三个 final

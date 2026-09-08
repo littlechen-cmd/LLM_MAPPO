@@ -12,11 +12,47 @@
 
 ## Global Constraints
 
-- The only long run is `3 AGV LowLoad + DirectGoal + 500000 cumulative environment steps`.
+- The pending capability run is `3 AGV LowLoad + DirectGoal + Reward-v2 + 500000`
+  cumulative environment steps, with a new `r1-mappo-fp-dg-v2` identity.
 - The actor, runner and checkpoint must contain no A*, LLM, semantic or reward-calibration module.
 - The FP state contains current environment truth only, removes duplicated features, and never contains teacher or future information.
 - The canonical Windows interpreter is `D:\Anaconda3\envs\py310\python.exe`.
 - Long training and evaluation are owner-run on physical GPU 0.
+
+### Task 7: Reward-v2 capability contract and Goal-Interface diagnostic
+
+**Files:**
+- Modify: `configs/optimization/r1_mappo_fp_dg_3ag_lowload.yaml`
+- Modify: `llm_mappo/mappo_baseline/runner.py`
+- Modify: `llm_mappo/mappo_baseline/vector_env.py`
+- Modify: `scripts/run_mappo_fp_baseline.py`
+- Modify: `tests/test_mappo_fp_baseline.py`
+- Modify: `tests/test_mappo_fp_runner.py`
+- Create: isolated R1-C3 DirectGoal and waypoint diagnostic configurations
+
+**Interfaces:**
+- Produces: a Reward-v2 `MAPPO-FP-DG` capability runner and a separately
+  identified paired Goal-Interface diagnostic runner.
+
+- [ ] Upgrade the pending DirectGoal capability configuration and run/checkpoint schema to
+  `r1-mappo-fp-dg-v2`, freeze `reward-v2`, and preserve `goal_progress_reward=0.10`
+  only as an asserted legacy compatibility invariant.
+- [ ] Keep historical legacy-v1 R1-C controls immutable; reject cross-reward and
+  cross-schema resume/checkpoint loading.
+- [ ] Add only a white-listed diagnostic `legacy-waypoint-v1` path alongside the
+  existing DirectGoal runner. It must be a distinct artifact identity, mark
+  `execution_planner_dependency=enabled`, record planner queries/diagnostics, and
+  never loosen the DirectGoal assertion that planner queries equal zero.
+- [ ] Freeze the two R1-C3 arms to 3 AGV LowLoad, Reward-v2, 300k cumulative joint
+  environment transitions, 16 workers, rollout 64, five PPO epochs, one minibatch,
+  seed 9107 and identical initialization. The sole algorithmic difference is the
+  nine Actor geometry slots.
+- [ ] Freeze deterministic final-checkpoint evaluation to seeds `9500–9509`; write
+  complete-episode curves plus fixed/lowest-case slow replays. The diagnostic is not
+  paper evidence and must not automatically restore execution-time waypoint.
+- [ ] Add focused tests for the Reward-v2 identity, DirectGoal zero-query proof,
+  waypoint diagnostic query provenance, schema-isolated resume, and 300k step
+  accounting; run local focused validation only before handing owner commands over.
 
 ---
 

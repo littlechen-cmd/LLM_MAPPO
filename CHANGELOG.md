@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-08
+
+- Planned: Re-froze the pending R1-C2 MAPPO-FP-DG capability run around Reward-v2
+  and a distinct `r1-mappo-fp-dg-v2` identity; legacy-v1 remains only a historical
+  R1-C causal control.
+- Planned: Added R1-C3, a paired 300k Goal-Interface diagnostic that isolates
+  DirectGoal from execution-time waypoint hints under identical MAPPO-FP and
+  Reward-v2 conditions, with independent evaluation seeds `9500–9509` and an
+  owner-only waypoint-return decision rule.
+- Changed: Narrowed the paper-method boundary: MAPPO is evaluated as a multi-agent
+  path-planning and local-coordination policy; rule-layer task priority, queueing and
+  charging targets are not presented as learned autonomous scheduling.
+
 ## 2026-09-04
 
 - Added: R1-C2 introduces a teacher-free MAPPO-FP-DG baseline with a shared

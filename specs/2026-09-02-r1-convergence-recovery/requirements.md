@@ -118,11 +118,14 @@ value loss、active/death mask、正交初始化、独立 Actor/Critic optimizer
 衰减。旧 attention-pooled team scalar Critic、团队 advantage 复制和带零权重语义分支的
 `MAPPO-DG` 均不得作为该基线实现。
 
-唯一能力诊断使用 3 AGV LowLoad 动力学：`max_steps=1000`、动态入库间隔 40、批量 `[1,3]`、
-队列 4、目标 9、能源 `1.10/0.30/0.80`、DirectGoal、`goal_progress_reward=0.10`、legacy-v1
-任务奖励与现有 hard action mask。`goal_progress_reward` 是到当前规则目标的曼哈顿距离进展，
-不得查询 A*。训练预算固定为 500000 个所有 worker 累计的 joint environment transitions，
-16 workers、rollout length 64、5 PPO epochs、1 minibatch，从零初始化。
+正式能力验证使用 3 AGV LowLoad 动力学：`max_steps=1000`、动态入库间隔 40、批量 `[1,3]`、
+队列 4、目标 9、能源 `1.10/0.30/0.80`、DirectGoal、Reward-v2 与现有 hard action mask。
+Reward-v2 固定使用未被 AGV 数平均稀释的团队完成奖励，以及同一规则目标下有符号的曼哈顿距离
+进展；目标切换步的进展为零。配置中的 `goal_progress_reward=0.10` 仅是 legacy 兼容不变量，
+不得被解释为 Reward-v2 的可调系数。DirectGoal 运行不得查询 A*。训练预算固定为 500000 个
+所有 worker 累计的 joint environment transitions，16 workers、rollout length 64、5 PPO epochs、
+1 minibatch，从零初始化。正式配置 schema 必须升级为 `r1-mappo-fp-dg-v2`，以隔离历史
+legacy-v1 对照与 Reward-v2 正式候选。
 
 本阶段只验证纯 MAPPO 基线，不加载或修改 A*、LLM、RC 或语义模块。final checkpoint 必须在
 预注册 held-out seeds 上 deterministic argmax 评估；训练与评估任务完成率不得混为同一证据。
@@ -137,3 +140,27 @@ loss。该账本不拼接其他机器人的 613D 局部观察，也不包含未�
 正式训练 seed 固定为 `9107`，独立确定性评估 seeds 固定为 `9400–9409`。能力门槛只读取 final
 checkpoint 的十个评估 episode：平均任务完成率达到 `90%` 才可通过；训练曲线只用于诊断，不能
 代替该门槛。评估同时输出固定 seed 与最低完成率 seed 的慢速 replay。
+
+## 9. R1-C3 Goal-Interface 诊断合同
+
+R1-C3 只回答“DirectGoal 是否是当前学习瓶颈”，不进入论文正式统计，不替代 R1-C2 的能力 Gate，
+也不会自动恢复执行期 waypoint。它使用同一纯 MAPPO-FP 实现，而非旧 stable trainer 或历史
+MAPPO-DG 链路。
+
+两臂从相同随机初始化独立训练：`MAPPO-FP-DG-Rv2` 与 `MAPPO-FP-WP-Rv2`。除 Actor 的九个
+几何提示槽外，二者必须完全一致：3 AGV LowLoad 动力学、Reward-v2、16 workers、rollout
+length 64、5 PPO epochs、1 minibatch、训练 seed `9107`、worker seed 派生、hard action mask、
+212D FP Critic、300000 个累计 joint environment transitions，以及不启用 A* KD、LLM、RC、
+动作强制、checkpoint transfer 或课程训练。
+
+`MAPPO-FP-DG-Rv2` 使用 `direct-goal-observation-v1`，planner query 必须为零。`MAPPO-FP-WP-Rv2`
+使用 `legacy-waypoint-v1`：其 A* 只向 Actor 填入当前几何 waypoint 提示，不参与任务分配、
+reservation、yield、coordinator、KL 蒸馏或动作强制；该臂必须记录非零 planner query 数与规划
+诊断，并在 manifest 中标识执行期 planner dependency。两臂须使用相同的 Reward-v2；奖励计算
+不得读取 waypoint。
+
+两臂 final checkpoint 均在独立的 deterministic-argmax evaluation seeds `9500–9509` 上评估，
+并输出完整 episode 曲线、固定 seed 与最低完成率 seed 的慢速 replay。只有 waypoint 臂平均
+完成率至少 `85%`、至少比 DirectGoal 高 `20` 个百分点、配对 seeds 的优势稳定、DirectGoal 未呈现
+明确向好趋势，且 replay 证实其优势来自实际绕障时，才将结果升级为需要研究所有者人工讨论的
+架构风险。即使满足该条件，也只能进入 R1-F 决策，禁止自动将 waypoint 纳入正式方法。

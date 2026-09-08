@@ -50,6 +50,19 @@
   episode、TensorBoard、固定/最低场景 replay 均存在。
 - [ ] final checkpoint 在预注册 seeds `9400–9409` 的 deterministic argmax 平均任务完成率≥90%。
 
+### R1-C3 Goal-Interface 诊断
+
+- [ ] `MAPPO-FP-DG-Rv2` 与 `MAPPO-FP-WP-Rv2` 均从相同初始参数、seed `9107` 和 worker seed
+  派生规则开始，均完成 300000 个累计 joint environment transitions；除了九个 Actor 几何提示槽外，
+  环境、Reward-v2、FP Critic、优化超参数与 action mask 完全相同。
+- [ ] DirectGoal 臂 planner query 为零；waypoint 臂的 manifest 标识执行期 planner dependency，
+  且记录非零 query 与规划诊断。两臂均未启用 A* KD、LLM、RC、动作强制或 checkpoint transfer。
+- [ ] final checkpoint 均在独立 seeds `9500–9509` 的 deterministic argmax 下完成评估，并交付
+  完整 episode 曲线、固定/最低完成率慢速 replay。
+- [ ] waypoint 优势只有同时满足平均完成率 `>=85%`、比 DirectGoal 高至少 20 个百分点、配对
+  seed 优势稳定、DirectGoal 无明确向好趋势及 replay 确认绕障价值时，才可标记为 R1-F 人工讨论项；
+  该标记不构成 waypoint 自动回退或论文正式结果。
+
 - [ ] MAPPO-DG 的完整 episode 指标总体向好、后期无明显崩溃，owner 已批准进入 RC。
 - [ ] RC-AStarKD 三个训练 seed 均使用 final checkpoint 和 seeds `9200–9209` 确定性评估。
 - [ ] 30 个 episode 总体平均任务完成率 `≥90%`。
