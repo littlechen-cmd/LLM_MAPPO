@@ -2,6 +2,15 @@
 
 ## 2026-09-08
 
+- Added: Phase 1 Group 5 now provides a paired `MAPPO-FP-WP` 300k
+  configuration. It retains every DG environment, reward, seed, worker and
+  PPO setting, replacing only the 208D Actor goal geometry with the current
+  static A* next-waypoint geometry; no planner action, path sequence,
+  reservation or scheduling data enters the Actor.
+- Changed: Recorded the completed Group 4 DG diagnostic and its joint review:
+  successful pickups occurred but no delivery completed, so the paired WP
+  diagnostic is now authorized. This remains diagnostic evidence, not a formal
+  performance claim.
 - Added: Phase 1 Group 3 introduces executable 3-AGV/5-AGV low-workload
   CPU profiles, six spawned environment workers, four learner CPU threads,
   exact cumulative environment-step accounting and per-run review receipts.

@@ -2,6 +2,8 @@ from pathlib import Path
 from dataclasses import replace
 
 import numpy as np
+import pytest
+import yaml
 
 from llm_mappo.mappo_baseline.runner import BaselineRun, load_baseline_experiment
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
@@ -56,6 +58,34 @@ def test_vector_worker_exposes_compact_structured_actor_observations():
         assert pool.observations.shape == (1, 3, 208)
     finally:
         pool.close()
+
+
+def test_vector_worker_uses_waypoint_geometry_only_when_selected():
+    experiment = load_baseline_experiment(CONFIG)
+    direct_values = dict(experiment.environment)
+    waypoint_values = {**direct_values, "goal_interface": "waypoint"}
+    direct_pool = MAPPOVectorEnvironment(direct_values, count=1, base_seed=93)
+    waypoint_pool = MAPPOVectorEnvironment(waypoint_values, count=1, base_seed=93)
+    try:
+        assert direct_pool.observations.shape == waypoint_pool.observations.shape
+        assert not np.array_equal(
+            direct_pool.observations[:, :, 16:19],
+            waypoint_pool.observations[:, :, 16:19],
+        )
+    finally:
+        direct_pool.close()
+        waypoint_pool.close()
+
+
+def test_waypoint_method_requires_a_waypoint_goal_interface(tmp_path):
+    values = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    values["method"] = "MAPPO-FP-WP"
+    values["environment"]["goal_interface"] = "direct_goal"
+    config = tmp_path / "invalid_wp.yaml"
+    config.write_text(yaml.safe_dump(values), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must agree"):
+        load_baseline_experiment(config)
 
 
 def test_two_worker_rollout_reaches_one_canonical_update():

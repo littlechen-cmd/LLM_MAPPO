@@ -86,12 +86,27 @@ class StructuredObservationSchema:
 
 
 def build_structured_observations(
-    environment, schema: StructuredObservationSchema | None = None
+    environment,
+    schema: StructuredObservationSchema | None = None,
+    *,
+    goal_interface: str = "direct_goal",
+    planner=None,
 ) -> np.ndarray:
-    """Build one local Actor row per AGV without teachers or future information."""
+    """Build one current-only Actor row per AGV.
+
+    ``waypoint`` replaces only the three scalar goal-geometry values with the
+    next static-path waypoint geometry. It never exposes a planner action,
+    route sequence, reservation, or task-assignment feature to the Actor.
+    """
 
     warehouse = environment.env
     schema = schema or StructuredObservationSchema()
+    if goal_interface not in {"direct_goal", "waypoint"}:
+        raise ValueError("Unknown MAPPO Actor goal interface.")
+    if goal_interface == "waypoint" and planner is None:
+        from llm_mappo.planner import AStarPlanner
+
+        planner = AStarPlanner()
     height, width = map(int, warehouse.grid_size)
     charging_targets = environment._charging_targets()
     rows = []
@@ -99,10 +114,13 @@ def build_structured_observations(
         target, phase = environment._target_for_agent(
             agent.id, charging_targets=charging_targets
         )
+        geometry_target = _goal_geometry_target(
+            environment, agent, target, goal_interface, planner
+        )
         rows.append(
             np.asarray(
                 _self_features(environment, agent, phase)
-                + _goal_features(agent, target, phase, width, height)
+                + _goal_features(agent, geometry_target, phase, width, height)
                 + _local_map(environment, agent, schema, width, height)
                 + _peer_features(environment, agent, schema, width, height),
                 dtype=np.float32,
@@ -114,6 +132,14 @@ def build_structured_observations(
     if not np.isfinite(result).all():
         raise RuntimeError("Structured Actor observation contains a non-finite value.")
     return result
+
+
+def _goal_geometry_target(environment, agent, target, goal_interface, planner):
+    """Return direct target geometry or the current first static-path waypoint."""
+    if goal_interface == "direct_goal":
+        return target
+    waypoints = planner.plan(environment.env, agent.id, target).waypoints
+    return waypoints[1] if len(waypoints) > 1 else target
 
 
 def _self_features(environment, agent, phase: str) -> list[float]:

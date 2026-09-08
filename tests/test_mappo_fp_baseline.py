@@ -17,6 +17,7 @@ from llm_mappo.mappo_baseline.trainer import MAPPOConfig, MAPPOTrainer
 from llm_mappo.mappo_baseline.value_norm import ValueNorm
 from llm_mappo.optimization_observation import ObservationSchema
 from llm_mappo.phase2 import Phase2Warehouse
+from llm_mappo.planner import AStarPlanner
 from rware.warehouse import Direction
 
 
@@ -104,6 +105,32 @@ def test_structured_actor_observation_is_teacher_free_and_pads_missing_peers():
             observations[:, final_peer_start:final_peer_start + peer_width],
             np.zeros((3, peer_width), dtype=np.float32),
         )
+    finally:
+        environment.close()
+
+
+def test_structured_actor_waypoint_geometry_keeps_the_actor_width():
+    """WP replaces only goal geometry, not the actor's feature contract."""
+    environment = _environment()
+    try:
+        agent = environment.env.agents[0]
+        shelf = environment.env.shelfs[0]
+        agent.x, agent.y, agent.dir = 16, 16, Direction.RIGHT
+        shelf.x, shelf.y = agent.x, agent.y
+        agent.carrying_shelf = shelf
+        environment.env._recalc_grid()
+
+        schema = StructuredObservationSchema()
+        direct = build_structured_observations(environment, schema)
+        waypoint = build_structured_observations(
+            environment,
+            schema,
+            goal_interface="waypoint",
+            planner=AStarPlanner(),
+        )
+
+        assert waypoint.shape == direct.shape == (3, 208)
+        assert not np.array_equal(waypoint[0, 16:19], direct[0, 16:19])
     finally:
         environment.close()
 

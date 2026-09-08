@@ -54,6 +54,7 @@ def test_phase1_config_accepts_the_six_worker_low_workload_profile(tmp_path):
             "charge_release_threshold": 0.80,
             "deadlock_steps": 180,
             "observation_schema": "direct-goal-observation-v1",
+            "goal_interface": "direct_goal",
             "reward_version": "reward-v2",
             "oracle_interaction_mask": True,
         },

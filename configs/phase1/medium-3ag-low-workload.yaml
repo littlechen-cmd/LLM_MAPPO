@@ -19,6 +19,7 @@ environment:
   charge_release_threshold: 0.80
   deadlock_steps: 180
   observation_schema: direct-goal-observation-v1
+  goal_interface: direct_goal
   reward_version: reward-v2
   oracle_interaction_mask: true
 training:

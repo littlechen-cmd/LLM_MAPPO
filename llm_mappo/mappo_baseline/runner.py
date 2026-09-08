@@ -59,6 +59,12 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
     if values["method"] not in {"MAPPO-FP-DG", "MAPPO-FP-WP"}:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
+    expected_interface = {
+        "MAPPO-FP-DG": "direct_goal",
+        "MAPPO-FP-WP": "waypoint",
+    }[values["method"]]
+    if environment.get("goal_interface") != expected_interface:
+        raise ValueError("MAPPO method and goal_interface must agree.")
     return BaselineExperiment(
         schema=str(values["schema"]),
         method=str(values["method"]),
@@ -77,13 +83,16 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:
         "task_target", "initial_priority_label", "priority_schedule",
         "charging_stations", "picking_stations", "battery_cost_scale",
         "charge_threshold", "charge_release_threshold", "deadlock_steps",
-        "observation_schema", "reward_version", "oracle_interaction_mask",
+        "observation_schema", "goal_interface", "reward_version",
+        "oracle_interaction_mask",
     }
     missing = sorted(required - set(environment))
     if missing:
         raise ValueError(f"MAPPO baseline environment is missing: {', '.join(missing)}.")
     if environment["observation_schema"] != "direct-goal-observation-v1":
         raise ValueError("MAPPO-FP-DG requires the DirectGoal observation schema.")
+    if environment["goal_interface"] not in {"direct_goal", "waypoint"}:
+        raise ValueError("MAPPO baseline goal_interface is incompatible.")
     agents = int(environment["n_agents"])
     if agents < 1 or len(environment["charging_stations"]) != agents:
         raise ValueError("Phase 1 requires exactly one charging station per AGV.")
@@ -210,6 +219,12 @@ class BaselineRun:
             n_picking_stations=len(experiment.environment["picking_stations"]),
         )
         self.actor_schema = StructuredObservationSchema()
+        self.goal_interface = str(experiment.environment["goal_interface"])
+        self._evaluation_planner = None
+        if self.goal_interface == "waypoint":
+            from llm_mappo.planner import AStarPlanner
+
+            self._evaluation_planner = AStarPlanner()
         self.identity = {
             "schema": experiment.schema,
             "method": experiment.method,
@@ -217,7 +232,9 @@ class BaselineRun:
             "config_sha256": experiment.config_sha256,
             "seed": int(experiment.training["seed"]),
             "observation_schema": experiment.environment["observation_schema"],
-            "actor_observation_schema": "structured-direct-goal-v1",
+            "actor_observation_schema": (
+                f"structured-{self.goal_interface}-v1"
+            ),
             "actor_observation_dimension": self.actor_schema.dimension,
             "fp_state_dimension": self.schema.dimension,
             "global_step_unit": "cumulative_joint_environment_transition",
@@ -405,7 +422,7 @@ class BaselineRun:
                 if current_bucket > last_checkpoint_bucket:
                     self._checkpoint(self.directory / "checkpoint_latest.pt")
                     last_checkpoint_bucket = current_bucket
-            if self.planner_query_count != 0:
+            if self.experiment.method == "MAPPO-FP-DG" and self.planner_query_count != 0:
                 raise RuntimeError("DirectGoal baseline observed a planner query.")
             self._checkpoint(self.directory / "checkpoint_final.pt")
             evaluation = self.evaluate()
@@ -477,7 +494,10 @@ class BaselineRun:
 
                     frames.append(render_warehouse_frame(environment.env, cell_size=16))
                 observations = build_structured_observations(
-                    environment, self.actor_schema
+                    environment,
+                    self.actor_schema,
+                    goal_interface=self.goal_interface,
+                    planner=self._evaluation_planner,
                 )
                 states = build_fp_state(environment, self.schema)
                 masks = environment.action_masks()

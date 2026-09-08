@@ -49,9 +49,13 @@ def new_baseline_environment(values) -> Phase2Warehouse:
     )
 
 
-def _payload(environment, schema):
+def _payload(environment, schema, goal_interface, planner):
     return {
-        "observations": build_structured_observations(environment),
+        "observations": build_structured_observations(
+            environment,
+            goal_interface=goal_interface,
+            planner=planner,
+        ),
         "fp_states": build_fp_state(environment, schema),
         "action_masks": environment.action_masks(),
         "active_masks": build_active_masks(environment),
@@ -79,6 +83,12 @@ def _worker(connection, values, worker_index, base_seed):  # noqa: C901
 
         torch.set_num_threads(int(values.get("worker_numerical_threads", 1)))
         environment = new_baseline_environment(values)
+        goal_interface = str(values.get("goal_interface", "direct_goal"))
+        planner = None
+        if goal_interface == "waypoint":
+            from llm_mappo.planner import AStarPlanner
+
+            planner = AStarPlanner()
         schema = FPStateSchema(
             int(values["n_agents"]),
             n_shelves=144,
@@ -89,7 +99,9 @@ def _worker(connection, values, worker_index, base_seed):  # noqa: C901
         episode_step = 0
         worker_seed = int(base_seed) + int(worker_index) * 1_000_003
         environment.reset(seed=worker_seed)
-        connection.send(("ok", _payload(environment, schema)))
+        connection.send(("ok", _payload(
+            environment, schema, goal_interface, planner
+        )))
         while True:
             command, message = connection.recv()
             if command == "step":
@@ -118,7 +130,9 @@ def _worker(connection, values, worker_index, base_seed):  # noqa: C901
                     "done": done,
                     "episode": episode,
                     "planner_query_count": environment.planner_query_counter.count,
-                    "payload": _payload(environment, schema),
+                    "payload": _payload(
+                        environment, schema, goal_interface, planner
+                    ),
                 }))
             elif command == "snapshot":
                 connection.send(("ok", _snapshot(
@@ -129,7 +143,9 @@ def _worker(connection, values, worker_index, base_seed):  # noqa: C901
                 environment.import_shadow_state(message["adapter"])
                 episode_index = int(message["episode_index"])
                 episode_step = int(message["episode_step"])
-                connection.send(("ok", _payload(environment, schema)))
+                connection.send(("ok", _payload(
+                    environment, schema, goal_interface, planner
+                )))
             elif command == "close":
                 connection.send(("ok", {}))
                 break

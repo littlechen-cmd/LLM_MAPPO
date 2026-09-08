@@ -47,16 +47,20 @@
 
 ## Task group 4: Medium 3-AGV DirectGoal diagnostic
 
-- [ ] Train `MAPPO-DG` from scratch with training seed `7` for 300k cumulative
+- [x] Train `MAPPO-DG` from scratch with training seed `7` for 300k cumulative
   steps on `medium-3ag-low-workload`.
-- [ ] Produce the required two-episode evaluation, slow replay and TensorBoard
+- [x] Produce the required two-episode evaluation, slow replay and TensorBoard
   evidence.
-- [ ] Pause for owner/architect double review. Record the judgement and
-  rationale; do not infer a numerical formal claim from this one-seed run.
+- [x] Owner/architect review judged DG unsuccessful: all 715 completed training
+  episodes and both fixed evaluations had zero completed tasks, despite 651
+  training episodes reaching successful pickup. A controlled exact-profile
+  delivery check completed correctly, so the failure is the learned
+  pickup-to-delivery policy rather than task-completion plumbing. Do not infer
+  a numerical formal claim from this one-seed run.
 
 ## Task group 5: Conditional waypoint diagnostic
 
-- [ ] Execute this group only if Task group 4’s joint review judges DirectGoal
+- [x] Execute this group only if Task group 4’s joint review judges DirectGoal
   unsuccessful.
 - [ ] Train `MAPPO-WP` from the identical initial state for 300k steps with the
   same training/evaluation seeds, reward version, worker settings and PPO
