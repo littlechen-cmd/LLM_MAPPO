@@ -1,9 +1,9 @@
 """Feature-pruned, agent-specific centralized state for MAPPO.
 
-The common prefix is built once from current environment truth.  Each critic
-row appends only the robot identity and its legal-action mask.  This avoids
-concatenating three highly overlapping 613D local observations while retaining
-the team configuration relevant to the shared cooperative value function.
+The common prefix is built once from current environment truth. Each critic row
+appends only the robot identity and its legal-action mask. This retains the
+team configuration relevant to the shared cooperative value function without
+repeating decentralized Actor inputs.
 """
 
 from __future__ import annotations
@@ -23,12 +23,26 @@ class FPStateSchema:
 
     n_agents: int
     n_shelves: int = 144
+    n_chargers: int | None = None
+    n_picking_stations: int | None = None
 
     def __post_init__(self) -> None:
         if self.n_agents < 1:
             raise ValueError("FP state requires at least one agent.")
         if self.n_shelves < 1:
             raise ValueError("FP state requires at least one shelf slot.")
+        if self.n_chargers is not None and self.n_chargers < 1:
+            raise ValueError("FP state requires at least one charger slot.")
+        if self.n_picking_stations is not None and self.n_picking_stations < 1:
+            raise ValueError("FP state requires at least one picking-station slot.")
+
+    @property
+    def charger_count(self) -> int:
+        return 8 if self.n_chargers is None else self.n_chargers
+
+    @property
+    def picking_station_count(self) -> int:
+        return 2 if self.n_picking_stations is None else self.n_picking_stations
 
     @property
     def common_feature_names(self) -> tuple[str, ...]:
@@ -65,11 +79,20 @@ class FPStateSchema:
             for agent_index in range(self.n_agents)
             for field in agent_fields
         )
-        tasks = tuple(
-            f"active_shelf_{shelf_index}_priority"
+        shelves = tuple(
+            f"shelf_{shelf_index}_{field}"
             for shelf_index in range(self.n_shelves)
+            for field in ("x", "y", "carried", "active_priority")
         )
-        return header + agents + tasks
+        chargers = tuple(
+            f"charger_{charger_index}_occupied"
+            for charger_index in range(self.charger_count)
+        )
+        picking = tuple(
+            f"picking_{station_index}_occupied"
+            for station_index in range(self.picking_station_count)
+        )
+        return header + agents + shelves + chargers + picking
 
     @property
     def agent_feature_names(self) -> tuple[str, ...]:
@@ -105,11 +128,19 @@ def build_fp_state(
     """Build `[agents, fp_dim]` from current, non-predictive environment state."""
 
     warehouse = environment.env
-    schema = schema or FPStateSchema(n_agents=environment.n_agents)
+    schema = schema or FPStateSchema(
+        n_agents=environment.n_agents,
+        n_chargers=len(warehouse.charging_stations),
+        n_picking_stations=len(warehouse.picking_stations),
+    )
     if schema.n_agents != environment.n_agents:
         raise ValueError("FP schema and environment agent counts differ.")
     if schema.n_shelves != len(warehouse.shelfs):
         raise ValueError("FP schema and environment shelf counts differ.")
+    if schema.charger_count != len(warehouse.charging_stations):
+        raise ValueError("FP schema and environment charger counts differ.")
+    if schema.picking_station_count != len(warehouse.picking_stations):
+        raise ValueError("FP schema and environment picking-station counts differ.")
     height, width = map(int, warehouse.grid_size)
     active_tasks = tuple(warehouse.task_queue.active_tasks)
     pending = sum(task.status.value == "pending" for task in active_tasks)
@@ -160,7 +191,29 @@ def build_fp_state(
         active_shelf_priorities[int(task.shelf_id) - 1] = (
             float(warehouse.task_queue.priority_weight(task.label)) / 2.0
         )
-    common.extend(active_shelf_priorities.tolist())
+    carried_shelves = {
+        agent.carrying_shelf.id
+        for agent in warehouse.agents
+        if agent.carrying_shelf is not None
+    }
+    for shelf in sorted(warehouse.shelfs, key=lambda item: item.id):
+        common.extend(
+            [
+                float(shelf.x) / max(width - 1, 1),
+                float(shelf.y) / max(height - 1, 1),
+                float(shelf.id in carried_shelves),
+                float(active_shelf_priorities[shelf.id - 1]),
+            ]
+        )
+    agent_positions = {(agent.x, agent.y) for agent in warehouse.agents}
+    common.extend(
+        float(station in agent_positions)
+        for station in sorted(warehouse.charging_stations)
+    )
+    common.extend(
+        float(station in agent_positions)
+        for station in sorted(warehouse.picking_stations)
+    )
     common_array = np.asarray(common, dtype=np.float32)
     if common_array.shape != (schema.common_dimension,):
         raise RuntimeError("FP common-state feature ledger is inconsistent.")

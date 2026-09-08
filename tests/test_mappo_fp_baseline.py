@@ -9,10 +9,15 @@ from llm_mappo.mappo_baseline.fp_state import (
 )
 from llm_mappo.mappo_baseline.networks import MAPPOActor, MAPPOFPCritic
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
+from llm_mappo.mappo_baseline.structured_observation import (
+    StructuredObservationSchema,
+    build_structured_observations,
+)
 from llm_mappo.mappo_baseline.trainer import MAPPOConfig, MAPPOTrainer
 from llm_mappo.mappo_baseline.value_norm import ValueNorm
 from llm_mappo.optimization_observation import ObservationSchema
 from llm_mappo.phase2 import Phase2Warehouse
+from rware.warehouse import Direction
 
 
 def _environment():
@@ -60,6 +65,71 @@ def test_fp_state_is_deterministic_agent_specific_and_teacher_free():
         environment.close()
 
 
+def test_fp_state_records_current_shelf_and_station_occupancy() -> None:
+    environment = _environment()
+    try:
+        schema = FPStateSchema(n_agents=3, n_shelves=144)
+        assert "shelf_0_x" in schema.common_feature_names
+        assert "shelf_0_carried" in schema.common_feature_names
+        assert "charger_0_occupied" in schema.common_feature_names
+        assert "picking_0_occupied" in schema.common_feature_names
+    finally:
+        environment.close()
+
+
+def test_structured_actor_observation_is_teacher_free_and_pads_missing_peers():
+    environment = _environment()
+    try:
+        schema = StructuredObservationSchema()
+        observations = build_structured_observations(environment, schema)
+        assert observations.shape == (3, 208)
+        forbidden = (
+            "astar", "waypoint", "planner", "llm", "semantic", "yield",
+            "queue", "future", "calibration",
+        )
+        assert not any(
+            token in name.lower()
+            for name in schema.feature_names
+            for token in forbidden
+        )
+        assert environment.planner_query_counter.count == 0
+        peer_width = len(schema.peer_feature_names) // schema.n_neighbours
+        final_peer_start = (
+            len(schema.self_feature_names)
+            + len(schema.goal_feature_names)
+            + len(schema.map_feature_names)
+            + 2 * peer_width
+        )
+        np.testing.assert_array_equal(
+            observations[:, final_peer_start:final_peer_start + peer_width],
+            np.zeros((3, peer_width), dtype=np.float32),
+        )
+    finally:
+        environment.close()
+
+
+def test_structured_actor_peer_order_uses_distance_then_relative_coordinates():
+    environment = _environment()
+    try:
+        first, second, third = environment.env.agents
+        first.x, first.y, first.dir = 5, 5, Direction.UP
+        second.x, second.y, second.dir = 6, 5, Direction.RIGHT
+        third.x, third.y, third.dir = 5, 4, Direction.DOWN
+        environment.env._recalc_grid()
+        schema = StructuredObservationSchema()
+        observation = build_structured_observations(environment, schema)[0]
+        peer_start = (
+            len(schema.self_feature_names)
+            + len(schema.goal_feature_names)
+            + len(schema.map_feature_names)
+        )
+        scale = np.hypot(19, 23)
+        # Both peers are one cell away; (dx=0, dy=-1) precedes (dx=1, dy=0).
+        np.testing.assert_allclose(observation[peer_start:peer_start + 2], [1 / scale, 0])
+    finally:
+        environment.close()
+
+
 def test_fp_active_mask_marks_dead_agent_without_erasing_team_state():
     environment = _environment()
     try:
@@ -83,9 +153,12 @@ def test_actor_critic_and_value_norm_keep_agent_axis():
     critic = MAPPOFPCritic(state_dim=68)
     observations = torch.randn(4, 3, 613)
     states = torch.randn(4, 3, 68)
-    assert actor(observations).shape == (4, 3, 5)
-    values = critic(states)
+    logits, actor_hidden = actor(observations, torch.zeros(4, 3, 64))
+    values, critic_hidden = critic(states, torch.zeros(4, 3, 64))
+    assert logits.shape == (4, 3, 5)
+    assert actor_hidden.shape == (4, 3, 64)
     assert values.shape == (4, 3)
+    assert critic_hidden.shape == (4, 3, 64)
     assert not torch.equal(values[:, 0], values[:, 1])
     actor_projection = actor.action_head.weight.detach()
     torch.testing.assert_close(
@@ -132,6 +205,8 @@ def test_rollout_gae_is_per_worker_per_agent_and_stops_at_episode_boundary():
             rewards=rewards,
             dones=dones,
             active_masks=np.ones((2, 2), dtype=np.float32),
+            actor_hidden_states=np.zeros((2, 2, 64), dtype=np.float32),
+            critic_hidden_states=np.zeros((2, 2, 64), dtype=np.float32),
         )
     batch = storage.compute_returns(
         next_values=np.zeros((2, 2), dtype=np.float32),
@@ -160,12 +235,14 @@ def test_trainer_uses_separate_optimizers_and_reports_canonical_losses():
 
     storage = MAPPORolloutStorage(2, 1, 3, 613, 68, 5)
     rng = np.random.default_rng(4)
+    actor_hidden = np.zeros((1, 3, 64), dtype=np.float32)
+    critic_hidden = np.zeros((1, 3, 64), dtype=np.float32)
     for _ in range(2):
         observations = rng.normal(size=(1, 3, 613)).astype(np.float32)
         states = rng.normal(size=(1, 3, 68)).astype(np.float32)
         masks = np.ones((1, 3, 5), dtype=bool)
-        actions, log_probs, values, value_predictions = trainer.act(
-            observations, states, masks, deterministic=False
+        actions, log_probs, values, value_predictions, next_actor, next_critic = trainer.act(
+            observations, states, masks, actor_hidden, critic_hidden, deterministic=False
         )
         storage.insert(
             observations=observations,
@@ -178,7 +255,11 @@ def test_trainer_uses_separate_optimizers_and_reports_canonical_losses():
             rewards=np.ones((1, 3), dtype=np.float32),
             dones=np.zeros((1, 3), dtype=bool),
             active_masks=np.ones((1, 3), dtype=np.float32),
+            actor_hidden_states=actor_hidden,
+            critic_hidden_states=critic_hidden,
         )
+        actor_hidden = next_actor
+        critic_hidden = next_critic
     batch = storage.compute_returns(
         np.zeros((1, 3), dtype=np.float32), gamma=0.99, gae_lambda=0.95
     )

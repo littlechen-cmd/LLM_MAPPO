@@ -14,6 +14,9 @@ from llm_mappo.mappo_baseline.fp_state import (
     build_active_masks,
     build_fp_state,
 )
+from llm_mappo.mappo_baseline.structured_observation import (
+    build_structured_observations,
+)
 from llm_mappo.optimization_observation import ObservationSchema
 from llm_mappo.phase2 import Phase2Warehouse
 
@@ -45,7 +48,7 @@ def new_baseline_environment(values) -> Phase2Warehouse:
 
 def _payload(environment, schema):
     return {
-        "observations": environment._observations(),
+        "observations": build_structured_observations(environment),
         "fp_states": build_fp_state(environment, schema),
         "action_masks": environment.action_masks(),
         "active_masks": build_active_masks(environment),
@@ -72,7 +75,12 @@ def _worker(connection, values, worker_index, base_seed):  # noqa: C901
 
         torch.set_num_threads(1)
         environment = new_baseline_environment(values)
-        schema = FPStateSchema(int(values["n_agents"]), n_shelves=144)
+        schema = FPStateSchema(
+            int(values["n_agents"]),
+            n_shelves=144,
+            n_chargers=len(environment.env.charging_stations),
+            n_picking_stations=len(environment.env.picking_stations),
+        )
         episode_index = 0
         episode_step = 0
         worker_seed = int(base_seed) + int(worker_index) * 1_000_003

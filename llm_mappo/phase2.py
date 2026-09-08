@@ -168,6 +168,8 @@ class Phase2Warehouse:
         init=False, default_factory=set, repr=False
     )
     _charging_active: set[int] = field(init=False, default_factory=set, repr=False)
+    _previous_actions: np.ndarray = field(init=False, repr=False)
+    _previous_blocked: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self) -> None:  # noqa: C901
         try:
@@ -267,6 +269,8 @@ class Phase2Warehouse:
         }
         self._charged_pending_recovery = set()
         self._charging_active = set(self._low_battery_active)
+        self._previous_actions = np.zeros(self.n_agents, dtype=np.int64)
+        self._previous_blocked = np.zeros(self.n_agents, dtype=bool)
         return self._observations()
 
     def step(self, actions: Sequence[int]) -> Phase2Step:
@@ -343,6 +347,24 @@ class Phase2Warehouse:
             batteries_before,
             actions,
         )
+        self._previous_actions = np.asarray(
+            [
+                action.value if isinstance(action, Action) else int(action)
+                for action in actions
+            ],
+            dtype=np.int64,
+        )
+        self._previous_blocked = np.asarray(
+            [
+                any(
+                    event.get("type") == "blocked_forward"
+                    and int(event.get("agent_id", -1)) == agent.id
+                    for event in info["events"]
+                )
+                for agent in self.env.agents
+            ],
+            dtype=bool,
+        )
         observations = self._observations()
         return Phase2Step(
             observations=observations,
@@ -384,6 +406,8 @@ class Phase2Warehouse:
             "low_battery_active": sorted(self._low_battery_active),
             "charged_pending_recovery": sorted(self._charged_pending_recovery),
             "charging_active": sorted(self._charging_active),
+            "previous_actions": self._previous_actions.tolist(),
+            "previous_blocked": self._previous_blocked.tolist(),
             "planner_query_count": self._planner_query_counter.count,
         }
 
@@ -405,7 +429,23 @@ class Phase2Warehouse:
         self._low_battery_active = set(state["low_battery_active"])
         self._charged_pending_recovery = set(state["charged_pending_recovery"])
         self._charging_active = set(state["charging_active"])
+        self._previous_actions = np.asarray(
+            state["previous_actions"], dtype=np.int64
+        )
+        self._previous_blocked = np.asarray(
+            state["previous_blocked"], dtype=bool
+        )
         self._planner_query_counter.count = int(state["planner_query_count"])
+
+    def previous_action(self, agent_id: int) -> int:
+        """Return the current episode's immediately preceding action."""
+
+        return int(self._previous_actions[int(agent_id) - 1])
+
+    def previous_blocked(self, agent_id: int) -> bool:
+        """Return whether the AGV's immediately preceding forward was blocked."""
+
+        return bool(self._previous_blocked[int(agent_id) - 1])
 
     def action_masks(self) -> np.ndarray:
         """Return decentralized masks for valid Phase 2 motion interactions."""

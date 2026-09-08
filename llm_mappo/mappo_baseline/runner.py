@@ -19,6 +19,10 @@ import yaml
 
 from llm_mappo.mappo_baseline.fp_state import FPStateSchema, build_fp_state
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
+from llm_mappo.mappo_baseline.structured_observation import (
+    StructuredObservationSchema,
+    build_structured_observations,
+)
 from llm_mappo.mappo_baseline.trainer import MAPPOConfig, MAPPOTrainer
 from llm_mappo.mappo_baseline.vector_env import (
     MAPPOVectorEnvironment,
@@ -160,6 +164,7 @@ class BaselineRun:
         self.schema = FPStateSchema(
             int(experiment.environment["n_agents"]), n_shelves=144
         )
+        self.actor_schema = StructuredObservationSchema()
         self.identity = {
             "schema": experiment.schema,
             "method": experiment.method,
@@ -167,6 +172,8 @@ class BaselineRun:
             "config_sha256": experiment.config_sha256,
             "seed": int(experiment.training["seed"]),
             "observation_schema": experiment.environment["observation_schema"],
+            "actor_observation_schema": "structured-direct-goal-v1",
+            "actor_observation_dimension": self.actor_schema.dimension,
             "fp_state_dimension": self.schema.dimension,
             "global_step_unit": "cumulative_joint_environment_transition",
         }
@@ -198,7 +205,7 @@ class BaselineRun:
             if state.get("status") != "running":
                 raise ValueError("Only a running MAPPO baseline artifact can resume.")
         config = MAPPOConfig(
-            observation_dim=613,
+            observation_dim=self.actor_schema.dimension,
             state_dim=self.schema.dimension,
             action_dim=5,
             hidden_dim=int(experiment.training["hidden_dimension"]),
@@ -221,6 +228,13 @@ class BaselineRun:
         )
         self.global_steps = 0
         self.updates = 0
+        hidden_shape = (
+            int(experiment.training["num_env_workers"]),
+            self.schema.n_agents,
+            config.hidden_dim,
+        )
+        self.actor_hidden_states = np.zeros(hidden_shape, dtype=np.float32)
+        self.critic_hidden_states = np.zeros(hidden_shape, dtype=np.float32)
         self.started_at = time.perf_counter()
         self.elapsed_offset = 0.0
         self.inference_seconds = 0.0
@@ -252,9 +266,10 @@ class BaselineRun:
                     steps_this_rollout,
                     workers,
                     self.schema.n_agents,
-                    613,
+                    self.actor_schema.dimension,
                     self.schema.dimension,
                     5,
+                    self.trainer.config.hidden_dim,
                 )
                 episodes = []
                 rollout_started = time.perf_counter()
@@ -264,10 +279,19 @@ class BaselineRun:
                     action_masks = self.pool.action_masks.copy()
                     active_masks = self.pool.active_masks.copy()
                     inference_started = time.perf_counter()
-                    actions, log_probs, values, value_predictions = self.trainer.act(
+                    (
+                        actions,
+                        log_probs,
+                        values,
+                        value_predictions,
+                        next_actor_hidden,
+                        next_critic_hidden,
+                    ) = self.trainer.act(
                         observations,
                         fp_states,
                         action_masks,
+                        self.actor_hidden_states,
+                        self.critic_hidden_states,
                         deterministic=False,
                     )
                     self.inference_seconds += time.perf_counter() - inference_started
@@ -275,6 +299,10 @@ class BaselineRun:
                     self.global_steps += workers
                     self.planner_query_count = max(
                         self.planner_query_count, response.planner_query_count
+                    )
+                    continuation = (
+                        (~response.dones).astype(np.float32)[..., None]
+                        * response.active_masks[..., None]
                     )
                     episodes.extend(response.episodes)
                     storage.insert(
@@ -288,9 +316,15 @@ class BaselineRun:
                         rewards=response.rewards,
                         dones=response.dones,
                         active_masks=active_masks,
+                        actor_hidden_states=self.actor_hidden_states,
+                        critic_hidden_states=self.critic_hidden_states,
                     )
+                    self.actor_hidden_states = next_actor_hidden * continuation
+                    self.critic_hidden_states = next_critic_hidden * continuation
                 self.rollout_seconds += time.perf_counter() - rollout_started
-                next_values = self.trainer.values(self.pool.fp_states)
+                next_values, _ = self.trainer.values(
+                    self.pool.fp_states, self.critic_hidden_states
+                )
                 batch = storage.compute_returns(
                     next_values,
                     gamma=float(self.experiment.training["gamma"]),
@@ -376,7 +410,9 @@ class BaselineRun:
         environment = new_baseline_environment(self.experiment.environment)
         frames = []
         try:
-            observations = environment.reset(seed=seed)
+            environment.reset(seed=seed)
+            actor_hidden = np.zeros((1, environment.n_agents, 64), dtype=np.float32)
+            critic_hidden = np.zeros((1, environment.n_agents, 64), dtype=np.float32)
             transition = None
             stride = int(self.experiment.evaluation["replay_frame_stride"])
             for step in range(int(self.experiment.environment["max_steps"])):
@@ -384,16 +420,25 @@ class BaselineRun:
                     from llm_mappo.visualization import render_warehouse_frame
 
                     frames.append(render_warehouse_frame(environment.env, cell_size=16))
+                observations = build_structured_observations(
+                    environment, self.actor_schema
+                )
                 states = build_fp_state(environment, self.schema)
                 masks = environment.action_masks()
-                actions, _, _, _ = self.trainer.act(
+                actions, _, _, _, next_actor, next_critic = self.trainer.act(
                     observations[None],
                     states[None],
                     masks[None],
+                    actor_hidden,
+                    critic_hidden,
                     deterministic=True,
                 )
                 transition = environment.step(actions[0])
-                observations = transition.observations
+                continuation = 0.0 if (
+                    transition.terminated or transition.truncated or transition.metrics.deadlocked
+                ) else 1.0
+                actor_hidden = next_actor * continuation
+                critic_hidden = next_critic * continuation
                 if (
                     transition.terminated
                     or transition.truncated
@@ -426,13 +471,17 @@ class BaselineRun:
 
     def _checkpoint(self, path: Path) -> None:
         payload = {
-            "schema": "mappo-fp-dg-checkpoint-v1",
+            "schema": "mappo-fp-dg-checkpoint-v2",
             "identity": self.identity,
             "trainer": self.trainer.state_dict(),
             "global_environment_steps": self.global_steps,
             "updates": self.updates,
             "planner_query_count": self.planner_query_count,
             "worker_states": self.pool.snapshot(),
+            "recurrent_states": {
+                "actor": self.actor_hidden_states,
+                "critic": self.critic_hidden_states,
+            },
             "timing": {
                 "rollout_seconds": self.rollout_seconds,
                 "inference_seconds": self.inference_seconds,
@@ -453,12 +502,15 @@ class BaselineRun:
 
     def _restore(self, path: Path) -> None:
         payload = torch.load(path, map_location="cpu", weights_only=False)
-        if payload.get("schema") != "mappo-fp-dg-checkpoint-v1":
+        if payload.get("schema") != "mappo-fp-dg-checkpoint-v2":
             raise ValueError("MAPPO baseline checkpoint schema differs.")
         if payload.get("identity") != self.identity:
             raise ValueError("MAPPO baseline checkpoint identity differs.")
         self.trainer.load_state_dict(payload["trainer"])
         self.pool.restore(payload["worker_states"])
+        recurrent = payload["recurrent_states"]
+        self.actor_hidden_states = np.asarray(recurrent["actor"], dtype=np.float32)
+        self.critic_hidden_states = np.asarray(recurrent["critic"], dtype=np.float32)
         self.global_steps = int(payload["global_environment_steps"])
         self.updates = int(payload["updates"])
         self.planner_query_count = int(payload["planner_query_count"])

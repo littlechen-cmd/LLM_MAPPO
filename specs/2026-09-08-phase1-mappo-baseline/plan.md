@@ -16,17 +16,17 @@
 
 ## Task group 2: Recurrent MAPPO-FP implementation
 
-- [ ] Replace the feed-forward MAPPO Actor with the approved structured
+- [x] Replace the feed-forward MAPPO Actor with the approved structured
   observation encoder, MLP, single-layer 64D GRU and masked policy head.
-- [ ] Replace the feed-forward FP Critic with an MLP, independent single-layer
+- [x] Replace the feed-forward FP Critic with an MLP, independent single-layer
   64D GRU and value head over the approved current-only FP state.
-- [ ] Implement deterministic peer selection, padding and masks exactly as
+- [x] Implement deterministic peer selection, padding and masks exactly as
   specified; prove prohibited teacher/global/future fields cannot enter the
   Actor.
-- [ ] Extend rollout storage, collection, GAE, PPO updates, checkpoints and
+- [x] Extend rollout storage, collection, GAE, PPO updates, checkpoints and
   resume logic to preserve worker/AGV recurrent state, terminal masks and
   contiguous recurrent training sequences.
-- [ ] Add focused regression tests for hidden-state reset/isolation, sequence
+- [x] Add focused regression tests for hidden-state reset/isolation, sequence
   ordering, recurrent checkpoint resume, structured-observation contracts and
   teacher-information exclusion.
 

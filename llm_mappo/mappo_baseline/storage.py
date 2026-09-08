@@ -1,4 +1,4 @@
-"""Axis-preserving feed-forward MAPPO rollout storage."""
+"""Axis-preserving recurrent MAPPO rollout storage."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ class MAPPOBatch:
     advantages: np.ndarray
     returns: np.ndarray
     active_masks: np.ndarray
+    dones: np.ndarray
+    actor_hidden_states: np.ndarray
+    critic_hidden_states: np.ndarray
 
 
 class MAPPORolloutStorage:
@@ -31,6 +34,7 @@ class MAPPORolloutStorage:
         observation_dim: int,
         state_dim: int,
         action_dim: int,
+        recurrent_hidden_dim: int = 64,
     ) -> None:
         self.rollout_length = int(rollout_length)
         self.num_workers = int(num_workers)
@@ -38,7 +42,13 @@ class MAPPORolloutStorage:
         self.observation_dim = int(observation_dim)
         self.state_dim = int(state_dim)
         self.action_dim = int(action_dim)
-        if min(self.rollout_length, self.num_workers, self.num_agents) < 1:
+        self.recurrent_hidden_dim = int(recurrent_hidden_dim)
+        if min(
+            self.rollout_length,
+            self.num_workers,
+            self.num_agents,
+            self.recurrent_hidden_dim,
+        ) < 1:
             raise ValueError("MAPPO rollout dimensions must be positive.")
         self._records: list[dict[str, np.ndarray]] = []
 
@@ -56,6 +66,16 @@ class MAPPORolloutStorage:
             "rewards": (self.num_workers, self.num_agents),
             "dones": (self.num_workers, self.num_agents),
             "active_masks": (self.num_workers, self.num_agents),
+            "actor_hidden_states": (
+                self.num_workers,
+                self.num_agents,
+                self.recurrent_hidden_dim,
+            ),
+            "critic_hidden_states": (
+                self.num_workers,
+                self.num_agents,
+                self.recurrent_hidden_dim,
+            ),
         }
         if len(self._records) >= self.rollout_length:
             raise ValueError("MAPPO rollout is already full.")
@@ -117,6 +137,9 @@ class MAPPORolloutStorage:
             advantages=advantages,
             returns=advantages + values,
             active_masks=self._stack("active_masks", np.float32),
+            dones=dones,
+            actor_hidden_states=self._stack("actor_hidden_states", np.float32),
+            critic_hidden_states=self._stack("critic_hidden_states", np.float32),
         )
 
     def _stack(self, name: str, dtype) -> np.ndarray:

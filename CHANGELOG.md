@@ -2,6 +2,10 @@
 
 ## 2026-09-08
 
+- Changed: Phase 1 MAPPO baseline now uses a compact 208D structured Actor
+  input, separate 64D Actor/Critic GRUs, recurrent PPO sequences and resumable
+  worker/AGV hidden states; the FP Critic now records current shelf and station
+  occupancy without exposing teacher information to the Actor.
 - Added: Phase 1 inspected the RWARE medium/large layouts and produced three
   colour-only facility/workload preview proposals; the 3-AGV profile records
   the required single-picking-station environment change for owner approval.

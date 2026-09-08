@@ -1,4 +1,4 @@
-"""Canonical feed-forward MAPPO update for the teacher-free baseline."""
+"""Canonical recurrent MAPPO update for the teacher-free baseline."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class MAPPOConfig:
     observation_dim: int
     state_dim: int
     action_dim: int = 5
-    hidden_dim: int = 128
+    hidden_dim: int = 64
     actor_lr: float = 3e-4
     critic_lr: float = 3e-4
     clip_param: float = 0.2
@@ -34,7 +34,7 @@ class MAPPOConfig:
 
 
 class MAPPOTrainer:
-    """Shared actor/critic with separate optimizers and per-agent losses."""
+    """Shared Actor/Critic trained from intact worker/AGV time sequences."""
 
     def __init__(self, config: MAPPOConfig, device: str | torch.device) -> None:
         self.config = config
@@ -52,51 +52,67 @@ class MAPPOTrainer:
         )
 
     @torch.no_grad()
-    def act(self, observations, fp_states, action_masks, *, deterministic: bool):
+    def act(
+        self,
+        observations,
+        fp_states,
+        action_masks,
+        actor_hidden_states,
+        critic_hidden_states,
+        *,
+        deterministic: bool,
+    ):
         observations = self._tensor(observations)
         fp_states = self._tensor(fp_states)
         masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device)
-        logits = self.actor(observations).masked_fill(~masks, -1e10)
+        actor_hidden = self._tensor(actor_hidden_states)
+        critic_hidden = self._tensor(critic_hidden_states)
+        logits, next_actor_hidden = self.actor(observations, actor_hidden)
+        logits = logits.masked_fill(~masks, -1e10)
         distribution = Categorical(logits=logits)
         actions = logits.argmax(dim=-1) if deterministic else distribution.sample()
         log_probs = distribution.log_prob(actions)
-        normalized_values = self.critic(fp_states)
+        normalized_values, next_critic_hidden = self.critic(fp_states, critic_hidden)
         values = self.value_normalizer.denormalize(
             normalized_values.unsqueeze(-1)
         ).squeeze(-1)
         return tuple(
             value.detach().cpu().numpy()
-            for value in (actions, log_probs, values, normalized_values)
+            for value in (
+                actions,
+                log_probs,
+                values,
+                normalized_values,
+                next_actor_hidden,
+                next_critic_hidden,
+            )
         )
 
     @torch.no_grad()
-    def values(self, fp_states) -> np.ndarray:
-        normalized = self.critic(self._tensor(fp_states))
-        return (
-            self.value_normalizer.denormalize(normalized.unsqueeze(-1))
-            .squeeze(-1)
-            .cpu()
-            .numpy()
+    def values(self, fp_states, critic_hidden_states) -> tuple[np.ndarray, np.ndarray]:
+        normalized, next_hidden = self.critic(
+            self._tensor(fp_states), self._tensor(critic_hidden_states)
         )
+        values = self.value_normalizer.denormalize(normalized.unsqueeze(-1)).squeeze(-1)
+        return values.cpu().numpy(), next_hidden.cpu().numpy()
 
-    def update(self, batch: MAPPOBatch) -> dict[str, float | int]:
-        observations = self._tensor(batch.observations).reshape(
-            -1, self.config.observation_dim
-        )
-        fp_states = self._tensor(batch.fp_states).reshape(-1, self.config.state_dim)
-        actions = torch.as_tensor(
-            batch.actions.reshape(-1), dtype=torch.long, device=self.device
-        )
+    def update(self, batch: MAPPOBatch) -> dict[str, float | int]:  # noqa: C901
+        observations = self._tensor(batch.observations)
+        fp_states = self._tensor(batch.fp_states)
+        actions = torch.as_tensor(batch.actions, dtype=torch.long, device=self.device)
         action_masks = torch.as_tensor(
-            batch.action_masks.reshape(-1, self.config.action_dim),
-            dtype=torch.bool,
-            device=self.device,
+            batch.action_masks, dtype=torch.bool, device=self.device
         )
-        old_log_probs = self._tensor(batch.old_log_probs).reshape(-1)
-        old_values = self._tensor(batch.old_values).reshape(-1)
-        returns = self._tensor(batch.returns).reshape(-1)
-        advantages = self._tensor(batch.advantages).reshape(-1)
-        active_masks = self._tensor(batch.active_masks).reshape(-1)
+        old_log_probs = self._tensor(batch.old_log_probs)
+        old_values = self._tensor(batch.old_values)
+        returns = self._tensor(batch.returns)
+        advantages = self._tensor(batch.advantages)
+        active_masks = self._tensor(batch.active_masks)
+        dones = torch.as_tensor(batch.dones, dtype=torch.bool, device=self.device)
+        actor_hidden = self._tensor(batch.actor_hidden_states)
+        critic_hidden = self._tensor(batch.critic_hidden_states)
+        if observations.ndim != 4:
+            raise ValueError("Recurrent MAPPO batch needs time, worker and AGV axes.")
         active = active_masks > 0.0
         if not bool(active.any()):
             raise RuntimeError("MAPPO update has no active robot samples.")
@@ -108,9 +124,30 @@ class MAPPOTrainer:
         normalized_returns = self.value_normalizer.normalize(
             returns.unsqueeze(-1)
         ).squeeze(-1)
-        normalized_old_values = old_values
-        sample_count = observations.shape[0]
-        minibatch_size = max(sample_count // self.config.num_minibatches, 1)
+
+        time_steps, workers, agents = observations.shape[:3]
+        sequence_count = workers * agents
+        continuation = torch.ones_like(active_masks)
+        continuation[0] = active_masks[0]
+        if time_steps > 1:
+            continuation[1:] = active_masks[1:] * (~dones[:-1]).float()
+        tensors = {
+            "observations": observations.reshape(time_steps, sequence_count, -1),
+            "fp_states": fp_states.reshape(time_steps, sequence_count, -1),
+            "actions": actions.reshape(time_steps, sequence_count),
+            "action_masks": action_masks.reshape(
+                time_steps, sequence_count, self.config.action_dim
+            ),
+            "old_log_probs": old_log_probs.reshape(time_steps, sequence_count),
+            "old_values": old_values.reshape(time_steps, sequence_count),
+            "advantages": advantages.reshape(time_steps, sequence_count),
+            "returns": normalized_returns.reshape(time_steps, sequence_count),
+            "active": active.reshape(time_steps, sequence_count).float(),
+            "continuation": continuation.reshape(time_steps, sequence_count),
+            "actor_hidden": actor_hidden[0].reshape(sequence_count, -1),
+            "critic_hidden": critic_hidden[0].reshape(sequence_count, -1),
+        }
+        chunks = self._sequence_chunks(sequence_count)
         totals = {
             "policy_loss": 0.0,
             "value_loss": 0.0,
@@ -123,33 +160,49 @@ class MAPPOTrainer:
         }
         optimizer_steps = 0
         for _ in range(self.config.ppo_epochs):
-            order = torch.randperm(sample_count, device=self.device)
-            for start in range(0, sample_count, minibatch_size):
-                index = order[start:start + minibatch_size]
-                index = index[active[index]]
-                if index.numel() == 0:
+            for indices in chunks:
+                selected = {
+                    name: values[:, indices]
+                    for name, values in tensors.items()
+                    if name not in {"actor_hidden", "critic_hidden"}
+                }
+                selected["actor_hidden"] = tensors["actor_hidden"][indices]
+                selected["critic_hidden"] = tensors["critic_hidden"][indices]
+                active_weight = selected["active"]
+                if not bool(active_weight.any()):
                     continue
-                logits = self.actor(observations[index]).masked_fill(
-                    ~action_masks[index], -1e10
+                logits, _ = self.actor.forward_sequence(
+                    selected["observations"],
+                    selected["actor_hidden"],
+                    selected["continuation"],
                 )
-                distribution = Categorical(logits=logits)
-                new_log_probs = distribution.log_prob(actions[index])
-                log_ratio = new_log_probs - old_log_probs[index]
+                distribution = Categorical(
+                    logits=logits.masked_fill(~selected["action_masks"], -1e10)
+                )
+                new_log_probs = distribution.log_prob(selected["actions"])
+                log_ratio = new_log_probs - selected["old_log_probs"]
                 ratio = log_ratio.exp()
-                surrogate = ratio * advantages[index]
+                surrogate = ratio * selected["advantages"]
                 clipped = torch.clamp(
                     ratio,
                     1.0 - self.config.clip_param,
                     1.0 + self.config.clip_param,
-                ) * advantages[index]
-                policy_loss = -torch.minimum(surrogate, clipped).mean()
-                entropy = distribution.entropy().mean()
+                ) * selected["advantages"]
+                policy_loss = -self._masked_mean(
+                    torch.minimum(surrogate, clipped), active_weight
+                )
+                entropy = self._masked_mean(distribution.entropy(), active_weight)
                 actor_loss = policy_loss - self.config.entropy_coef * entropy
-                predicted = self.critic(fp_states[index])
+                predicted, _ = self.critic.forward_sequence(
+                    selected["fp_states"],
+                    selected["critic_hidden"],
+                    selected["continuation"],
+                )
                 value_loss = self._value_loss(
                     predicted,
-                    normalized_old_values[index],
-                    normalized_returns[index],
+                    selected["old_values"],
+                    selected["returns"],
+                    active_weight,
                 )
                 if not torch.isfinite(actor_loss + value_loss):
                     raise RuntimeError("MAPPO update produced a non-finite loss.")
@@ -166,10 +219,13 @@ class MAPPOTrainer:
                 )
                 self.critic_optimizer.step()
                 with torch.no_grad():
-                    approx_kl = ((ratio - 1.0) - log_ratio).mean()
-                    clip_fraction = (
-                        (ratio - 1.0).abs() > self.config.clip_param
-                    ).float().mean()
+                    approx_kl = self._masked_mean(
+                        (ratio - 1.0) - log_ratio, active_weight
+                    )
+                    clip_fraction = self._masked_mean(
+                        ((ratio - 1.0).abs() > self.config.clip_param).float(),
+                        active_weight,
+                    )
                 measured = (
                     policy_loss,
                     value_loss,
@@ -188,13 +244,18 @@ class MAPPOTrainer:
         if not optimizer_steps:
             raise RuntimeError("MAPPO update did not execute an optimizer step.")
         with torch.no_grad():
-            prediction = self.value_normalizer.denormalize(
-                self.critic(fp_states).unsqueeze(-1)
-            ).squeeze(-1)
+            predictions, _ = self.critic.forward_sequence(
+                tensors["fp_states"],
+                tensors["critic_hidden"],
+                tensors["continuation"],
+            )
+            denormalized = self.value_normalizer.denormalize(
+                predictions.unsqueeze(-1)
+            ).squeeze(-1).reshape_as(returns)
             variance = torch.var(returns[active], unbiased=False)
             explained_variance = 0.0 if float(variance) < 1e-8 else float(
                 1.0
-                - torch.var(returns[active] - prediction[active], unbiased=False)
+                - torch.var(returns[active] - denormalized[active], unbiased=False)
                 / variance
             )
         return {
@@ -205,15 +266,23 @@ class MAPPOTrainer:
             "critic_learning_rate": self.critic_optimizer.param_groups[0]["lr"],
         }
 
+    def _sequence_chunks(self, sequence_count: int) -> tuple[Tensor, ...]:
+        chunk_count = min(max(int(self.config.num_minibatches), 1), sequence_count)
+        order = torch.randperm(sequence_count, device=self.device)
+        return tuple(chunk for chunk in torch.tensor_split(order, chunk_count) if chunk.numel())
+
     def _value_loss(
-        self, predicted: Tensor, old_values: Tensor, targets: Tensor
+        self,
+        predicted: Tensor,
+        old_values: Tensor,
+        targets: Tensor,
+        active_weight: Tensor,
     ) -> Tensor:
-        error = targets - predicted
         original = functional.huber_loss(
             predicted, targets, delta=self.config.huber_delta, reduction="none"
         )
         if not self.config.use_clipped_value_loss:
-            return original.mean()
+            return self._masked_mean(original, active_weight)
         clipped_prediction = old_values + (predicted - old_values).clamp(
             -self.config.clip_param, self.config.clip_param
         )
@@ -223,8 +292,11 @@ class MAPPOTrainer:
             delta=self.config.huber_delta,
             reduction="none",
         )
-        del error
-        return torch.maximum(original, clipped).mean()
+        return self._masked_mean(torch.maximum(original, clipped), active_weight)
+
+    @staticmethod
+    def _masked_mean(values: Tensor, weights: Tensor) -> Tensor:
+        return (values * weights).sum() / weights.sum().clamp_min(1.0)
 
     def linear_lr_decay(self, completed_steps: int, total_steps: int) -> None:
         fraction = max(0.0, 1.0 - completed_steps / max(total_steps, 1))
