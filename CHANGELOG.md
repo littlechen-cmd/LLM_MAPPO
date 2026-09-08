@@ -2,6 +2,11 @@
 
 ## 2026-09-08
 
+- Removed: Cleared superseded G2/G3, Phase 1--4, O1/O2/P1 and early R1-C
+  materials (their configs, runners, diagnostics, tests, historical task packages,
+  archived runbooks and obsolete experiment artifacts). The canonical R1/MAPPO-FP,
+  current specifications, stable worktree and formal three-dimensional label corpus
+  remain intact.
 - Planned: Re-froze the pending R1-C2 MAPPO-FP-DG capability run around Reward-v2
   and a distinct `r1-mappo-fp-dg-v2` identity; legacy-v1 remains only a historical
   R1-C causal control.
