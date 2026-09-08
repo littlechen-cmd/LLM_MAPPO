@@ -32,17 +32,17 @@
 
 ## Task group 3: Local runner, evidence and reward candidate
 
-- [ ] Add the three owner-approved environment profiles and the initial
+- [x] Add the three owner-approved environment profiles and the initial
   document reward candidate; record every reward component in CSV and
   TensorBoard.
-- [ ] Configure local CPU execution for six independent environment workers,
+- [x] Configure local CPU execution for six independent environment workers,
   four learner PyTorch threads and one numerical-library thread per worker.
-- [ ] Ensure all step budgets count cumulative joint environment transitions
+- [x] Ensure all step budgets count cumulative joint environment transitions
   across workers, not steps per worker.
-- [ ] Make every completed diagnostic emit final-checkpoint evaluation on seeds
+- [x] Make every completed diagnostic emit final-checkpoint evaluation on seeds
   `9400` and `9401`, a slow replay on seed `9400`, TensorBoard and a concise
   review receipt.
-- [ ] Record each pre-formal reward or training-configuration revision as a new
+- [x] Record each pre-formal reward or training-configuration revision as a new
   run identity; do not overwrite or compare incompatible runs as paired data.
 
 ## Task group 4: Medium 3-AGV DirectGoal diagnostic

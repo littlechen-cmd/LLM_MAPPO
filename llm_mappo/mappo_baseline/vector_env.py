@@ -34,14 +34,17 @@ def new_baseline_environment(values) -> Phase2Warehouse:
         charge_release_threshold=float(values["charge_release_threshold"]),
         battery_cost_scale=float(values["battery_cost_scale"]),
         deadlock_steps=int(values["deadlock_steps"]),
-        waypoint_reward=float(values["goal_progress_reward"]),
+        waypoint_reward=float(values.get("goal_progress_reward", 0.0)),
         reward_version=str(values["reward_version"]),
         oracle_interaction_mask=bool(values["oracle_interaction_mask"]),
         batch_interval=int(values["dynamic_ingress_interval"]),
         batch_size_range=tuple(values["batch_size_range"]),
         initial_priority_label=str(values["initial_priority_label"]),
+        priority_schedule=tuple(values["priority_schedule"]),
         request_queue_size=int(values["queue_size"]),
         task_completion_target=int(values["task_target"]),
+        charging_stations=tuple(tuple(item) for item in values["charging_stations"]),
+        picking_stations=tuple(tuple(item) for item in values["picking_stations"]),
         observation_schema=ObservationSchema.DIRECT_GOAL_V1,
     )
 
@@ -66,14 +69,15 @@ def _snapshot(environment, episode_index, episode_step):
 
 def _worker(connection, values, worker_index, base_seed):  # noqa: C901
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
-    os.environ.setdefault("MKL_NUM_THREADS", "1")
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    worker_threads = str(int(values.get("worker_numerical_threads", 1)))
+    os.environ.setdefault("OMP_NUM_THREADS", worker_threads)
+    os.environ.setdefault("MKL_NUM_THREADS", worker_threads)
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", worker_threads)
     environment = None
     try:
         import torch
 
-        torch.set_num_threads(1)
+        torch.set_num_threads(int(values.get("worker_numerical_threads", 1)))
         environment = new_baseline_environment(values)
         schema = FPStateSchema(
             int(values["n_agents"]),
@@ -197,36 +201,50 @@ class MAPPOVectorEnvironment:
         self.action_masks = np.stack([item["action_masks"] for item in payloads])
         self.active_masks = np.stack([item["active_masks"] for item in payloads])
 
-    def step(self, actions, *, global_step: int) -> VectorStep:
+    def step(
+        self, actions, *, global_step: int, active_workers: int | None = None
+    ) -> VectorStep:
         actions = np.asarray(actions, dtype=np.int64)
         expected = (self.count, self.num_agents)
         if actions.shape != expected:
             raise ValueError(f"MAPPO actions must have shape {expected}.")
-        terminal_step = int(global_step) + self.count
-        for connection, worker_actions in zip(self._connections, actions):
+        active_count = self.count if active_workers is None else int(active_workers)
+        if not 1 <= active_count <= self.count:
+            raise ValueError("active_workers must be within the worker count.")
+        terminal_step = int(global_step) + active_count
+        for connection, worker_actions in zip(
+            self._connections[:active_count], actions[:active_count]
+        ):
             connection.send(("step", {
                 "actions": worker_actions,
                 "global_step": terminal_step,
             }))
-        responses = [self._receive(index) for index in range(self.count)]
-        payloads = [item["payload"] for item in responses]
-        self._set_payloads(payloads)
-        rewards = np.repeat(
+        responses = [self._receive(index) for index in range(active_count)]
+        for index, item in enumerate(responses):
+            self.observations[index] = item["payload"]["observations"]
+            self.fp_states[index] = item["payload"]["fp_states"]
+            self.action_masks[index] = item["payload"]["action_masks"]
+            self.active_masks[index] = item["payload"]["active_masks"]
+        rewards = np.zeros((self.count, self.num_agents), dtype=np.float32)
+        rewards[:active_count] = np.repeat(
             np.asarray(
                 [item["reward"] for item in responses], dtype=np.float32
             )[:, None],
             self.num_agents,
             axis=1,
         )
-        dones = np.repeat(
+        dones = np.ones((self.count, self.num_agents), dtype=bool)
+        dones[:active_count] = np.repeat(
             np.asarray([item["done"] for item in responses], dtype=bool)[:, None],
             self.num_agents,
             axis=1,
         )
+        active_masks = self.active_masks.copy()
+        active_masks[active_count:] = 0.0
         return VectorStep(
             rewards=rewards,
             dones=dones,
-            active_masks=self.active_masks.copy(),
+            active_masks=active_masks,
             episodes=tuple(item["episode"] for item in responses if item["episode"]),
             planner_query_count=sum(
                 int(item["planner_query_count"]) for item in responses

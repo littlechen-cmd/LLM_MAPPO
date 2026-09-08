@@ -1,4 +1,4 @@
-"""Train the frozen teacher-free MAPPO-FP-DG capability baseline."""
+"""Run one owner-reviewed local Phase 1 MAPPO baseline diagnostic."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ def _arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
-        default="configs/optimization/r1_mappo_fp_dg_3ag_lowload.yaml",
+        default="configs/phase1/medium-3ag-low-workload.yaml",
     )
-    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--device", default="cpu")
     parser.add_argument("--output-root")
     parser.add_argument("--resume")
     return parser.parse_args()

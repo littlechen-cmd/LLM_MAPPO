@@ -2,6 +2,17 @@
 
 ## 2026-09-08
 
+- Added: Phase 1 Group 3 introduces executable 3-AGV/5-AGV low-workload
+  CPU profiles, six spawned environment workers, four learner CPU threads,
+  exact cumulative environment-step accounting and per-run review receipts.
+- Changed: Reward-v2 now follows the approved shared-reward candidate
+  (`+5×priority` completion, `+0.5` pickup, signed progress, `-0.15`
+  blocked-forward, `-2.0` collision and `-0.005` step cost); every component
+  is separately written to episode CSV and TensorBoard.
+- Added: Baseline diagnostics now emit fixed evaluations for seeds 9400/9401,
+  a slow seed-9400 replay, TensorBoard, final checkpoint and a pending
+  owner/architect review receipt. A 12-step CPU functional check completed;
+  it is interface evidence only, not a learning result.
 - Changed: Phase 1 MAPPO baseline now uses a compact 208D structured Actor
   input, separate 64D Actor/Critic GRUs, recurrent PPO sequences and resumable
   worker/AGV hidden states; the FP Critic now records current shelf and station

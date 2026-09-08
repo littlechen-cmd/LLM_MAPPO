@@ -10,6 +10,7 @@ from llm_mappo.reward_v2 import (
     RewardGoalSnapshot,
     reward_v2_progress_deltas,
     reward_v2_team_reward,
+    reward_v2_team_reward_breakdown,
 )
 from rware.warehouse import Action, Direction
 
@@ -31,9 +32,9 @@ def test_reward_v2_matches_the_frozen_team_and_local_formula():
         legacy_blocked_forward_penalty=0.05,
     )
 
-    # Local mean: mean([0, -0.05, -2.1, -0.5, +1]) = -0.33.
-    # Team terms: +20 completion and -0.01 real-step cost.
-    assert reward == pytest.approx(19.66)
+    # Local mean: mean([0, -0.15, -2.1, -0.5, +0.5]) = -0.45.
+    # Team terms: +10 completion and -0.005 real-step cost.
+    assert reward == pytest.approx(9.565)
 
 
 def test_reward_v2_progress_is_signed_and_zero_when_the_goal_switches():
@@ -51,7 +52,7 @@ def test_reward_v2_progress_is_signed_and_zero_when_the_goal_switches():
     assert reward_v2_progress_deltas(before, after).tolist() == [1.0, -1.0, 0.0]
 
 
-def test_reward_v2_successful_pickup_uses_priority_weight_and_zero_switch_progress():
+def test_reward_v2_successful_pickup_is_priority_independent_and_zero_switch_progress():
     environment = Phase2Warehouse(
         n_agents=1,
         max_steps=8,
@@ -68,7 +69,7 @@ def test_reward_v2_successful_pickup_uses_priority_weight_and_zero_switch_progre
         transition = environment.step([Action.TOGGLE_LOAD])
 
         assert transition.metrics.picked_tasks == 1
-        assert transition.team_reward == pytest.approx(1.99)
+        assert transition.team_reward == pytest.approx(0.495)
     finally:
         environment.close()
 
@@ -88,7 +89,7 @@ def test_reward_v2_blocked_forward_is_minus_point_fifteen_before_step_cost():
         transition = environment.step([Action.FORWARD])
 
         assert transition.info["blocked_forwards"] == 1
-        assert transition.team_reward == pytest.approx(-0.16)
+        assert transition.team_reward == pytest.approx(-0.155)
     finally:
         environment.close()
 
@@ -115,9 +116,9 @@ def test_reward_v2_completion_is_not_diluted_by_the_agent_mean():
         transition = environment.step([Action.FORWARD, Action.NOOP])
 
         assert transition.metrics.completed_tasks == 1
-        # +10 team completion, +0.1 local progress averaged over two AGVs,
-        # and -0.01 team step cost.
-        assert transition.team_reward == pytest.approx(10.04)
+        # +5 team completion, +0.1 local progress averaged over two AGVs,
+        # and -0.005 team step cost.
+        assert transition.team_reward == pytest.approx(5.045)
     finally:
         environment.close()
 
@@ -198,6 +199,31 @@ def test_reward_v2_noop_has_only_the_team_step_cost():
     try:
         environment.reset(seed=3)
         transition = environment.step([Action.NOOP])
-        assert transition.team_reward == pytest.approx(-0.01)
+        assert transition.team_reward == pytest.approx(-0.005)
     finally:
         environment.close()
+
+
+def test_reward_v2_breakdown_records_every_candidate_component():
+    breakdown = reward_v2_team_reward_breakdown(
+    raw_rewards=np.asarray([10.0, -2.05]),
+        events=[
+            {"type": "task_completed", "task_id": 1, "agent_id": 1},
+            {"type": "blocked_forward", "agent_id": 2},
+            {"type": "collision", "agent_id": 2},
+        ],
+        task_weights={1: 2.0},
+        pickup_weights={1: 2.0},
+        progress_deltas=np.asarray([1.0, -1.0]),
+        low_battery_penalties=np.asarray([0.0, -0.5]),
+        legacy_blocked_forward_penalty=0.05,
+    )
+
+    assert breakdown.completion == pytest.approx(10.0)
+    assert breakdown.pickup == pytest.approx(0.25)
+    assert breakdown.progress == pytest.approx(0.0)
+    assert breakdown.blocked_forward == pytest.approx(-0.075)
+    assert breakdown.collision == pytest.approx(-1.0)
+    assert breakdown.energy == pytest.approx(-0.25)
+    assert breakdown.step_cost == pytest.approx(-0.005)
+    assert breakdown.team_reward == pytest.approx(8.92)

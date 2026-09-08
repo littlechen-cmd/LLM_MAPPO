@@ -52,38 +52,12 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
         raise ValueError("MAPPO baseline configuration has unexpected top-level keys.")
     environment = dict(values["environment"])
     training = dict(values["training"])
-    expected_environment = {
-        "environment_id": "llm-mappo-medium-3ag-v1",
-        "n_agents": 3,
-        "max_steps": 1000,
-        "dynamic_ingress_interval": 40,
-        "batch_size_range": [1, 3],
-        "queue_size": 4,
-        "task_target": 9,
-        "initial_priority_label": "A",
-        "battery_cost_scale": 1.10,
-        "charge_threshold": 0.30,
-        "charge_release_threshold": 0.80,
-        "deadlock_steps": 180,
-        "observation_schema": "direct-goal-observation-v1",
-        "goal_progress_reward": 0.10,
-        "reward_version": "legacy-v1",
-        "oracle_interaction_mask": True,
-    }
-    for name, expected in expected_environment.items():
-        if environment.get(name) != expected:
-            raise ValueError(f"MAPPO baseline environment field {name} is not frozen.")
-    expected_training = {
-        "environment_steps": 500_000,
-        "num_env_workers": 16,
-        "rollout_length": 64,
-        "ppo_epochs": 5,
-        "num_minibatches": 1,
-    }
-    for name, expected in expected_training.items():
-        if training.get(name) != expected:
-            raise ValueError(f"MAPPO baseline training field {name} is not frozen.")
-    if values["schema"] != "r1-mappo-fp-dg-v1" or values["method"] != "MAPPO-FP-DG":
+    _validate_environment(environment)
+    _validate_training(training)
+    _validate_evaluation(dict(values["evaluation"]))
+    if values["schema"] != "phase1-mappo-baseline-v1":
+        raise ValueError("MAPPO baseline schema or method is incompatible.")
+    if values["method"] not in {"MAPPO-FP-DG", "MAPPO-FP-WP"}:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
     return BaselineExperiment(
         schema=str(values["schema"]),
@@ -94,6 +68,66 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
         evaluation=dict(values["evaluation"]),
         config_sha256=sha256(raw).hexdigest(),
     )
+
+
+def _validate_environment(environment: Mapping[str, Any]) -> None:
+    required = {
+        "profile_id", "environment_id", "n_agents", "max_steps",
+        "dynamic_ingress_interval", "batch_size_range", "queue_size",
+        "task_target", "initial_priority_label", "priority_schedule",
+        "charging_stations", "picking_stations", "battery_cost_scale",
+        "charge_threshold", "charge_release_threshold", "deadlock_steps",
+        "observation_schema", "reward_version", "oracle_interaction_mask",
+    }
+    missing = sorted(required - set(environment))
+    if missing:
+        raise ValueError(f"MAPPO baseline environment is missing: {', '.join(missing)}.")
+    if environment["observation_schema"] != "direct-goal-observation-v1":
+        raise ValueError("MAPPO-FP-DG requires the DirectGoal observation schema.")
+    agents = int(environment["n_agents"])
+    if agents < 1 or len(environment["charging_stations"]) != agents:
+        raise ValueError("Phase 1 requires exactly one charging station per AGV.")
+    if len(environment["picking_stations"]) != agents // 2:
+        raise ValueError("Phase 1 picking-station count must equal floor(AGV / 2).")
+    if environment["priority_schedule"] != ["A", "B", "C", "D"]:
+        raise ValueError("Phase 1 priority schedule must be A/B/C/D.")
+    if int(environment["dynamic_ingress_interval"]) < 2:
+        raise ValueError("MAPPO baseline dynamic ingress interval is invalid.")
+    if len(environment["batch_size_range"]) != 2:
+        raise ValueError("MAPPO baseline batch-size range is invalid.")
+
+
+def _validate_training(training: Mapping[str, Any]) -> None:
+    required = {
+        "seed", "environment_steps", "num_env_workers", "learner_torch_threads",
+        "worker_numerical_threads", "rollout_length", "ppo_epochs",
+        "num_minibatches", "gamma", "gae_lambda", "clip_param",
+        "actor_learning_rate", "critic_learning_rate", "entropy_coefficient",
+        "value_loss_coefficient", "max_gradient_norm", "huber_delta",
+        "hidden_dimension", "checkpoint_interval_steps",
+    }
+    missing = sorted(required - set(training))
+    if missing:
+        raise ValueError(f"MAPPO baseline training is missing: {', '.join(missing)}.")
+    if int(training["num_env_workers"]) != 6:
+        raise ValueError("Phase 1 local baseline requires six environment workers.")
+    if int(training["learner_torch_threads"]) != 4:
+        raise ValueError("Phase 1 local baseline requires four learner threads.")
+    if int(training["worker_numerical_threads"]) != 1:
+        raise ValueError("Phase 1 local baseline requires one worker numerical thread.")
+    if int(training["hidden_dimension"]) != 64:
+        raise ValueError("Phase 1 MAPPO GRU hidden dimension must be 64.")
+    if int(training["environment_steps"]) < 1:
+        raise ValueError("MAPPO baseline environment-step budget is invalid.")
+
+
+def _validate_evaluation(evaluation: Mapping[str, Any]) -> None:
+    if list(evaluation.get("seeds", ())) != [9400, 9401]:
+        raise ValueError("Phase 1 evaluation seeds must be 9400 and 9401.")
+    if evaluation.get("deterministic_policy") != "argmax":
+        raise ValueError("Phase 1 evaluation must use deterministic argmax.")
+    if int(evaluation.get("replay_frame_duration_ms", 0)) < 500:
+        raise ValueError("Phase 1 replay must be slow enough for owner review.")
 
 
 class BaselineRun:
@@ -148,6 +182,13 @@ class BaselineRun:
         "energy_deaths",
         "minimum_battery",
         "steps",
+        "reward_completion",
+        "reward_pickup",
+        "reward_progress",
+        "reward_blocked_forward",
+        "reward_collision",
+        "reward_energy",
+        "reward_step_cost",
         "success",
     )
 
@@ -161,8 +202,12 @@ class BaselineRun:
     ) -> None:
         self.experiment = experiment
         self.device = torch.device(device)
+        torch.set_num_threads(int(experiment.training["learner_torch_threads"]))
         self.schema = FPStateSchema(
-            int(experiment.environment["n_agents"]), n_shelves=144
+            int(experiment.environment["n_agents"]),
+            n_shelves=144,
+            n_chargers=len(experiment.environment["charging_stations"]),
+            n_picking_stations=len(experiment.environment["picking_stations"]),
         )
         self.actor_schema = StructuredObservationSchema()
         self.identity = {
@@ -176,6 +221,8 @@ class BaselineRun:
             "actor_observation_dimension": self.actor_schema.dimension,
             "fp_state_dimension": self.schema.dimension,
             "global_step_unit": "cumulative_joint_environment_transition",
+            "reward_version": experiment.environment["reward_version"],
+            "profile_id": experiment.environment["profile_id"],
         }
         if resume is None:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -221,8 +268,14 @@ class BaselineRun:
         )
         self._seed(int(experiment.training["seed"]))
         self.trainer = MAPPOTrainer(config, self.device)
+        worker_values = {
+            **experiment.environment,
+            "worker_numerical_threads": experiment.training[
+                "worker_numerical_threads"
+            ],
+        }
         self.pool = MAPPOVectorEnvironment(
-            experiment.environment,
+            worker_values,
             int(experiment.training["num_env_workers"]),
             int(experiment.training["seed"]),
         )
@@ -257,11 +310,10 @@ class BaselineRun:
         last_checkpoint_bucket = self.global_steps // checkpoint_interval
         try:
             while self.global_steps < budget:
+                remaining = budget - self.global_steps
                 steps_this_rollout = min(
-                    rollout_length, (budget - self.global_steps) // workers
+                    rollout_length, (remaining + workers - 1) // workers
                 )
-                if steps_this_rollout < 1:
-                    raise RuntimeError("Environment budget is not divisible by workers.")
                 storage = MAPPORolloutStorage(
                     steps_this_rollout,
                     workers,
@@ -274,6 +326,7 @@ class BaselineRun:
                 episodes = []
                 rollout_started = time.perf_counter()
                 for _ in range(steps_this_rollout):
+                    active_workers = min(workers, budget - self.global_steps)
                     observations = self.pool.observations.copy()
                     fp_states = self.pool.fp_states.copy()
                     action_masks = self.pool.action_masks.copy()
@@ -295,8 +348,13 @@ class BaselineRun:
                         deterministic=False,
                     )
                     self.inference_seconds += time.perf_counter() - inference_started
-                    response = self.pool.step(actions, global_step=self.global_steps)
-                    self.global_steps += workers
+                    response = self.pool.step(
+                        actions,
+                        global_step=self.global_steps,
+                        active_workers=active_workers,
+                    )
+                    self.global_steps += active_workers
+                    active_masks[active_workers:] = 0.0
                     self.planner_query_count = max(
                         self.planner_query_count, response.planner_query_count
                     )
@@ -353,6 +411,14 @@ class BaselineRun:
             evaluation = self.evaluate()
             summary = self._summary(evaluation)
             _write_json(self.directory / "summary.json", summary)
+            _write_json(self.directory / "review_receipt.json", {
+                "schema": "phase1-mappo-review-receipt-v1",
+                "identity": self.identity,
+                "checkpoint": "checkpoint_final.pt",
+                "evaluation": evaluation,
+                "tensorboard": "tensorboard",
+                "owner_architect_review": "pending",
+            })
             _write_json(self.directory / "state.json", {"status": "complete"})
             return summary
         except BaseException as error:
@@ -374,13 +440,8 @@ class BaselineRun:
         replay_root = self.directory / "evaluation" / "replays"
         replay_root.mkdir(parents=True, exist_ok=True)
         fixed_seed = int(self.experiment.evaluation["seeds"][0])
-        lowest_seed = int(min(
-            results, key=lambda row: (row["task_completion_rate"], row["seed"])
-        )["seed"])
         fixed_path = replay_root / f"fixed_seed_{fixed_seed}.gif"
-        lowest_path = replay_root / f"lowest_seed_{lowest_seed}.gif"
         self._evaluation_episode(fixed_seed, replay_path=fixed_path)
-        self._evaluation_episode(lowest_seed, replay_path=lowest_path)
         result = {
             "schema": "mappo-fp-dg-evaluation-v1",
             "policy": "deterministic_argmax",
@@ -390,12 +451,7 @@ class BaselineRun:
             "mean_completed_tasks": float(np.mean([
                 row["completed_tasks"] for row in results
             ])),
-            "gate_target": 0.90,
-            "gate_pass": mean_completion >= 0.90,
             "fixed_replay": str(fixed_path.relative_to(self.directory)),
-            "lowest_completion_replay": str(
-                lowest_path.relative_to(self.directory)
-            ),
             "metrics_plot": "evaluation/evaluation_metrics.png",
         }
         output = self.directory / "evaluation"
@@ -435,7 +491,9 @@ class BaselineRun:
                 )
                 transition = environment.step(actions[0])
                 continuation = 0.0 if (
-                    transition.terminated or transition.truncated or transition.metrics.deadlocked
+                    transition.terminated
+                    or transition.truncated
+                    or transition.metrics.deadlocked
                 ) else 1.0
                 actor_hidden = next_actor * continuation
                 critic_hidden = next_critic * continuation
@@ -613,6 +671,14 @@ class BaselineRun:
             self._board.add_scalar(f"episode/{tag}", float(row[name]), step)
         rate = 1000.0 * float(row["completed_tasks"]) / max(float(row["steps"]), 1.0)
         self._board.add_scalar("episode/tasks_per_1000_steps", rate, step)
+        for name in (
+            "reward_completion", "reward_pickup", "reward_progress",
+            "reward_blocked_forward", "reward_collision", "reward_energy",
+            "reward_step_cost",
+        ):
+            self._board.add_scalar(
+                f"reward/{name.removeprefix('reward_')}", float(row[name]), step
+            )
         self._board.flush()
 
     def close(self) -> None:

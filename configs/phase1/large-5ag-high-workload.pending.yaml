@@ -1,0 +1,10 @@
+# Layout is approved; ingress, batch size and target remain owner-deferred.
+# Do not pass this file to run_mappo_fp_baseline.py before Group 6 review.
+profile_id: large-5ag-high-workload
+environment_id: llm-mappo-large-5ag-v1
+n_agents: 5
+max_steps: 500
+charging_stations: [[0, 0], [19, 0], [0, 32], [19, 32], [9, 0]]
+picking_stations: [[9, 30], [10, 30]]
+priority_schedule: [A, B, C, D]
+workload_status: deferred-until-medium-5ag-review

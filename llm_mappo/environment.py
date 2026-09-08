@@ -15,12 +15,13 @@ from rware.warehouse import Action, Agent, Direction, RewardType, Shelf, Warehou
 class DynamicWarehouse(Warehouse):
     """RWARE with dynamic tasks, hard scheduling rules, energy, and stations."""
 
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         *args,
         batch_interval: int = 40,
         batch_size_range: Tuple[int, int] = (1, 3),
         charging_stations: Optional[Sequence[Tuple[int, int]]] = None,
+        picking_stations: Optional[Sequence[Tuple[int, int]]] = None,
         charging_rate: float = 0.02,
         battery_cost_scale: float = 1.0,
         picking_lock_steps: int = 3,
@@ -89,7 +90,20 @@ class DynamicWarehouse(Warehouse):
                     f"Charging station must have an accessible neighbor: {station}"
                 )
         self.charging_stations = tuple(stations)
-        self.picking_stations = tuple(self.goals)
+        base_goals = tuple(self.goals)
+        selected_picking_stations = tuple(picking_stations or base_goals)
+        if not selected_picking_stations:
+            raise ValueError("DynamicWarehouse requires at least one picking station.")
+        if len(set(selected_picking_stations)) != len(selected_picking_stations):
+            raise ValueError("Picking station coordinates must be unique.")
+        if not set(selected_picking_stations).issubset(base_goals):
+            raise ValueError("Picking stations must be RWARE delivery goals.")
+        if set(selected_picking_stations) & set(self.charging_stations):
+            raise ValueError("Charging and picking stations must not overlap.")
+        # Base RWARE delivery is keyed to ``goals``. Replacing that set makes the
+        # approved subset operational rather than merely a visualization label.
+        self.goals = selected_picking_stations
+        self.picking_stations = selected_picking_stations
 
     @staticmethod
     def _validate_options(  # noqa: C901

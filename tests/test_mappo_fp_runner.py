@@ -10,18 +10,18 @@ from llm_mappo.mappo_baseline.vector_env import MAPPOVectorEnvironment
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs" / "optimization" / "r1_mappo_fp_dg_3ag_lowload.yaml"
+CONFIG = ROOT / "configs" / "phase1" / "medium-3ag-low-workload.yaml"
 
 
-def test_frozen_baseline_contract_is_exact_and_teacher_free():
+def test_phase1_baseline_contract_is_teacher_free_and_cpu_executable():
     experiment = load_baseline_experiment(CONFIG)
     assert experiment.environment["n_agents"] == 3
     assert experiment.environment["observation_schema"] == (
         "direct-goal-observation-v1"
     )
-    assert experiment.environment["goal_progress_reward"] == 0.10
-    assert experiment.training["environment_steps"] == 500_000
-    assert experiment.training["num_env_workers"] == 16
+    assert experiment.environment["reward_version"] == "reward-v2"
+    assert experiment.training["environment_steps"] == 300_000
+    assert experiment.training["num_env_workers"] == 6
     assert experiment.training["rollout_length"] == 64
     assert experiment.training["ppo_epochs"] == 5
     assert experiment.training["num_minibatches"] == 1

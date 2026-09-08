@@ -19,7 +19,7 @@ from llm_mappo.reward_v2 import (
     SUPPORTED_REWARD_VERSIONS,
     RewardGoalSnapshot,
     reward_v2_progress_deltas,
-    reward_v2_team_reward,
+    reward_v2_team_reward_breakdown,
 )
 from rware.warehouse import Action
 
@@ -54,6 +54,13 @@ class EpisodeMetrics:
     agent_steps: int = 0
     steps: int = 0
     reward: float = 0.0
+    reward_completion: float = 0.0
+    reward_pickup: float = 0.0
+    reward_progress: float = 0.0
+    reward_blocked_forward: float = 0.0
+    reward_collision: float = 0.0
+    reward_energy: float = 0.0
+    reward_step_cost: float = 0.0
 
     @property
     def completion_rate(self) -> float:
@@ -99,6 +106,13 @@ class EpisodeMetrics:
             "minimum_battery": self.minimum_battery,
             "steps": self.steps,
             "reward": self.reward,
+            "reward_completion": self.reward_completion,
+            "reward_pickup": self.reward_pickup,
+            "reward_progress": self.reward_progress,
+            "reward_blocked_forward": self.reward_blocked_forward,
+            "reward_collision": self.reward_collision,
+            "reward_energy": self.reward_energy,
+            "reward_step_cost": self.reward_step_cost,
             "success": self.success,
         }
 
@@ -138,6 +152,8 @@ class Phase2Warehouse:
     priority_schedule: Optional[Sequence[str]] = None
     batch_interval: Optional[int] = None
     batch_size_range: Optional[Tuple[int, int]] = None
+    charging_stations: Optional[Sequence[Tuple[int, int]]] = None
+    picking_stations: Optional[Sequence[Tuple[int, int]]] = None
     initial_priority_label: str = "B"
     request_queue_size: Optional[int] = None
     task_completion_target: Optional[int] = None
@@ -204,7 +220,7 @@ class Phase2Warehouse:
             raise ValueError("task_completion_target must be positive when provided.")
         if (
             self.observation_schema != ObservationSchema.LEGACY_WAYPOINT_V1
-            and (self.priority_schedule is not None or self.include_priority_features)
+            and self.include_priority_features
         ):
             raise ValueError(
                 "Optimization observation schemas require the frozen 613D layout."
@@ -222,6 +238,10 @@ class Phase2Warehouse:
         }
         if self.priority_schedule is not None:
             make_options["priority_schedule"] = tuple(self.priority_schedule)
+        if self.charging_stations is not None:
+            make_options["charging_stations"] = tuple(self.charging_stations)
+        if self.picking_stations is not None:
+            make_options["picking_stations"] = tuple(self.picking_stations)
         if self.render_mode is not None:
             make_options["render_mode"] = self.render_mode
         self._env = gym.make(self.env_id, **make_options)
@@ -318,7 +338,7 @@ class Phase2Warehouse:
             pickup_weights = self._successful_pickup_weights(
                 carrying_before, assigned_before
             )
-            team_reward = reward_v2_team_reward(
+            reward_breakdown = reward_v2_team_reward_breakdown(
                 raw_rewards=rewards,
                 events=info["events"],
                 task_weights=task_weights,
@@ -327,6 +347,8 @@ class Phase2Warehouse:
                 low_battery_penalties=low_battery_penalties,
                 legacy_blocked_forward_penalty=self.env.blocked_forward_penalty,
             )
+            team_reward = reward_breakdown.team_reward
+            reward_components = reward_breakdown.as_dict()
             waypoint_progress = bool(np.any(progress_deltas > 0.0))
         else:
             shaped_rewards = np.asarray(rewards, dtype=np.float32)
@@ -335,11 +357,13 @@ class Phase2Warehouse:
             shaped_rewards -= 0.01
             shaped_rewards += low_battery_penalties
             team_reward = float(np.mean(shaped_rewards))
+            reward_components = {}
             waypoint_progress = bool(np.any(movement_rewards))
 
         self._update_metrics(
             info,
             team_reward,
+            reward_components,
             waypoint_progress,
             picked_tasks,
             charging_targets,
@@ -881,6 +905,7 @@ class Phase2Warehouse:
         self,
         info: dict,
         reward: float,
+        reward_components: Dict[str, float],
         waypoint_progress: bool,
         picked_tasks: int,
         charging_targets: Dict[int, Tuple[int, int]],
@@ -917,6 +942,8 @@ class Phase2Warehouse:
         )
         self._metrics.steps = int(info["step"])
         self._metrics.reward += reward
+        for name, value in reward_components.items():
+            setattr(self._metrics, name, getattr(self._metrics, name) + float(value))
         if info["step"] - self._last_progress_step >= self.deadlock_steps:
             self._metrics.deadlocked = True
 
