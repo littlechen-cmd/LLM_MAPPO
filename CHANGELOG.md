@@ -2,6 +2,9 @@
 
 ## 2026-09-08
 
+- Added: Phase 1 inspected the RWARE medium/large layouts and produced three
+  colour-only facility/workload preview proposals; the 3-AGV profile records
+  the required single-picking-station environment change for owner approval.
 - Planned: Added the owner-approved Phase 1 recurrent MAPPO baseline work,
   covering RWARE-derived facility previews, a 64D GRU Actor/Critic, local
   teacher-free diagnostics and review-gated DirectGoal/waypoint comparison.

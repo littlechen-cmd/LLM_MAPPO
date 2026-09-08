@@ -2,16 +2,16 @@
 
 ## Task group 1: Map, facility and workload inspection
 
-- [ ] Inspect the current RWARE medium and large maps, their usable traversable
+- [x] Inspect the current RWARE medium and large maps, their usable traversable
   cells and existing workstation/shelf geometry.
-- [ ] Produce three proposed profiles: `medium-3ag-low-workload`,
+- [x] Produce three proposed profiles: `medium-3ag-low-workload`,
   `medium-5ag-low-workload` and `large-5ag-high-workload`; each must state
   exact AGV count, task-ingress parameters, charging-station coordinates and
   picking-station coordinates.
-- [ ] Enforce chargers = AGVs and picking stations = `floor(AGVs / 2)`.
-- [ ] Generate one colour-only layout preview per profile using red/amber/blue
-  priority colours, without alphanumeric priority or per-item labels.
-- [ ] Pause for owner approval of the three previews and profile table. Do not
+- [x] Enforce chargers = AGVs and picking stations = `floor(AGVs / 2)`.
+- [x] Generate one layout preview per profile using a four-class A/B/C/D colour
+  legend, without per-item labels or identifiers.
+- [x] Owner approved the three previews and profile table. Do not
   create training configurations or launch training before approval.
 
 ## Task group 2: Recurrent MAPPO-FP implementation

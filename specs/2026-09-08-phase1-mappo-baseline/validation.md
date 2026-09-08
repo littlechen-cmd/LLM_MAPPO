@@ -2,8 +2,10 @@
 
 ## Definition of done
 
-- [ ] The three owner-approved RWARE-derived profiles have valid, colour-only
-  preview images and explicit facility/workload configurations.
+- [ ] The three owner-approved RWARE-derived profiles have valid previews and
+  explicit facility configurations; the two low-workload profiles also have
+  explicit workload configurations, while the large workload is documented as
+  deferred until its stated review gate.
 - [ ] MAPPO uses separate 64D single-layer Actor and Critic GRUs with
   parameter sharing across AGVs, correct recurrent rollout/reset semantics and
   contiguous recurrent PPO updates.

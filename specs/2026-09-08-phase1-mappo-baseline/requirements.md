@@ -41,7 +41,8 @@ It covers:
 | Local diagnostics run on CPU with six independent environment workers; the learner uses four PyTorch CPU threads and every worker has one numerical-library thread. | The i5-13500H has 12 physical cores / 16 logical processors; this leaves capacity for the learner and the owner’s normal desktop workload without oversubscription. |
 | Each diagnostic run uses training seed `7`, fixed evaluation seeds `9400` and `9401`, and a slow replay of seed `9400`. | These are compact, repeatable review evidence rather than formal statistics. |
 | Charging-station count equals AGV count; picking-station count equals `floor(AGV / 2)`. | This is the owner-approved facility contract for all three Phase 1 layouts. |
-| Layout priority is shown only through a colour legend: high red, medium amber, low blue; same-priority goods share exactly the same colour and have no letter/number identifier. | It makes workload and priority visually inspectable without encoding artificial per-item identity. |
+| Layout priority is shown through a four-class `A/B/C/D` colour legend: A red-orange, B amber, C blue and D purple. Same-priority goods share exactly the same colour and no individual task or shelf identifier is shown. | It represents every project priority class while keeping the preview free of artificial per-item identity. |
+| The large-5AG task-ingress interval, batch size and completion target are deliberately deferred until the medium-5AG diagnostic has been reviewed. | It avoids freezing a high-workload demand level before observing what the recovered baseline can handle. |
 | A waypoint run is a conditional diagnostic, not part of the pure MAPPO baseline. | It isolates whether execution-time geometric guidance is the learning bottleneck. |
 | If the 5-AGV large high-workload scratch run is judged insufficient, its warm start loads the final 5-AGV medium low-workload Actor, Critic and ValueNorm state only; optimizer, scheduler and global step are reset. | It transfers learned navigation representations without falsely continuing the previous optimization trajectory. |
 
@@ -96,7 +97,7 @@ The three profiles are:
 | --- | --- | ---: | --- |
 | `medium-3ag-low-workload` | RWARE medium | 3 | low; exact initial/dynamic task parameters approved with its preview |
 | `medium-5ag-low-workload` | RWARE medium | 5 | low; exact initial/dynamic task parameters approved with its preview |
-| `large-5ag-high-workload` | RWARE large | 5 | high; exact initial/dynamic task parameters approved with its preview |
+| `large-5ag-high-workload` | RWARE large | 5 | station layout approved now; workload intensity determined after medium-5AG review |
 
 ### Diagnostic sequence
 
@@ -127,5 +128,6 @@ threshold applies; the owner and architect conduct the stated manual review.
 
 ## Open questions
 
-None. Workload values and station coordinates are deliberately evidence-gated
-outputs of the first task group and require owner approval before training.
+The large-5AG workload intensity is deliberately deferred until the medium-5AG
+diagnostic is reviewed. Its station coordinates and all low-workload profile
+values are owner approved.
