@@ -2,6 +2,9 @@
 
 ## 2026-09-08
 
+- Planned: Added the owner-approved Phase 1 recurrent MAPPO baseline work,
+  covering RWARE-derived facility previews, a 64D GRU Actor/Critic, local
+  teacher-free diagnostics and review-gated DirectGoal/waypoint comparison.
 - Removed: Cleared superseded G2/G3, Phase 1--4, O1/O2/P1 and early R1-C
   materials (their configs, runners, diagnostics, tests, historical task packages,
   archived runbooks and obsolete experiment artifacts). The canonical R1/MAPPO-FP,
