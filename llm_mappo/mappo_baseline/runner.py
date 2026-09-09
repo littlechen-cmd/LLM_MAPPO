@@ -219,6 +219,7 @@ class BaselineRun:
         "energy_deaths",
         "minimum_battery",
         "steps",
+        "steps_per_task",
         "reward_completion",
         "reward_pickup",
         "reward_progress",
@@ -864,13 +865,19 @@ class BaselineRun:
     def _summary(self, evaluation) -> dict[str, Any]:
         episodes = self._read_csv(self.directory / "episodes.csv")
         window = episodes[-100:]
+        continuous_throughput = not self.experiment.environment.get(
+            "terminate_on_task_target", True
+        )
         return {
             "identity": self.identity,
             "global_environment_steps": self.global_steps,
             "updates": self.updates,
             "completed_training_episodes": len(episodes),
             "planner_query_count": self.planner_query_count,
-            "training_episode_window": _episode_window(window),
+            "training_episode_window": _episode_window(
+                window,
+                primary_metric="steps_per_task" if continuous_throughput else None,
+            ),
             "evaluation": evaluation,
             "total_elapsed_seconds": self._elapsed(),
         }
@@ -906,7 +913,6 @@ class BaselineRun:
         mapping = {
             "team_reward": "reward",
             "completed_tasks": "completed_tasks",
-            "task_completion_rate": "task_completion_rate",
             "episode_length": "steps",
             "collisions": "collisions",
             "blocked_forward": "blocked_forwards",
@@ -914,10 +920,15 @@ class BaselineRun:
             "energy_deaths": "energy_deaths",
             "charging_exposure_rate": "charging_exposure_rate",
         }
+        if not self.experiment.environment.get("terminate_on_task_target", True):
+            mapping["steps_per_task"] = "steps_per_task"
+        else:
+            mapping["task_completion_rate"] = "task_completion_rate"
         for tag, name in mapping.items():
-            self._board.add_scalar(f"episode/{tag}", float(row[name]), step)
-        rate = 1000.0 * float(row["completed_tasks"]) / max(float(row["steps"]), 1.0)
-        self._board.add_scalar("episode/tasks_per_1000_steps", rate, step)
+            if row[name] not in {None, ""}:
+                self._board.add_scalar(f"episode/{tag}", float(row[name]), step)
+        if row["steps_per_task"] in {None, ""}:
+            self._board.add_scalar("episode/zero_completed_tasks", 1.0, step)
         for name in (
             "reward_completion", "reward_pickup", "reward_progress",
             "reward_blocked_forward", "reward_collision", "reward_energy",
@@ -987,10 +998,12 @@ class BaselineRun:
             return list(csv.DictReader(handle))
 
 
-def _episode_window(rows) -> dict[str, float | int]:
+def _episode_window(rows, *, primary_metric: str | None = None) -> dict[str, Any]:
     if not rows:
         return {"window_size": 0}
-    return {
+    total_steps = sum(float(row["steps"]) for row in rows)
+    total_completed = sum(float(row["completed_tasks"]) for row in rows)
+    summary = {
         "window_size": len(rows),
         "mean_task_completion_rate": float(np.mean([
             float(row["task_completion_rate"]) for row in rows
@@ -998,8 +1011,14 @@ def _episode_window(rows) -> dict[str, float | int]:
         "mean_completed_tasks": float(np.mean([
             float(row["completed_tasks"]) for row in rows
         ])),
+        "total_episode_steps": total_steps,
+        "total_completed_tasks": total_completed,
+        "steps_per_task": total_steps / total_completed if total_completed else None,
         "mean_team_reward": float(np.mean([float(row["reward"]) for row in rows])),
     }
+    if primary_metric is not None:
+        summary["primary_metric"] = primary_metric
+    return summary
 
 
 def _commit() -> str:

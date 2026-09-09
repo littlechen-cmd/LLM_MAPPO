@@ -16,11 +16,16 @@ from llm_mappo.mappo_astar_kd.trainer import AStarKDTrainer
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.trainer import MAPPOConfig
 from llm_mappo.mappo_astar_kd.runner import load_astar_kd_experiment
-from llm_mappo.mappo_baseline.runner import load_baseline_experiment
+from llm_mappo.mappo_baseline.runner import (
+    _episode_window,
+    load_baseline_experiment,
+)
 from llm_mappo.mappo_baseline.vector_env import (
     MAPPOVectorEnvironment,
     new_baseline_environment,
 )
+from llm_mappo.phase2 import EpisodeMetrics, Phase2Warehouse
+from rware.warehouse import Action
 
 
 def _map() -> StaticMap:
@@ -122,6 +127,67 @@ def test_labeler_uses_direct_rule_goal_and_keeps_peer_occupancy_out_of_target():
         assert all(reason for reason in labels.failure_reasons)
     finally:
         environment.close()
+
+
+def test_continuous_training_timeout_is_a_truncation_not_a_task_termination():
+    """Catch target-driven or terminal timeout endings in continuous training."""
+
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=1,
+        request_queue_size=1,
+        task_completion_target=18,
+        replenishment_mode="rware_delivery",
+        terminate_on_task_target=False,
+    )
+    try:
+        environment.reset(seed=7)
+        transition = environment.step([Action.NOOP])
+
+        assert not transition.terminated
+        assert transition.truncated
+        assert transition.metrics.steps == 1
+    finally:
+        environment.close()
+
+
+def test_steps_per_task_keeps_zero_completion_undefined_and_aggregates_totals():
+    """Catch finite zero-completion throughput and mean-of-ratios summaries."""
+
+    assert EpisodeMetrics(steps=800, completed_tasks=0).steps_per_task is None
+    assert EpisodeMetrics(steps=800, completed_tasks=4).steps_per_task == 200.0
+
+    window = _episode_window(
+        [
+            {"steps": "800", "completed_tasks": "4", "reward": "1.0",
+             "task_completion_rate": "0.5"},
+            {"steps": "800", "completed_tasks": "0", "reward": "2.0",
+             "task_completion_rate": "0.0"},
+        ],
+        primary_metric="steps_per_task",
+    )
+
+    assert window["steps_per_task"] == 400.0
+    assert window["primary_metric"] == "steps_per_task"
+
+
+def test_phase2_training_profiles_disable_task_target_termination_only_in_training():
+    """Catch a training profile that restores target termination or alters eval."""
+
+    root = Path("configs/phase2")
+    names = (
+        "medium-3ag-astar-kd.yaml",
+        "medium-5ag-baseline.yaml",
+        "medium-5ag-astar-kd-no-validity.yaml",
+        "medium-5ag-astar-kd.yaml",
+    )
+
+    for name in names:
+        profile = load_baseline_experiment(root / name)
+        assert profile.environment["terminate_on_task_target"] is False
+        assert profile.evaluation["environment_overrides"][
+            "terminate_on_task_target"
+        ] is True
 
 
 def test_vector_step_refreshes_current_astar_kd_payload():

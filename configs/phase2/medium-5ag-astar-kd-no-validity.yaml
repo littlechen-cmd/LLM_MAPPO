@@ -10,6 +10,7 @@ environment: &medium5_environment
   batch_size_range: [1, 1]
   queue_size: 5
   task_target: 18
+  terminate_on_task_target: false
   training_replenishment_mode: rware_delivery
   initial_priority_label: A
   priority_schedule: [A, B, C, D]
@@ -55,3 +56,4 @@ evaluation:
   replay_frame_duration_ms: 600
   environment_overrides:
     task_target: 8
+    terminate_on_task_target: true

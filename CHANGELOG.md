@@ -2,6 +2,10 @@
 
 ## 2026-09-09
 
+- Changed: Phase 2 training profiles now explicitly ignore task-target
+  termination and treat the `max_steps` horizon as truncation, while their
+  evaluation overrides retain task-target termination. Training evidence now
+  records `steps_per_task` as its primary continuous-throughput metric.
 - Fixed: Phase 2 vector rollouts now replace A*KD labels and cache deltas with
   the worker payload returned for each step, including correct accounting for
   a final partial worker batch; the earlier stale reset-payload diagnostics do

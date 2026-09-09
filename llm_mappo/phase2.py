@@ -75,6 +75,14 @@ class EpisodeMetrics:
         return min(self.completed_tasks, denominator) / denominator
 
     @property
+    def steps_per_task(self) -> float | None:
+        """Return the continuous-workload cost per completion, if defined."""
+
+        if self.completed_tasks < 1:
+            return None
+        return float(self.steps) / float(self.completed_tasks)
+
+    @property
     def success(self) -> bool:
         if self.task_completion_target:
             return (
@@ -89,12 +97,13 @@ class EpisodeMetrics:
             return 0.0
         return self.charging_target_steps / self.agent_steps
 
-    def as_dict(self) -> Dict[str, float | bool | int]:
+    def as_dict(self) -> Dict[str, float | bool | int | None]:
         return {
             "completed_tasks": self.completed_tasks,
             "created_tasks": self.created_tasks,
             "task_completion_target": self.task_completion_target,
             "task_completion_rate": self.completion_rate,
+            "steps_per_task": self.steps_per_task,
             "collisions": self.collisions,
             "deadlocked": self.deadlocked,
             "agent_deaths": self.agent_deaths,
@@ -168,6 +177,7 @@ class Phase2Warehouse:
     initial_priority_label: str = "B"
     request_queue_size: Optional[int] = None
     task_completion_target: Optional[int] = None
+    terminate_on_task_target: bool = True
     replenishment_mode: str = "dynamic_ingress"
     include_priority_features: bool = False
     render_mode: Optional[str] = None
@@ -237,6 +247,8 @@ class Phase2Warehouse:
             raise ValueError("request_queue_size must be positive when provided.")
         if self.task_completion_target is not None and self.task_completion_target < 1:
             raise ValueError("task_completion_target must be positive when provided.")
+        if not isinstance(self.terminate_on_task_target, bool):
+            raise ValueError("terminate_on_task_target must be a boolean.")
         if self.replenishment_mode not in {"dynamic_ingress", "rware_delivery"}:
             raise ValueError("replenishment_mode is not supported.")
         if (
@@ -429,22 +441,23 @@ class Phase2Warehouse:
             dtype=bool,
         )
         observations = self._observations()
+        reached_task_terminal = self.terminate_on_task_target and (
+            (
+                self._metrics.task_completion_target > 0
+                and self._metrics.completed_tasks
+                >= self._metrics.task_completion_target
+            )
+            or (
+                self._metrics.completed_tasks == self._metrics.created_tasks
+                and not self._dynamic_ingress_enabled()
+            )
+        )
+        timeout = int(info["step"]) >= self.max_steps
         return Phase2Step(
             observations=observations,
             team_reward=team_reward,
-            terminated=bool(
-                terminated
-                or (
-                    self._metrics.task_completion_target > 0
-                    and self._metrics.completed_tasks
-                    >= self._metrics.task_completion_target
-                )
-                or (
-                    self._metrics.completed_tasks == self._metrics.created_tasks
-                    and not self._dynamic_ingress_enabled()
-                )
-            ),
-            truncated=bool(truncated),
+            terminated=bool((terminated and not timeout) or reached_task_terminal),
+            truncated=bool(truncated or timeout),
             info=info,
             metrics=self._metrics,
         )

@@ -53,6 +53,9 @@ def new_baseline_environment(
         priority_schedule=tuple(values["priority_schedule"]),
         request_queue_size=int(values["queue_size"]),
         task_completion_target=int(values["task_target"]),
+        terminate_on_task_target=bool(
+            values.get("terminate_on_task_target", True)
+        ),
         replenishment_mode=str(
             replenishment_mode
             or values.get("training_replenishment_mode", "dynamic_ingress")

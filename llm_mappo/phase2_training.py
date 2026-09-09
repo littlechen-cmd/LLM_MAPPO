@@ -220,7 +220,10 @@ def train_phase2(config: Phase2TrainingConfig) -> Dict[str, object]:  # noqa: C9
                 episode_records.append(record)
                 if writer is not None:
                     for key, metric in record.items():
-                        if key not in {"episode", "deadlocked", "success"}:
+                        if (
+                            key not in {"episode", "deadlocked", "success"}
+                            and metric is not None
+                        ):
                             writer.add_scalar(f"episode/{key}", metric, episodes)
                     writer.add_scalar(
                         "episode/deadlocked", record["deadlocked"], episodes
