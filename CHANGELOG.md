@@ -2,6 +2,10 @@
 
 ## 2026-09-08
 
+- Added: Group 6 now has an executable 5-AGV DirectGoal low-workload profile:
+  800-step episodes, the current `-0.1/-0.1` event penalties, one-time
+  deadlock penalty, RWARE replenishment during training and dynamic ingress
+  during fixed evaluation.
 - Changed: Phase 1 DirectGoal training restores original RWARE delivery-time
   fixed-request replenishment: every delivered requested shelf is immediately
   replaced with one new task. Fixed evaluation remains on dynamic ingress, and

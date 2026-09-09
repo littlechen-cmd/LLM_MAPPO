@@ -110,6 +110,13 @@
 
 ## Task group 6: Medium 5-AGV capability diagnostic
 
+- [x] Select the owner-approved DirectGoal interface after the waypoint review
+  and prepare the 5-AGV configuration with 800-step episodes, the executable
+  Reward-v2 values, RWARE delivery replenishment in training, and dynamic
+  ingress in fixed evaluation.
+- [x] Construct and reset both 5-AGV environments without training: training
+  begins with five active requests/tasks, while evaluation retains its separate
+  dynamic-ingress mode.
 - [ ] Train the owner-selected goal-interface baseline from scratch for 300k
   steps on `medium-5ag-low-workload`, seed `7`.
 - [ ] Produce its required evaluation/replay/TensorBoard review package.

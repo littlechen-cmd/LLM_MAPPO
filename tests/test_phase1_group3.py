@@ -140,3 +140,20 @@ def test_efficiency_penalty_profiles_differ_only_in_registered_penalties():
         ) == penalties
         assert environment["charge_event_reward"] == 0.05
         assert experiment.training["environment_steps"] == 300000
+
+
+def test_medium_5ag_group6_uses_direct_goal_rware_training():
+    root = Path(__file__).resolve().parents[1] / "configs" / "phase1"
+
+    experiment = load_baseline_experiment(root / "medium-5ag-low-workload.yaml")
+
+    environment = experiment.environment
+    assert experiment.method == "MAPPO-FP-DG"
+    assert environment["n_agents"] == 5
+    assert environment["max_steps"] == 800
+    assert environment["goal_interface"] == "direct_goal"
+    assert environment["training_replenishment_mode"] == "rware_delivery"
+    assert environment["reward_blocked_forward_penalty"] == 0.10
+    assert environment["reward_collision_penalty"] == 0.10
+    assert environment["reward_deadlock_penalty"] == 5.00
+    assert experiment.evaluation["replenishment_mode"] == "dynamic_ingress"
