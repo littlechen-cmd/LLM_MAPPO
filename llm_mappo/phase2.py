@@ -168,6 +168,7 @@ class Phase2Warehouse:
     initial_priority_label: str = "B"
     request_queue_size: Optional[int] = None
     task_completion_target: Optional[int] = None
+    replenishment_mode: str = "dynamic_ingress"
     include_priority_features: bool = False
     render_mode: Optional[str] = None
     observation_schema: ObservationSchema = field(
@@ -236,6 +237,8 @@ class Phase2Warehouse:
             raise ValueError("request_queue_size must be positive when provided.")
         if self.task_completion_target is not None and self.task_completion_target < 1:
             raise ValueError("task_completion_target must be positive when provided.")
+        if self.replenishment_mode not in {"dynamic_ingress", "rware_delivery"}:
+            raise ValueError("replenishment_mode is not supported.")
         if (
             self.observation_schema != ObservationSchema.LEGACY_WAYPOINT_V1
             and self.include_priority_features
@@ -253,6 +256,7 @@ class Phase2Warehouse:
             "initial_priority_label": self.initial_priority_label,
             "task_completion_target": self.task_completion_target,
             "battery_cost_scale": self.battery_cost_scale,
+            "replenishment_mode": self.replenishment_mode,
         }
         if self.priority_schedule is not None:
             make_options["priority_schedule"] = tuple(self.priority_schedule)
@@ -291,7 +295,7 @@ class Phase2Warehouse:
         self._raw_observations, info = self._env.reset(seed=seed)
         target = (
             int(info["task_completion_target"])
-            if self._dynamic_ingress_enabled()
+            if self._uses_task_completion_target()
             else 0
         )
         self._metrics = EpisodeMetrics(
@@ -525,8 +529,15 @@ class Phase2Warehouse:
     def _dynamic_ingress_enabled(self) -> bool:
         """Keep episodes open until truncation while future batches can arrive."""
         return (
-            self.batch_interval is not None
+            self.replenishment_mode == "dynamic_ingress"
+            and self.batch_interval is not None
             and self.batch_interval <= self.max_steps
+        )
+
+    def _uses_task_completion_target(self) -> bool:
+        return (
+            self._dynamic_ingress_enabled()
+            or self.replenishment_mode == "rware_delivery"
         )
 
     def _observations(self) -> np.ndarray:

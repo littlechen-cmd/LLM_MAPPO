@@ -30,6 +30,7 @@ class DynamicWarehouse(Warehouse):
         priority_schedule: Optional[Sequence[str]] = None,
         blocked_forward_penalty: float = 0.05,
         task_completion_target: Optional[int] = None,
+        replenishment_mode: str = "dynamic_ingress",
         **kwargs,
     ):
         self._validate_options(
@@ -42,6 +43,7 @@ class DynamicWarehouse(Warehouse):
             priority_schedule,
             blocked_forward_penalty,
             task_completion_target,
+            replenishment_mode,
         )
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
@@ -52,6 +54,7 @@ class DynamicWarehouse(Warehouse):
         self.initial_priority_label = initial_priority_label
         self.priority_schedule = tuple(priority_schedule or ())
         self.blocked_forward_penalty = blocked_forward_penalty
+        self.replenishment_mode = replenishment_mode
         self.task_queue = TaskQueue()
         self._batch_index = 0
         self._shelf_home = {}
@@ -116,6 +119,7 @@ class DynamicWarehouse(Warehouse):
         priority_schedule,
         blocked_forward_penalty,
         task_completion_target,
+        replenishment_mode,
     ):
         if batch_interval <= 0:
             raise ValueError("batch_interval must be positive.")
@@ -142,6 +146,8 @@ class DynamicWarehouse(Warehouse):
             isinstance(task_completion_target, bool) or task_completion_target < 1
         ):
             raise ValueError("task_completion_target must be a positive integer.")
+        if replenishment_mode not in {"dynamic_ingress", "rware_delivery"}:
+            raise ValueError("replenishment_mode is not supported.")
 
     def reset(self, seed=None, options=None):
         self.task_queue = TaskQueue()
@@ -192,6 +198,7 @@ class DynamicWarehouse(Warehouse):
             "picking_lock_steps": self.picking_lock_steps,
             "auto_assign": self.auto_assign,
             "task_completion_target": self.task_completion_target,
+            "replenishment_mode": self.replenishment_mode,
         }
 
     def shadow_layout_hash(self) -> str:
@@ -517,7 +524,11 @@ class DynamicWarehouse(Warehouse):
         return int(self.np_random.integers(lower, upper + 1))
 
     def _dynamic_ingress_enabled(self) -> bool:
-        return self.max_steps is not None and self.batch_interval <= self.max_steps
+        return (
+            self.replenishment_mode == "dynamic_ingress"
+            and self.max_steps is not None
+            and self.batch_interval <= self.max_steps
+        )
 
     def _completed_task_count(self) -> int:
         return sum(task.status.value == "completed" for task in self.task_queue.tasks)
@@ -526,6 +537,8 @@ class DynamicWarehouse(Warehouse):
         return self._completed_task_count() >= self.task_completion_target
 
     def _spawn_scheduled_batch(self):
+        if self.replenishment_mode != "dynamic_ingress":
+            return
         if (
             self._cur_steps == 0
             or self._cur_steps >= self.max_steps
@@ -585,8 +598,11 @@ class DynamicWarehouse(Warehouse):
         ]
 
     def _renew_delivered_request(self, delivered_shelf) -> None:
-        """Let the dynamic TaskQueue, rather than base RWARE, create new work."""
-        self.request_queue.remove(delivered_shelf)
+        """Apply the selected queue renewal policy after a shelf delivery."""
+        if self.replenishment_mode == "rware_delivery":
+            super()._renew_delivered_request(delivered_shelf)
+        else:
+            self.request_queue.remove(delivered_shelf)
 
     def _assign_available_tasks(self):
         if not self.auto_assign:
@@ -623,6 +639,14 @@ class DynamicWarehouse(Warehouse):
                     "agent_id": agent.id,
                 }
             )
+        if delivered and self.replenishment_mode == "rware_delivery":
+            active_shelf_ids = {task.shelf_id for task in active_before}
+            replacement_ids = [
+                shelf.id
+                for shelf in self.request_queue
+                if shelf.id not in active_shelf_ids
+            ]
+            self._create_batch(replacement_ids)
         return delivered
 
     def _remove_base_delivery_reward(self, agent_id: int, rewards: np.ndarray):

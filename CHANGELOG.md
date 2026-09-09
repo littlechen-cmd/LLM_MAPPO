@@ -2,6 +2,10 @@
 
 ## 2026-09-08
 
+- Changed: Phase 1 DirectGoal training restores original RWARE delivery-time
+  fixed-request replenishment: every delivered requested shelf is immediately
+  replaced with one new task. Fixed evaluation remains on dynamic ingress, and
+  both modes are captured in the run configuration.
 - Added: The DirectGoal recovery profile now applies a single `-5.0` team
   reward only on the transition that first reaches episode deadlock. It retains
   `-0.005` per-step cost and the known executable `-0.1/-0.1` blocked-forward/

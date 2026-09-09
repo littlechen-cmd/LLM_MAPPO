@@ -98,6 +98,16 @@
   package. If DG completes tasks, stop Phase 1 baseline reward optimization and
   move to the next project task regardless of efficiency or one-seed rate.
 
+## Task group 5c: Training-only RWARE replenishment recovery
+
+- [x] Restore the original RWARE delivery-time fixed-request replacement in
+  training workers: one delivered request is replaced by one new requested
+  shelf and corresponding project task.
+- [x] Keep deterministic evaluation on dynamic ingress, rather than silently
+  evaluating under the training-only replenishment mode.
+- [ ] Owner runs the next DirectGoal diagnostic under the recorded training /
+  evaluation split. Any confirmed task completion ends Phase 1 baseline tuning.
+
 ## Task group 6: Medium 5-AGV capability diagnostic
 
 - [ ] Train the owner-selected goal-interface baseline from scratch for 300k

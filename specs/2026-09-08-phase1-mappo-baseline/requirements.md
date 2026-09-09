@@ -158,6 +158,16 @@ an episode. The owner-approved exit condition is deliberately limited: once DG
 demonstrates task completion, Phase 1 baseline reward tuning stops regardless
 of its efficiency or one-seed success rate.
 
+### Training-only RWARE replenishment
+
+The DirectGoal training workers restore the original RWARE fixed-request queue:
+each requested shelf that reaches a picking station is immediately replaced by
+one previously unrequested shelf. The replacement becomes one new task under
+the existing project priority/task interface, so request-queue cardinality is
+preserved without a timed ingress batch. Fixed evaluation retains the current
+dynamic-ingress mode. This is a training-distribution change; its training and
+evaluation modes are recorded separately in every run identity.
+
 ## Open questions
 
 The large-5AG workload intensity is deliberately deferred until the medium-5AG

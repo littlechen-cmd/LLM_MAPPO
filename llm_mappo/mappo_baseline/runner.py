@@ -104,6 +104,10 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:
         raise ValueError("MAPPO baseline dynamic ingress interval is invalid.")
     if len(environment["batch_size_range"]) != 2:
         raise ValueError("MAPPO baseline batch-size range is invalid.")
+    if environment.get("training_replenishment_mode", "dynamic_ingress") not in {
+        "dynamic_ingress", "rware_delivery"
+    }:
+        raise ValueError("MAPPO baseline training replenishment mode is invalid.")
 
 
 def _validate_training(training: Mapping[str, Any]) -> None:
@@ -137,6 +141,10 @@ def _validate_evaluation(evaluation: Mapping[str, Any]) -> None:
         raise ValueError("Phase 1 evaluation must use deterministic argmax.")
     if int(evaluation.get("replay_frame_duration_ms", 0)) < 500:
         raise ValueError("Phase 1 replay must be slow enough for owner review.")
+    if evaluation.get("replenishment_mode", "dynamic_ingress") not in {
+        "dynamic_ingress", "rware_delivery"
+    }:
+        raise ValueError("MAPPO baseline evaluation replenishment mode is invalid.")
 
 
 class BaselineRun:
@@ -486,7 +494,14 @@ class BaselineRun:
     def _evaluation_episode(
         self, seed: int, replay_path: Path | None = None
     ) -> dict[str, Any]:
-        environment = new_baseline_environment(self.experiment.environment)
+        environment = new_baseline_environment(
+            self.experiment.environment,
+            replenishment_mode=str(
+                self.experiment.evaluation.get(
+                    "replenishment_mode", "dynamic_ingress"
+                )
+            ),
+        )
         frames = []
         try:
             environment.reset(seed=seed)

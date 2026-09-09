@@ -269,6 +269,41 @@ def test_reward_v2_applies_terminal_deadlock_penalty_once():
         environment.close()
 
 
+def test_rware_delivery_replenishment_keeps_training_request_queue_full():
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=16,
+        deadlock_steps=15,
+        reward_version="reward-v2",
+        batch_interval=40,
+        batch_size_range=(1, 1),
+        request_queue_size=1,
+        task_completion_target=6,
+        replenishment_mode="rware_delivery",
+    )
+    try:
+        environment.reset(seed=3)
+        task = environment.env.task_queue.active_tasks[0]
+        delivered_shelf = environment.env.shelfs[task.shelf_id - 1]
+        agent = environment.env.agents[0]
+        goal_x, goal_y = environment.env.goals[0]
+        agent.x, agent.y, agent.dir = goal_x, goal_y - 1, Direction.DOWN
+        agent.carrying_shelf = delivered_shelf
+        delivered_shelf.x, delivered_shelf.y = agent.x, agent.y
+        environment.env._recalc_grid()
+
+        transition = environment.step([Action.FORWARD])
+
+        active = environment.env.task_queue.active_tasks
+        assert transition.metrics.completed_tasks == 1
+        assert len(active) == 1
+        assert active[0].shelf_id != delivered_shelf.id
+        assert len(environment.env.request_queue) == 1
+        assert environment.env.request_queue[0].id == active[0].shelf_id
+    finally:
+        environment.close()
+
+
 def test_static_grid_distance_rewards_a_necessary_manhattan_detour():
     """A valid first detour step can increase Manhattan distance yet progress."""
     start = (0, 0)

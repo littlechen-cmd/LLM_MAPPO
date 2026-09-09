@@ -23,7 +23,9 @@ from llm_mappo.optimization_observation import ObservationSchema
 from llm_mappo.phase2 import Phase2Warehouse
 
 
-def new_baseline_environment(values) -> Phase2Warehouse:
+def new_baseline_environment(
+    values, *, replenishment_mode: str | None = None
+) -> Phase2Warehouse:
     """Construct the exact DirectGoal environment from its frozen profile."""
 
     if values["observation_schema"] != ObservationSchema.DIRECT_GOAL_V1.value:
@@ -51,6 +53,10 @@ def new_baseline_environment(values) -> Phase2Warehouse:
         priority_schedule=tuple(values["priority_schedule"]),
         request_queue_size=int(values["queue_size"]),
         task_completion_target=int(values["task_target"]),
+        replenishment_mode=str(
+            replenishment_mode
+            or values.get("training_replenishment_mode", "dynamic_ingress")
+        ),
         charging_stations=tuple(tuple(item) for item in values["charging_stations"]),
         picking_stations=tuple(tuple(item) for item in values["picking_stations"]),
         observation_schema=ObservationSchema.DIRECT_GOAL_V1,
