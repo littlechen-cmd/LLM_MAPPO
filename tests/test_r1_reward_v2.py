@@ -151,6 +151,56 @@ def test_reward_v2_completed_delivery_is_better_than_equally_long_stagnation():
         environment.close()
 
 
+def test_reward_v2_low_battery_penalty_is_charged_only_on_threshold_entry():
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=8,
+        charge_threshold=0.3,
+        reward_version="reward-v2",
+    )
+    try:
+        environment.reset(seed=3)
+        agent = environment.env.agents[0]
+        agent.battery = 0.3001
+
+        entry = environment.step([Action.NOOP])
+        sustained = environment.step([Action.NOOP])
+
+        assert entry.team_reward == pytest.approx(-0.505)
+        assert sustained.team_reward == pytest.approx(-0.005)
+    finally:
+        environment.close()
+
+
+def test_reward_v2_low_battery_delivery_outranks_equal_length_stagnation():
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=8,
+        charge_threshold=0.3,
+        reward_version="reward-v2",
+    )
+    try:
+        environment.reset(seed=8)
+        warehouse = environment.env
+        task = warehouse.task_queue.task_for_agent(1)
+        shelf = warehouse.shelfs[task.shelf_id - 1]
+        goal_x, goal_y = warehouse.goals[0]
+        agent = warehouse.agents[0]
+        agent.x, agent.y, agent.dir = goal_x, goal_y - 1, Direction.DOWN
+        agent.battery = 0.301
+        shelf.x, shelf.y = goal_x, goal_y - 1
+        agent.carrying_shelf = shelf
+        warehouse._recalc_grid()
+
+        productive = environment.step([Action.FORWARD]).team_reward
+        environment.reset(seed=8)
+        stagnant = environment.step([Action.NOOP]).team_reward
+
+        assert productive > stagnant
+    finally:
+        environment.close()
+
+
 def test_static_grid_distance_rewards_a_necessary_manhattan_detour():
     """A valid first detour step can increase Manhattan distance yet progress."""
     start = (0, 0)

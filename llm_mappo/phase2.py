@@ -323,7 +323,9 @@ class Phase2Warehouse:
         }
         raw_obs, rewards, terminated, truncated, info = self._env.step(actions)
         self._raw_observations = raw_obs
-        low_battery_penalties = self._low_battery_penalties(actions)
+        low_battery_penalties = self._low_battery_entry_penalties(
+            batteries_before
+        )
         picked_tasks = sum(
             carrying_before[agent.id] is None and agent.carrying_shelf is not None
             for agent in self.env.agents
@@ -912,12 +914,20 @@ class Phase2Warehouse:
             dtype=np.float32,
         )
 
-    def _low_battery_penalties(self, actions: Sequence[int]) -> np.ndarray:
+    def _low_battery_entry_penalties(
+        self, batteries_before: Dict[int, float]
+    ) -> np.ndarray:
+        """Apply the low-charge cost once per threshold crossing.
+
+        Remaining below threshold is a state to recover from, not a new failure
+        on every step.  Battery depletion is still handled separately by the
+        environment's terminal energy-death consequence.
+        """
         penalties = np.zeros(self.n_agents, dtype=np.float32)
-        for index, (agent, action) in enumerate(zip(self.env.agents, actions)):
-            charging = (agent.x, agent.y) in self.env.charging_stations
-            if agent.battery < self.charge_threshold and not (
-                charging and Action(action) == Action.NOOP
+        for index, agent in enumerate(self.env.agents):
+            if (
+                batteries_before[agent.id] >= self.charge_threshold
+                and agent.battery < self.charge_threshold
             ):
                 penalties[index] = -0.5
         return penalties

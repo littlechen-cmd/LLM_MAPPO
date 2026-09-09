@@ -2,6 +2,10 @@
 
 ## 2026-09-08
 
+- Changed: Low-battery shaping now charges `-0.5` only when an AGV crosses
+  into the low-battery state. Remaining low is no longer repeatedly penalized;
+  energy depletion remains a severe environment consequence. This preserves
+  charging as a safety condition without allowing it to erase delivery reward.
 - Changed: Phase 1 Reward-v2 now uses a `-0.1` shared penalty for every
   blocked-forward event and AGV occupancy conflict, while retaining a separate
   raw-event neutralization step so the legacy `-2.0` environment collision

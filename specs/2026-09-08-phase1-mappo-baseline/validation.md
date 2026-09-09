@@ -44,7 +44,8 @@
 - [ ] Canonical Python runs focused structured-observation, FP-state, recurrent
   hidden-state, sequence-storage, GAE and checkpoint-resume regression tests.
 - [ ] Canonical Python runs the existing MAPPO-FP and Reward-v2 regression
-  tests after the recurrent migration is completed.
+  tests after the recurrent migration is completed, including threshold-entry
+  energy shaping and productive-delivery-versus-stagnation checks.
 - [ ] One short local functional run verifies CPU-only workers, cumulative-step
   accounting, evaluation receipt, TensorBoard output and replay generation;
   it is not a performance result.
