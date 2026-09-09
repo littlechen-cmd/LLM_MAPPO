@@ -3,9 +3,9 @@
 ## Definition of done
 
 - [ ] The three owner-approved RWARE-derived profiles have valid previews and
-  explicit facility configurations; the two low-workload profiles also have
-  explicit workload configurations, while the large workload is documented as
-  deferred until its stated review gate.
+  explicit facility configurations; the 5-AGV High workload is a separate
+  same-topology checkpoint-evaluation profile with explicit ingress, batch and
+  target values.
 - [ ] MAPPO uses separate 64D single-layer Actor and Critic GRUs with
   parameter sharing across AGVs, correct recurrent rollout/reset semantics and
   contiguous recurrent PPO updates.
@@ -38,11 +38,15 @@
 5. For every completed training diagnostic, inspect TensorBoard, both fixed
    evaluation receipts and the slow replay before jointly recording the next
    action.
-6. For the WP comparison, calculate `(WP mean completion − DG mean completion)`
+6. For the 5-AGV capability diagnostic, verify the Low and High receipts load
+   the same final checkpoint, retain the same medium topology/facilities and
+   seeds, and differ only in the documented dynamic-ingress workload values.
+   Confirm the High receipt does not resume training or change source evidence.
+7. For the WP comparison, calculate `(WP mean completion − DG mean completion)`
    over seeds `9400` and `9401`; only `≥ 0.20` warrants a waypoint-return
    recommendation, not an automatic architecture change.
 
-7. For the efficiency-recovery comparison, verify a successful-charge reward
+8. For the efficiency-recovery comparison, verify a successful-charge reward
    occurred only when an AGV stayed at its active charger with `NOOP` and its
    battery increased. Compare completion, tasks per evaluation step, conflicts
    per completed task, charging events and energy deaths across P1/P2/P3; do

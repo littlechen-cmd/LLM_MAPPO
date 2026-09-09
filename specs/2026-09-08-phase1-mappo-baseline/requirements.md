@@ -11,9 +11,10 @@ It covers:
 - a structured decentralized observation, a feature-pruned (FP) centralized
   critic state, and parameter-shared recurrent Actor/Critic networks;
 - local RWARE-derived medium and large layouts with charging and picking
-  stations, plus owner-reviewed colour-only layout previews;
-- local CPU diagnostic training in the prescribed 3-AGV, 5-AGV medium and
-  5-AGV large profiles; and
+  stations, plus owner-reviewed colour-only layout previews; and
+- local CPU diagnostic training on the prescribed 3-AGV and 5-AGV medium
+  profiles, followed by same-checkpoint low/high workload evaluation on the
+  5-AGV medium map; and
 - per-run evaluation, TensorBoard evidence and a slow replay for joint owner /
   architect review.
 
@@ -43,9 +44,9 @@ It covers:
 | Each diagnostic run uses training seed `7`, fixed evaluation seeds `9400` and `9401`, and a slow replay of seed `9400`. | These are compact, repeatable review evidence rather than formal statistics. |
 | Charging-station count equals AGV count; picking-station count equals `floor(AGV / 2)`. | This is the owner-approved facility contract for all three Phase 1 layouts. |
 | Layout priority is shown through a four-class `A/B/C/D` colour legend: A red-orange, B amber, C blue and D purple. Same-priority goods share exactly the same colour and no individual task or shelf identifier is shown. | It represents every project priority class while keeping the preview free of artificial per-item identity. |
-| The large-5AG task-ingress interval, batch size and completion target are deliberately deferred until the medium-5AG diagnostic has been reviewed. | It avoids freezing a high-workload demand level before observing what the recovered baseline can handle. |
+| The 5-AGV High workload is an evaluation-only profile on the same medium topology: ingress every 60 steps, batch size 2 and target 12. | It isolates demand pressure from a topology change and reuses the exact completed Low-checkpoint policy. |
 | A waypoint run is a conditional diagnostic, not part of the pure MAPPO baseline. | It isolates whether execution-time geometric guidance is the learning bottleneck. |
-| If the 5-AGV large high-workload scratch run is judged insufficient, its warm start loads the final 5-AGV medium low-workload Actor, Critic and ValueNorm state only; optimizer, scheduler and global step are reset. | It transfers learned navigation representations without falsely continuing the previous optimization trajectory. |
+| The High workload evaluation never resumes or trains the source checkpoint. | It is a deterministic stress receipt, not another optimization trajectory or a source of post-hoc baseline tuning. |
 
 ## Context
 
@@ -98,7 +99,7 @@ The three profiles are:
 | --- | --- | ---: | --- |
 | `medium-3ag-low-workload` | RWARE medium | 3 | low; exact initial/dynamic task parameters approved with its preview |
 | `medium-5ag-low-workload` | RWARE medium | 5 | low; exact initial/dynamic task parameters approved with its preview |
-| `large-5ag-high-workload` | RWARE large | 5 | station layout approved now; workload intensity determined after medium-5AG review |
+| `medium-5ag-high-workload-evaluation` | RWARE medium | 5 | same checkpoint stress evaluation: ingress every 60 steps, batch size 2, target 12 |
 
 ### Diagnostic sequence
 
@@ -115,12 +116,14 @@ The three profiles are:
    percentage points, record a waypoint-return recommendation for an explicit
    owner architecture decision. It does not automatically change the baseline.
 5. Train the selected goal-interface baseline from scratch for 300k steps on
-   `medium-5ag-low-workload`. After joint review, continue the exact same run
-   to a **cumulative** 500k steps only if it shows a learning trend but its
-   effect is still insufficient.
-6. Train the selected goal-interface baseline from scratch for 300k steps on
-   `large-5ag-high-workload`. After joint review, run the specified 300k-step
-   warm-start diagnostic only if the scratch run is insufficient.
+   `medium-5ag-low-workload`. Independently evaluate its completed checkpoint
+   under both Low (ingress every 120 steps, batch size 1, target 8) and High
+   (ingress every 60 steps, batch size 2, target 12) on the identical medium
+   5-AGV topology. Low is readiness evidence; High is a stress diagnostic.
+6. After joint review, continue the exact same training run to a **cumulative**
+   500k steps only if the Low evaluation shows a learning trend but its effect
+   is still insufficient. No separate large-topology training or warm start is
+   part of Phase 1.
 
 Every completed training run writes its final checkpoint, immutable run
 configuration, TensorBoard events, training/episode CSV evidence, a two-seed
@@ -170,6 +173,6 @@ evaluation modes are recorded separately in every run identity.
 
 ## Open questions
 
-The large-5AG workload intensity is deliberately deferred until the medium-5AG
-diagnostic is reviewed. Its station coordinates and all low-workload profile
-values are owner approved.
+The owner approved workload-only stress evaluation on the medium-5AG topology.
+The legacy large-5AG profile remains a map-inspection artifact and is not a
+Phase 1 training or warm-start obligation.

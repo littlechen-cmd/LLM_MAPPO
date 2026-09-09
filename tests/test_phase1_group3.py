@@ -157,3 +157,25 @@ def test_medium_5ag_group6_uses_direct_goal_rware_training():
     assert environment["reward_collision_penalty"] == 0.10
     assert environment["reward_deadlock_penalty"] == 5.00
     assert experiment.evaluation["replenishment_mode"] == "dynamic_ingress"
+
+
+def test_medium_5ag_high_workload_evaluation_keeps_the_baseline_topology():
+    root = Path(__file__).resolve().parents[1] / "configs" / "phase1"
+    low = load_baseline_experiment(root / "medium-5ag-low-workload.yaml")
+    high = load_baseline_experiment(root / "medium-5ag-high-workload-eval.yaml")
+
+    for key in (
+        "environment_id",
+        "n_agents",
+        "max_steps",
+        "charging_stations",
+        "picking_stations",
+        "goal_interface",
+        "observation_schema",
+        "reward_version",
+    ):
+        assert high.environment[key] == low.environment[key]
+    assert high.environment["dynamic_ingress_interval"] == 60
+    assert high.environment["batch_size_range"] == [2, 2]
+    assert high.environment["task_target"] == 12
+    assert high.evaluation["replenishment_mode"] == "dynamic_ingress"

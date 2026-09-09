@@ -460,7 +460,9 @@ class BaselineRun:
         finally:
             self.close()
 
-    def evaluate(self) -> dict[str, Any]:
+    def evaluate(
+        self, *, checkpoint_reference: str = "checkpoint_final.pt"
+    ) -> dict[str, Any]:
         results = []
         self.trainer.actor.eval()
         for seed in self.experiment.evaluation["seeds"]:
@@ -476,7 +478,7 @@ class BaselineRun:
         result = {
             "schema": "mappo-fp-dg-evaluation-v1",
             "policy": "deterministic_argmax",
-            "checkpoint": "checkpoint_final.pt",
+            "checkpoint": checkpoint_reference,
             "episodes": results,
             "mean_task_completion_rate": mean_completion,
             "mean_completed_tasks": float(np.mean([
@@ -490,6 +492,79 @@ class BaselineRun:
         _write_evaluation_plot(output / "evaluation_metrics.png", results)
         _write_json(output / "evaluation.json", result)
         return result
+
+    def evaluate_checkpoint(self, checkpoint: str | Path) -> dict[str, Any]:
+        """Evaluate one compatible completed checkpoint without resuming training."""
+
+        source = Path(checkpoint).resolve()
+        try:
+            payload = torch.load(source, map_location="cpu", weights_only=False)
+            source_identity = self._validate_evaluation_checkpoint(payload)
+            self.trainer.load_state_dict(payload["trainer"])
+            evaluation = self.evaluate(checkpoint_reference=str(source))
+            manifest = {
+                "schema": "mappo-fp-checkpoint-evaluation-v1",
+                "source_checkpoint": str(source),
+                "source_checkpoint_sha256": sha256(source.read_bytes()).hexdigest(),
+                "source_identity": source_identity,
+                "evaluation_identity": self.identity,
+                "evaluation_environment": dict(self.experiment.environment),
+                "evaluation": dict(self.experiment.evaluation),
+                "checkpoint_evaluation_only": True,
+            }
+            _write_json(self.directory / "evaluation_manifest.json", manifest)
+            result = {
+                "schema": "mappo-fp-checkpoint-evaluation-summary-v1",
+                "status": "complete",
+                "source_checkpoint": str(source),
+                "evaluation": evaluation,
+            }
+            _write_json(self.directory / "summary.json", result)
+            _write_json(self.directory / "review_receipt.json", {
+                "schema": "phase1-mappo-checkpoint-evaluation-receipt-v1",
+                "source_checkpoint": str(source),
+                "evaluation": evaluation,
+                "owner_architect_review": "pending",
+            })
+            _write_json(self.directory / "state.json", {"status": "complete"})
+            return result
+        except BaseException as error:
+            _write_json(self.directory / "state.json", {
+                "status": "failed",
+                "reason": type(error).__name__,
+                "message": str(error),
+            })
+            raise
+        finally:
+            self.close()
+
+    def _validate_evaluation_checkpoint(self, payload: Mapping[str, Any]) -> dict:
+        if payload.get("schema") != "mappo-fp-dg-checkpoint-v2":
+            raise ValueError("MAPPO baseline checkpoint schema differs.")
+        source_identity = payload.get("identity")
+        if not isinstance(source_identity, dict):
+            raise ValueError("MAPPO baseline checkpoint has no identity.")
+        compatibility_fields = (
+            "schema",
+            "method",
+            "observation_schema",
+            "actor_observation_schema",
+            "actor_observation_dimension",
+            "fp_state_dimension",
+            "reward_version",
+        )
+        mismatched = [
+            field for field in compatibility_fields
+            if source_identity.get(field) != self.identity.get(field)
+        ]
+        if mismatched:
+            raise ValueError(
+                "MAPPO checkpoint is incompatible with the evaluation profile: "
+                + ", ".join(mismatched)
+            )
+        if "trainer" not in payload:
+            raise ValueError("MAPPO baseline checkpoint has no trainer state.")
+        return source_identity
 
     def _evaluation_episode(
         self, seed: int, replay_path: Path | None = None

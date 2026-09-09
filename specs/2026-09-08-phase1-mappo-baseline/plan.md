@@ -119,20 +119,21 @@
   dynamic-ingress mode.
 - [ ] Train the owner-selected goal-interface baseline from scratch for 300k
   steps on `medium-5ag-low-workload`, seed `7`.
-- [ ] Produce its required evaluation/replay/TensorBoard review package.
+- [ ] Evaluate that one completed checkpoint independently under both approved
+  same-topology profiles: Low (120-step ingress, one task/batch, target 8) and
+  High (60-step ingress, two tasks/batch, target 12). Both receipts use the
+  same medium map, five AGVs, facilities, checkpoint and fixed evaluation
+  seeds. Low is the baseline-readiness evidence; High is a recorded stress
+  diagnostic only.
 - [ ] If double review finds a learning trend but insufficient effect, resume
   the exact same run to a cumulative 500k steps and regenerate the package.
-- [ ] Pause for owner/architect review before entering the large-profile task.
+- [ ] Pause for owner/architect review before entering Phase 2 A* KD.
 
-## Task group 7: Large 5-AGV high-workload diagnostic
+## Task group 7: Medium 5-AGV workload-shift evaluation
 
-- [ ] Train the owner-selected goal-interface baseline from scratch for 300k
-  steps on `large-5ag-high-workload`, seed `7`, with all relevant settings
-  recorded.
-- [ ] Produce its required evaluation/replay/TensorBoard review package.
-- [ ] If double review judges the scratch run insufficient, warm-start exactly
-  from the final medium-5ag-low-workload Actor, Critic and ValueNorm state;
-  reset optimizer, scheduler and step counters; train a separate 300k-step
-  diagnostic run.
-- [ ] Record the final double-review findings, all parameter revisions and the
-  recommended next project action without making a formal performance claim.
+- [ ] Retain the initial large-5AG task as not executed for Phase 1. It changes
+  both topology and workload, so it cannot answer the adopted workload-only
+  question with the same recurrent Actor/Critic checkpoint.
+- [ ] Record both medium-5AG evaluation receipts and the owner/architect review
+  decision before beginning Phase 2. The High result is not a new training
+  gate and cannot silently trigger further baseline optimisation.

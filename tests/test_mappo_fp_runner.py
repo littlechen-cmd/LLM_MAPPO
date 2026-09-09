@@ -1,5 +1,7 @@
-from pathlib import Path
 from dataclasses import replace
+from hashlib import sha256
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -191,3 +193,41 @@ def test_checkpoint_resume_restores_actor_and_critic_hidden_states(tmp_path):
         )
     finally:
         resumed.close()
+
+
+def test_checkpoint_evaluation_writes_a_separate_workload_receipt(tmp_path):
+    source_experiment = load_baseline_experiment(
+        ROOT / "configs" / "phase1" / "medium-5ag-low-workload.yaml"
+    )
+    source_experiment = replace(
+        source_experiment,
+        training={**source_experiment.training, "num_env_workers": 1},
+    )
+    source = BaselineRun(source_experiment, device="cpu", output_root=tmp_path)
+    checkpoint = source.directory / "checkpoint_final.pt"
+    try:
+        source._checkpoint(checkpoint)
+    finally:
+        source.close()
+
+    high_config = ROOT / "configs" / "phase1" / "medium-5ag-high-workload-eval.yaml"
+    target_experiment = load_baseline_experiment(high_config)
+    target_experiment = replace(
+        target_experiment,
+        training={**target_experiment.training, "num_env_workers": 1},
+    )
+    target = BaselineRun(target_experiment, device="cpu", output_root=tmp_path)
+    result = target.evaluate_checkpoint(checkpoint)
+
+    manifest = json.loads(
+        (target.directory / "evaluation_manifest.json").read_text(encoding="utf-8")
+    )
+    assert result["status"] == "complete"
+    assert manifest["schema"] == "mappo-fp-checkpoint-evaluation-v1"
+    assert manifest["source_checkpoint_sha256"] == sha256(
+        checkpoint.read_bytes()
+    ).hexdigest()
+    assert manifest["evaluation_environment"]["dynamic_ingress_interval"] == 60
+    assert json.loads((target.directory / "state.json").read_text()) == {
+        "status": "complete"
+    }

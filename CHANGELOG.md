@@ -2,6 +2,11 @@
 
 ## 2026-09-08
 
+- Added: Phase 1 can now evaluate one completed medium-5AG MAPPO-FP-DG
+  checkpoint independently under matched Low and High dynamic-ingress profiles.
+  High keeps the same topology, stations, policy and fixed seeds while using
+  60-step two-task ingress and target 12; its receipt is evaluation-only and
+  cannot resume or alter the source training evidence.
 - Added: Group 6 now has an executable 5-AGV DirectGoal low-workload profile:
   800-step episodes, the current `-0.1/-0.1` event penalties, one-time
   deadlock penalty, RWARE replenishment during training and dynamic ingress
