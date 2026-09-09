@@ -120,3 +120,23 @@ def test_phase1_config_rejects_a_missing_worker_thread_contract(tmp_path):
 
     with pytest.raises(ValueError, match="worker_numerical_threads"):
         load_baseline_experiment(config)
+
+
+def test_efficiency_penalty_profiles_differ_only_in_registered_penalties():
+    root = Path(__file__).resolve().parents[1] / "configs" / "phase1"
+    expected = {
+        "p1": (0.15, 0.50),
+        "p2": (0.50, 0.50),
+        "p3": (0.15, 1.00),
+    }
+    for label, penalties in expected.items():
+        experiment = load_baseline_experiment(
+            root / f"medium-3ag-low-workload-efficiency-{label}.yaml"
+        )
+        environment = experiment.environment
+        assert (
+            environment["reward_blocked_forward_penalty"],
+            environment["reward_collision_penalty"],
+        ) == penalties
+        assert environment["charge_event_reward"] == 0.05
+        assert experiment.training["environment_steps"] == 300000

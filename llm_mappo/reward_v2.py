@@ -32,6 +32,7 @@ class RewardV2Breakdown:
     progress: float
     blocked_forward: float
     collision: float
+    charging: float
     energy: float
     step_cost: float
 
@@ -43,6 +44,7 @@ class RewardV2Breakdown:
             + self.progress
             + self.blocked_forward
             + self.collision
+            + self.charging
             + self.energy
             + self.step_cost
         )
@@ -54,6 +56,7 @@ class RewardV2Breakdown:
             "reward_progress": self.progress,
             "reward_blocked_forward": self.blocked_forward,
             "reward_collision": self.collision,
+            "reward_charging": self.charging,
             "reward_energy": self.energy,
             "reward_step_cost": self.step_cost,
         }
@@ -135,7 +138,10 @@ def reward_v2_team_reward(
     pickup_weights: Mapping[int, float],
     progress_deltas: Sequence[float],
     low_battery_penalties: Sequence[float],
+    charge_rewards: Sequence[float] | None = None,
     legacy_blocked_forward_penalty: float,
+    blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
+    collision_penalty: float = COLLISION_PENALTY,
 ) -> float:
     """Replace legacy shaping while preserving collision and energy rewards."""
     return reward_v2_team_reward_breakdown(
@@ -145,11 +151,14 @@ def reward_v2_team_reward(
         pickup_weights=pickup_weights,
         progress_deltas=progress_deltas,
         low_battery_penalties=low_battery_penalties,
+        charge_rewards=charge_rewards,
         legacy_blocked_forward_penalty=legacy_blocked_forward_penalty,
+        blocked_forward_penalty=blocked_forward_penalty,
+        collision_penalty=collision_penalty,
     ).team_reward
 
 
-def reward_v2_team_reward_breakdown(
+def reward_v2_team_reward_breakdown(  # noqa: C901
     *,
     raw_rewards: Sequence[float],
     events: Sequence[Mapping],
@@ -157,7 +166,10 @@ def reward_v2_team_reward_breakdown(
     pickup_weights: Mapping[int, float],
     progress_deltas: Sequence[float],
     low_battery_penalties: Sequence[float],
+    charge_rewards: Sequence[float] | None = None,
     legacy_blocked_forward_penalty: float,
+    blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
+    collision_penalty: float = COLLISION_PENALTY,
 ) -> RewardV2Breakdown:
     """Compute Reward-v2 and retain each term in shared-reward units.
 
@@ -169,10 +181,24 @@ def reward_v2_team_reward_breakdown(
     local = np.asarray(raw_rewards, dtype=np.float64).copy()
     progress = np.asarray(progress_deltas, dtype=np.float64)
     energy = np.asarray(low_battery_penalties, dtype=np.float64)
-    if local.ndim != 1 or progress.shape != local.shape or energy.shape != local.shape:
+    charging = np.zeros_like(local) if charge_rewards is None else np.asarray(
+        charge_rewards, dtype=np.float64
+    )
+    if (
+        local.ndim != 1
+        or progress.shape != local.shape
+        or energy.shape != local.shape
+        or charging.shape != local.shape
+    ):
         raise ValueError("Reward-v2 per-agent vectors must have identical shapes.")
-    if not np.all(np.isfinite(local)) or not np.all(np.isfinite(progress)):
+    if (
+        not np.all(np.isfinite(local))
+        or not np.all(np.isfinite(progress))
+        or not np.all(np.isfinite(charging))
+    ):
         raise ValueError("Reward-v2 inputs must be finite.")
+    if blocked_forward_penalty < 0.0 or collision_penalty < 0.0:
+        raise ValueError("Reward-v2 event penalties must not be negative.")
 
     agent_count = local.size
     completion = 0.0
@@ -195,7 +221,7 @@ def reward_v2_team_reward_breakdown(
         elif event_type == "blocked_forward":
             agent_index = int(event["agent_id"]) - 1
             local[agent_index] -= (
-                BLOCKED_FORWARD_PENALTY - legacy_blocked_forward_penalty
+                blocked_forward_penalty - legacy_blocked_forward_penalty
             )
             blocked_events += 1
         elif event_type == "collision":
@@ -204,12 +230,14 @@ def reward_v2_team_reward_breakdown(
     for agent_id in pickup_weights:
         local[int(agent_id) - 1] += PICKUP_REWARD
     local += PROGRESS_REWARD * progress
+    local += charging
     local += energy
 
     pickup = PICKUP_REWARD * len(pickup_weights) / agent_count
     progress_component = PROGRESS_REWARD * float(np.mean(progress))
-    blocked = -BLOCKED_FORWARD_PENALTY * blocked_events / agent_count
-    collision = -COLLISION_PENALTY * collision_events / agent_count
+    blocked = -blocked_forward_penalty * blocked_events / agent_count
+    collision = -collision_penalty * collision_events / agent_count
+    charging_component = float(np.mean(charging))
     raw_energy = (
         float(np.sum(np.asarray(raw_rewards, dtype=np.float64)))
         - raw_completion
@@ -223,6 +251,7 @@ def reward_v2_team_reward_breakdown(
         progress=progress_component,
         blocked_forward=blocked,
         collision=collision,
+        charging=charging_component,
         energy=energy_component,
         step_cost=-STEP_COST,
     )

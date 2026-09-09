@@ -127,6 +127,26 @@ configuration, TensorBoard events, training/episode CSV evidence, a two-seed
 evaluation receipt and a seed-9400 slow replay. No fixed numerical pass/fail
 threshold applies; the owner and architect conduct the stated manual review.
 
+### Efficiency-recovery diagnostic
+
+The successful 3-AGV DirectGoal completion diagnostic showed inefficient motion
+and charger arrivals without completed charge events. Before selecting its
+reward magnitudes for later Phase 1 work, three fresh, otherwise-identical
+300k-step DirectGoal diagnostics are registered. They all use the same seed,
+workers, recurrent MAPPO configuration, workload, route-progress rule and
+`+0.05` successful-charge-stay reward. Only the two penalty magnitudes differ:
+
+| Profile | Blocked-forward | Occupancy conflict |
+| --- | ---: | ---: |
+| `efficiency-p1` | `-0.15` | `-0.50` |
+| `efficiency-p2` | `-0.50` | `-0.50` |
+| `efficiency-p3` | `-0.15` | `-1.00` |
+
+Each is reviewed using the two fixed evaluations, slow replay and TensorBoard.
+Completion remains necessary, while completed tasks per evaluation step,
+conflicts per completed task, charging events and energy deaths determine the
+efficiency recommendation. These are diagnostic runs, not formal evidence.
+
 ## Open questions
 
 The large-5AG workload intensity is deliberately deferred until the medium-5AG

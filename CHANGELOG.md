@@ -2,6 +2,10 @@
 
 ## 2026-09-08
 
+- Added: Registered three fresh Phase 1 3-AGV DirectGoal efficiency diagnostics
+  that share all training/environment settings and a `+0.05` confirmed charging
+  event reward, varying only blocked-forward/occupancy-conflict penalties:
+  P1 `-0.15/-0.50`, P2 `-0.50/-0.50`, and P3 `-0.15/-1.00`.
 - Changed: Low-battery shaping now charges `-0.5` only when an AGV crosses
   into the low-battery state. Remaining low is no longer repeatedly penalized;
   energy depletion remains a severe environment consequence. This preserves

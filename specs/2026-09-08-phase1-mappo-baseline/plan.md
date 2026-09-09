@@ -77,6 +77,18 @@
 - [ ] Pause for owner/architect review before selecting a goal interface for
   the 5-AGV diagnostics.
 
+## Task group 5a: Medium 3-AGV efficiency-recovery diagnostics
+
+- [x] Register a `+0.05` charge reward that applies only when an AGV remains
+  at its active charging target with `NOOP` and its battery actually rises.
+- [x] Register three otherwise-identical fresh 300k DirectGoal profiles:
+  P1 (`-0.15` blocked-forward, `-0.50` occupancy conflict), P2
+  (`-0.50`, `-0.50`) and P3 (`-0.15`, `-1.00`).
+- [ ] Owner runs P1/P2/P3 sequentially, retaining the evaluation, replay and
+  TensorBoard package for each run.
+- [ ] Owner/architect compare completion and execution efficiency before any
+  further reward or training-configuration change.
+
 ## Task group 6: Medium 5-AGV capability diagnostic
 
 - [ ] Train the owner-selected goal-interface baseline from scratch for 300k

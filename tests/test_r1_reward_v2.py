@@ -201,6 +201,51 @@ def test_reward_v2_low_battery_delivery_outranks_equal_length_stagnation():
         environment.close()
 
 
+def test_reward_v2_rewards_only_a_real_charge_event():
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=8,
+        charge_threshold=0.3,
+        reward_version="reward-v2",
+        charge_event_reward=0.05,
+    )
+    try:
+        environment.reset(seed=3)
+        agent = environment.env.agents[0]
+        charger = environment.env.charging_stations[0]
+        agent.x, agent.y = charger
+        agent.battery = 0.29
+        environment.env._recalc_grid()
+
+        transition = environment.step([Action.NOOP])
+
+        assert transition.metrics.reward_charging == pytest.approx(0.05)
+        assert transition.team_reward == pytest.approx(0.045)
+    finally:
+        environment.close()
+
+
+def test_reward_v2_accepts_configured_block_and_collision_penalties():
+    breakdown = reward_v2_team_reward_breakdown(
+        raw_rewards=np.asarray([-2.05]),
+        events=[
+            {"type": "blocked_forward", "agent_id": 1},
+            {"type": "collision", "agent_id": 1},
+        ],
+        task_weights={},
+        pickup_weights={},
+        progress_deltas=np.asarray([0.0]),
+        low_battery_penalties=np.asarray([0.0]),
+        charge_rewards=np.asarray([0.0]),
+        legacy_blocked_forward_penalty=0.05,
+        blocked_forward_penalty=0.15,
+        collision_penalty=0.5,
+    )
+
+    assert breakdown.blocked_forward == pytest.approx(-0.15)
+    assert breakdown.collision == pytest.approx(-0.5)
+
+
 def test_static_grid_distance_rewards_a_necessary_manhattan_detour():
     """A valid first detour step can increase Manhattan distance yet progress."""
     start = (0, 0)

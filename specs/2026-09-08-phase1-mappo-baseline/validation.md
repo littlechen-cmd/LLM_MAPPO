@@ -18,6 +18,9 @@
   evaluations and slow replay, and has received owner/architect double review.
 - [ ] Conditional WP, 500k continuation and warm-start runs occur only under
   their stated review decisions.
+- [ ] Each registered efficiency-recovery run retains the same DirectGoal,
+  recurrent MAPPO, worker, seed and workload identity; only its two declared
+  event-penalty magnitudes differ.
 
 ## How to verify
 
@@ -38,6 +41,12 @@
 6. For the WP comparison, calculate `(WP mean completion − DG mean completion)`
    over seeds `9400` and `9401`; only `≥ 0.20` warrants a waypoint-return
    recommendation, not an automatic architecture change.
+
+7. For the efficiency-recovery comparison, verify a successful-charge reward
+   occurred only when an AGV stayed at its active charger with `NOOP` and its
+   battery increased. Compare completion, tasks per evaluation step, conflicts
+   per completed task, charging events and energy deaths across P1/P2/P3; do
+   not treat the one-seed comparison as a formal claim.
 
 ## Tests to run
 

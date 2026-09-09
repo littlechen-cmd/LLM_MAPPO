@@ -38,6 +38,11 @@ def new_baseline_environment(values) -> Phase2Warehouse:
         deadlock_steps=int(values["deadlock_steps"]),
         waypoint_reward=float(values.get("goal_progress_reward", 0.0)),
         reward_version=str(values["reward_version"]),
+        reward_blocked_forward_penalty=float(
+            values.get("reward_blocked_forward_penalty", 0.1)
+        ),
+        reward_collision_penalty=float(values.get("reward_collision_penalty", 0.1)),
+        charge_event_reward=float(values.get("charge_event_reward", 0.0)),
         oracle_interaction_mask=bool(values["oracle_interaction_mask"]),
         batch_interval=int(values["dynamic_ingress_interval"]),
         batch_size_range=tuple(values["batch_size_range"]),

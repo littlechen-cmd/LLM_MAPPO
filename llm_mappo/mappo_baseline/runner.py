@@ -196,6 +196,7 @@ class BaselineRun:
         "reward_progress",
         "reward_blocked_forward",
         "reward_collision",
+        "reward_charging",
         "reward_energy",
         "reward_step_cost",
         "success",
@@ -698,6 +699,7 @@ class BaselineRun:
         for name in (
             "reward_completion", "reward_pickup", "reward_progress",
             "reward_blocked_forward", "reward_collision", "reward_energy",
+            "reward_charging",
             "reward_step_cost",
         ):
             self._board.add_scalar(

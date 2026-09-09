@@ -14,6 +14,8 @@ from llm_mappo.optimization_observation import (
     build_no_goal_hint_observation,
 )
 from llm_mappo.reward_v2 import (
+    BLOCKED_FORWARD_PENALTY,
+    COLLISION_PENALTY,
     LEGACY_REWARD_V1,
     REWARD_V2,
     SUPPORTED_REWARD_VERSIONS,
@@ -60,6 +62,7 @@ class EpisodeMetrics:
     reward_progress: float = 0.0
     reward_blocked_forward: float = 0.0
     reward_collision: float = 0.0
+    reward_charging: float = 0.0
     reward_energy: float = 0.0
     reward_step_cost: float = 0.0
 
@@ -112,6 +115,7 @@ class EpisodeMetrics:
             "reward_progress": self.reward_progress,
             "reward_blocked_forward": self.reward_blocked_forward,
             "reward_collision": self.reward_collision,
+            "reward_charging": self.reward_charging,
             "reward_energy": self.reward_energy,
             "reward_step_cost": self.reward_step_cost,
             "success": self.success,
@@ -148,6 +152,9 @@ class Phase2Warehouse:
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
     reward_version: str = LEGACY_REWARD_V1
+    reward_blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY
+    reward_collision_penalty: float = COLLISION_PENALTY
+    charge_event_reward: float = 0.0
     include_waypoint_features: bool = True
     oracle_interaction_mask: bool = True
     priority_schedule: Optional[Sequence[str]] = None
@@ -201,6 +208,12 @@ class Phase2Warehouse:
             raise ValueError(
                 "reward_version must be 'legacy-v1' or 'reward-v2'."
             )
+        if (
+            self.reward_blocked_forward_penalty < 0.0
+            or self.reward_collision_penalty < 0.0
+            or self.charge_event_reward < 0.0
+        ):
+            raise ValueError("Reward-v2 event magnitudes must not be negative.")
         if self.battery_cost_scale <= 0.0:
             raise ValueError("battery_cost_scale must be positive.")
         if not self.charge_threshold < self.charge_release_threshold <= 1.0:
@@ -326,6 +339,9 @@ class Phase2Warehouse:
         low_battery_penalties = self._low_battery_entry_penalties(
             batteries_before
         )
+        charge_rewards = self._successful_charge_rewards(
+            charging_targets, positions_before, batteries_before, actions
+        )
         picked_tasks = sum(
             carrying_before[agent.id] is None and agent.carrying_shelf is not None
             for agent in self.env.agents
@@ -348,7 +364,10 @@ class Phase2Warehouse:
                 pickup_weights=pickup_weights,
                 progress_deltas=progress_deltas,
                 low_battery_penalties=low_battery_penalties,
+                charge_rewards=charge_rewards,
                 legacy_blocked_forward_penalty=self.env.blocked_forward_penalty,
+                blocked_forward_penalty=self.reward_blocked_forward_penalty,
+                collision_penalty=self.reward_collision_penalty,
             )
             team_reward = reward_breakdown.team_reward
             reward_components = reward_breakdown.as_dict()
@@ -931,6 +950,29 @@ class Phase2Warehouse:
             ):
                 penalties[index] = -0.5
         return penalties
+
+    def _successful_charge_rewards(
+        self,
+        charging_targets: Dict[int, Tuple[int, int]],
+        positions_before: Dict[int, Tuple[int, int]],
+        batteries_before: Dict[int, float],
+        actions: Sequence[int],
+    ) -> np.ndarray:
+        """Reward only a requested NOOP that actually increases battery."""
+        rewards = np.zeros(self.n_agents, dtype=np.float32)
+        if self.charge_event_reward == 0.0:
+            return rewards
+        for index, agent in enumerate(self.env.agents):
+            target = charging_targets.get(agent.id)
+            if (
+                target is not None
+                and positions_before[agent.id] == target
+                and (agent.x, agent.y) == target
+                and Action(actions[index]) == Action.NOOP
+                and agent.battery > batteries_before[agent.id]
+            ):
+                rewards[index] = self.charge_event_reward
+        return rewards
 
     def _update_metrics(
         self,
