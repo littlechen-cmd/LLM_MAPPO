@@ -2,6 +2,10 @@
 
 ## 2026-09-09
 
+- Fixed: Phase 2 vector rollouts now replace A*KD labels and cache deltas with
+  the worker payload returned for each step, including correct accounting for
+  a final partial worker batch; the earlier stale reset-payload diagnostics do
+  not constitute valid per-state A*KD training evidence.
 - Added: Phase 2 recurrent MAPPO-FP-A*KD now provides an orientation-aware,
   footprint-aware static cost-to-go teacher, a 3-action MotionPriorHead,
   fail-closed full/no-validity labels, cached table diagnostics and a

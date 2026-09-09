@@ -357,6 +357,33 @@ class MAPPOVectorEnvironment:
                 ),
             }
 
+    def _refresh_active_astar_kd(self, payloads) -> None:
+        """Replace teacher payloads returned by the workers stepped now."""
+
+        has_labels = ["astar_kd" in item for item in payloads]
+        if not any(has_labels):
+            return
+        if not all(has_labels) or self.astar_kd is None:
+            raise RuntimeError("A*KD worker payloads became inconsistent.")
+        active_count = len(payloads)
+        previous = self.astar_kd
+        current = {}
+        for name in ("soft_targets", "validity", "attenuation"):
+            values = np.asarray(previous[name]).copy()
+            values[:active_count] = np.stack([
+                item["astar_kd"][name] for item in payloads
+            ])
+            current[name] = values
+        current["failure_reasons"] = (
+            tuple(item["astar_kd"]["failure_reasons"] for item in payloads)
+            + tuple(previous["failure_reasons"][active_count:])
+        )
+        for name in ("query_count", "cache_build_count", "cache_hit_count"):
+            current[name] = sum(
+                int(item["astar_kd"][name]) for item in payloads
+            )
+        self.astar_kd = current
+
     def step(
         self, actions, *, global_step: int, active_workers: int | None = None
     ) -> VectorStep:
@@ -391,6 +418,9 @@ class MAPPOVectorEnvironment:
             self.fp_states[index] = item["payload"]["fp_states"]
             self.action_masks[index] = item["payload"]["action_masks"]
             self.active_masks[index] = item["payload"]["active_masks"]
+        self._refresh_active_astar_kd([
+            item["payload"] for item in responses
+        ])
         rewards = np.zeros((self.count, self.num_agents), dtype=np.float32)
         rewards[:active_count] = np.repeat(
             np.asarray(

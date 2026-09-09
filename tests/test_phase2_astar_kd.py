@@ -17,7 +17,10 @@ from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.trainer import MAPPOConfig
 from llm_mappo.mappo_astar_kd.runner import load_astar_kd_experiment
 from llm_mappo.mappo_baseline.runner import load_baseline_experiment
-from llm_mappo.mappo_baseline.vector_env import new_baseline_environment
+from llm_mappo.mappo_baseline.vector_env import (
+    MAPPOVectorEnvironment,
+    new_baseline_environment,
+)
 
 
 def _map() -> StaticMap:
@@ -119,6 +122,87 @@ def test_labeler_uses_direct_rule_goal_and_keeps_peer_occupancy_out_of_target():
         assert all(reason for reason in labels.failure_reasons)
     finally:
         environment.close()
+
+
+def test_vector_step_refreshes_current_astar_kd_payload():
+    """A rollout must consume the labels returned for its current state."""
+
+    values = {
+        "environment_id": "llm-mappo-medium-3ag-v1",
+        "n_agents": 3,
+        "max_steps": 20,
+        "dynamic_ingress_interval": 30,
+        "batch_size_range": [1, 1],
+        "queue_size": 3,
+        "task_target": 1,
+        "training_replenishment_mode": "rware_delivery",
+        "initial_priority_label": "A",
+        "priority_schedule": ["A", "B", "C", "D"],
+        "charging_stations": [[0, 0], [19, 0], [0, 23]],
+        "picking_stations": [[9, 21]],
+        "battery_cost_scale": 1.1,
+        "charge_threshold": 0.3,
+        "charge_release_threshold": 0.8,
+        "deadlock_steps": 20,
+        "observation_schema": "direct-goal-observation-v1",
+        "reward_version": "reward-v2",
+        "oracle_interaction_mask": True,
+        "astar_kd_variant": "full",
+        "worker_numerical_threads": 1,
+    }
+    pool = MAPPOVectorEnvironment(values, 1, 7)
+    try:
+        pool.step(np.zeros((1, 3), dtype=np.int64), global_step=0)
+        current = pool.astar_kd
+
+        assert current["query_count"] == 3
+        assert current["cache_build_count"] == 0
+        assert current["cache_hit_count"] == 3
+    finally:
+        pool.close()
+
+
+def test_partial_vector_step_counts_only_active_teacher_queries():
+    """A final partial vector batch must not re-count inactive worker labels."""
+
+    values = {
+        "environment_id": "llm-mappo-medium-3ag-v1",
+        "n_agents": 3,
+        "max_steps": 20,
+        "dynamic_ingress_interval": 30,
+        "batch_size_range": [1, 1],
+        "queue_size": 3,
+        "task_target": 1,
+        "training_replenishment_mode": "rware_delivery",
+        "initial_priority_label": "A",
+        "priority_schedule": ["A", "B", "C", "D"],
+        "charging_stations": [[0, 0], [19, 0], [0, 23]],
+        "picking_stations": [[9, 21]],
+        "battery_cost_scale": 1.1,
+        "charge_threshold": 0.3,
+        "charge_release_threshold": 0.8,
+        "deadlock_steps": 20,
+        "observation_schema": "direct-goal-observation-v1",
+        "reward_version": "reward-v2",
+        "oracle_interaction_mask": True,
+        "astar_kd_variant": "full",
+        "worker_numerical_threads": 1,
+    }
+    pool = MAPPOVectorEnvironment(values, 2, 7)
+    try:
+        pool.step(
+            np.zeros((2, 3), dtype=np.int64),
+            global_step=0,
+            active_workers=1,
+        )
+        current = pool.astar_kd
+
+        assert current["soft_targets"].shape == (2, 3, 3)
+        assert current["query_count"] == 3
+        assert current["cache_build_count"] == 0
+        assert current["cache_hit_count"] == 3
+    finally:
+        pool.close()
 
 
 def test_motion_prior_head_uses_the_actor_gru_without_changing_policy_shape():
