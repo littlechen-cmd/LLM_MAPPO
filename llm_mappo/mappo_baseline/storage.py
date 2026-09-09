@@ -21,6 +21,9 @@ class MAPPOBatch:
     dones: np.ndarray
     actor_hidden_states: np.ndarray
     critic_hidden_states: np.ndarray
+    astar_soft_targets: np.ndarray | None = None
+    astar_validity: np.ndarray | None = None
+    astar_attenuation: np.ndarray | None = None
 
 
 class MAPPORolloutStorage:
@@ -35,6 +38,8 @@ class MAPPORolloutStorage:
         state_dim: int,
         action_dim: int,
         recurrent_hidden_dim: int = 64,
+        *,
+        astar_kd_enabled: bool = False,
     ) -> None:
         self.rollout_length = int(rollout_length)
         self.num_workers = int(num_workers)
@@ -43,6 +48,7 @@ class MAPPORolloutStorage:
         self.state_dim = int(state_dim)
         self.action_dim = int(action_dim)
         self.recurrent_hidden_dim = int(recurrent_hidden_dim)
+        self.astar_kd_enabled = bool(astar_kd_enabled)
         if min(
             self.rollout_length,
             self.num_workers,
@@ -98,6 +104,19 @@ class MAPPORolloutStorage:
         if value_predictions.shape != expected["values"]:
             raise ValueError("value_predictions must match worker and agent axes.")
         record["value_predictions"] = value_predictions.copy()
+        if self.astar_kd_enabled:
+            teacher_shapes = {
+                "astar_soft_targets": (self.num_workers, self.num_agents, 3),
+                "astar_validity": (self.num_workers, self.num_agents),
+                "astar_attenuation": (self.num_workers, self.num_agents),
+            }
+            for name, shape in teacher_shapes.items():
+                array = np.asarray(values[name])
+                if array.shape != shape:
+                    raise ValueError(
+                        f"{name} must have shape {shape}, got {array.shape}."
+                    )
+                record[name] = array.copy()
         self._records.append(record)
 
     def compute_returns(
@@ -140,6 +159,18 @@ class MAPPORolloutStorage:
             dones=dones,
             actor_hidden_states=self._stack("actor_hidden_states", np.float32),
             critic_hidden_states=self._stack("critic_hidden_states", np.float32),
+            astar_soft_targets=(
+                self._stack("astar_soft_targets", np.float32)
+                if self.astar_kd_enabled else None
+            ),
+            astar_validity=(
+                self._stack("astar_validity", bool)
+                if self.astar_kd_enabled else None
+            ),
+            astar_attenuation=(
+                self._stack("astar_attenuation", np.float32)
+                if self.astar_kd_enabled else None
+            ),
         )
 
     def _stack(self, name: str, dtype) -> np.ndarray:

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-09
+
+- Added: Phase 2 recurrent MAPPO-FP-A*KD now provides an orientation-aware,
+  footprint-aware static cost-to-go teacher, a 3-action MotionPriorHead,
+  fail-closed full/no-validity labels, cached table diagnostics and a
+  training-only KL auxiliary loss.
+- Added: Phase 2 3-AGV and 5-AGV 300k training profiles use RWARE
+  replenishment with training-only `task_target: 18`; fixed-seed dynamic-ingress
+  low/high evaluation and three-arm large-5AG pressure-test profiles preserve
+  their approved targets and do not query the teacher during evaluation.
+
 ## 2026-09-08
 
 - Added: Phase 1 can now evaluate one completed medium-5AG MAPPO-FP-DG

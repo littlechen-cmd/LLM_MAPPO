@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -55,13 +56,21 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
     _validate_environment(environment)
     _validate_training(training)
     _validate_evaluation(dict(values["evaluation"]))
-    if values["schema"] != "phase1-mappo-baseline-v1":
+    if values["schema"] not in {
+        "phase1-mappo-baseline-v1", "phase2-mappo-baseline-v1",
+        "phase2-mappo-astar-kd-v1",
+    }:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
-    if values["method"] not in {"MAPPO-FP-DG", "MAPPO-FP-WP"}:
+    if values["method"] not in {
+        "MAPPO-FP-DG", "MAPPO-FP-WP", "MAPPO-FP-ASTARKD",
+        "MAPPO-FP-ASTARKD-NO-VALIDITY",
+    }:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
     expected_interface = {
         "MAPPO-FP-DG": "direct_goal",
         "MAPPO-FP-WP": "waypoint",
+        "MAPPO-FP-ASTARKD": "direct_goal",
+        "MAPPO-FP-ASTARKD-NO-VALIDITY": "direct_goal",
     }[values["method"]]
     if environment.get("goal_interface") != expected_interface:
         raise ValueError("MAPPO method and goal_interface must agree.")
@@ -173,6 +182,17 @@ class BaselineRun:
         "total_elapsed_seconds",
         "peak_cuda_memory_allocated",
         "peak_cuda_memory_reserved",
+        "teacher_query_count",
+        "teacher_valid_count",
+        "teacher_valid_rate",
+        "teacher_invalid_counts",
+        "teacher_cache_build_count",
+        "teacher_cache_hit_count",
+        "teacher_cache_hit_rate",
+        "dynamic_attenuated_count",
+        "mean_dynamic_weight",
+        "astar_loss",
+        "astar_lambda",
     )
     EPISODE_FIELDS = (
         "global_environment_steps",
@@ -220,6 +240,21 @@ class BaselineRun:
         resume: str | Path | None = None,
     ) -> None:
         self.experiment = experiment
+        self._astar_kd_enabled = experiment.schema == "phase2-mappo-astar-kd-v1"
+        self._astar_kd_variant = {
+            "MAPPO-FP-ASTARKD": "full",
+            "MAPPO-FP-ASTARKD-NO-VALIDITY": "no_validity",
+        }.get(experiment.method)
+        if self._astar_kd_enabled != (self._astar_kd_variant is not None):
+            raise ValueError("Phase 2 A*KD schema and method must agree.")
+        self._checkpoint_schema = (
+            "mappo-fp-astar-kd-checkpoint-v1" if self._astar_kd_enabled
+            else (
+                "mappo-fp-phase2-baseline-checkpoint-v1"
+                if experiment.schema == "phase2-mappo-baseline-v1"
+                else "mappo-fp-dg-checkpoint-v2"
+            )
+        )
         self.device = torch.device(device)
         torch.set_num_threads(int(experiment.training["learner_torch_threads"]))
         self.schema = FPStateSchema(
@@ -261,7 +296,8 @@ class BaselineRun:
                 "environment": dict(experiment.environment),
                 "training": dict(experiment.training),
                 "evaluation": dict(experiment.evaluation),
-                "teacher_modules_enabled": False,
+                "teacher_modules_enabled": self._astar_kd_enabled,
+                "astar_kd_variant": self._astar_kd_variant,
             })
             _write_json(self.directory / "state.json", {"status": "running"})
             self._create_csv(self.directory / "updates.csv", self.UPDATE_FIELDS)
@@ -294,13 +330,23 @@ class BaselineRun:
             huber_delta=float(experiment.training["huber_delta"]),
         )
         self._seed(int(experiment.training["seed"]))
-        self.trainer = MAPPOTrainer(config, self.device)
+        if self._astar_kd_enabled:
+            from llm_mappo.mappo_astar_kd.trainer import AStarKDTrainer
+
+            self.trainer = AStarKDTrainer(
+                config, self.device,
+                total_environment_steps=int(experiment.training["environment_steps"]),
+            )
+        else:
+            self.trainer = MAPPOTrainer(config, self.device)
         worker_values = {
             **experiment.environment,
             "worker_numerical_threads": experiment.training[
                 "worker_numerical_threads"
             ],
         }
+        if self._astar_kd_enabled:
+            worker_values["astar_kd_variant"] = self._astar_kd_variant
         self.pool = MAPPOVectorEnvironment(
             worker_values,
             int(experiment.training["num_env_workers"]),
@@ -350,8 +396,16 @@ class BaselineRun:
                     self.schema.dimension,
                     5,
                     self.trainer.config.hidden_dim,
+                    astar_kd_enabled=self._astar_kd_enabled,
                 )
                 episodes = []
+                teacher_counts = Counter()
+                teacher_query_count = 0
+                teacher_valid_count = 0
+                teacher_cache_build_count = 0
+                teacher_cache_hit_count = 0
+                dynamic_attenuated_count = 0
+                dynamic_weight_sum = 0.0
                 rollout_started = time.perf_counter()
                 for _ in range(steps_this_rollout):
                     active_workers = min(workers, budget - self.global_steps)
@@ -359,6 +413,24 @@ class BaselineRun:
                     fp_states = self.pool.fp_states.copy()
                     action_masks = self.pool.action_masks.copy()
                     active_masks = self.pool.active_masks.copy()
+                    astar_kd = self.pool.astar_kd
+                    if self._astar_kd_enabled and astar_kd is None:
+                        raise RuntimeError("A*KD worker did not provide teacher labels.")
+                    if self._astar_kd_enabled:
+                        teacher_query_count += int(astar_kd["query_count"])
+                        teacher_cache_build_count += int(astar_kd["cache_build_count"])
+                        teacher_cache_hit_count += int(astar_kd["cache_hit_count"])
+                        valid = np.asarray(astar_kd["validity"], dtype=bool)
+                        weights = np.asarray(astar_kd["attenuation"], dtype=np.float32)
+                        teacher_valid_count += int(valid.sum())
+                        dynamic_attenuated_count += int(
+                            np.logical_and(valid, weights == 0.25).sum()
+                        )
+                        dynamic_weight_sum += float(weights[valid].sum())
+                        for reasons in astar_kd["failure_reasons"]:
+                            teacher_counts.update(
+                                reason for reason in reasons if reason != "ok"
+                            )
                     inference_started = time.perf_counter()
                     (
                         actions,
@@ -404,6 +476,11 @@ class BaselineRun:
                         active_masks=active_masks,
                         actor_hidden_states=self.actor_hidden_states,
                         critic_hidden_states=self.critic_hidden_states,
+                        **({
+                            "astar_soft_targets": astar_kd["soft_targets"],
+                            "astar_validity": astar_kd["validity"],
+                            "astar_attenuation": astar_kd["attenuation"],
+                        } if self._astar_kd_enabled else {}),
                     )
                     self.actor_hidden_states = next_actor_hidden * continuation
                     self.critic_hidden_states = next_critic_hidden * continuation
@@ -417,8 +494,46 @@ class BaselineRun:
                     gae_lambda=float(self.experiment.training["gae_lambda"]),
                 )
                 self.trainer.linear_lr_decay(self.global_steps, budget)
+                if self._astar_kd_enabled:
+                    self.trainer.set_global_environment_steps(self.global_steps)
                 update_started = time.perf_counter()
                 metrics = self.trainer.update(batch)
+                if self._astar_kd_enabled:
+                    from llm_mappo.mappo_astar_kd.trainer import astar_kd_lambda
+
+                    metrics.update({
+                        "teacher_query_count": teacher_query_count,
+                        "teacher_valid_count": teacher_valid_count,
+                        "teacher_valid_rate": teacher_valid_count / max(
+                            teacher_query_count, 1
+                        ),
+                        "teacher_invalid_counts": json.dumps(
+                            dict(sorted(teacher_counts.items())), sort_keys=True
+                        ),
+                        "teacher_cache_build_count": teacher_cache_build_count,
+                        "teacher_cache_hit_count": teacher_cache_hit_count,
+                        "teacher_cache_hit_rate": teacher_cache_hit_count / max(
+                            teacher_cache_build_count + teacher_cache_hit_count, 1
+                        ),
+                        "dynamic_attenuated_count": dynamic_attenuated_count,
+                        "mean_dynamic_weight": dynamic_weight_sum / max(
+                            teacher_valid_count, 1
+                        ),
+                        "astar_lambda": astar_kd_lambda(self.global_steps, budget),
+                    })
+                else:
+                    metrics.update({
+                        "teacher_query_count": 0,
+                        "teacher_valid_count": 0,
+                        "teacher_valid_rate": 0.0,
+                        "teacher_invalid_counts": "{}",
+                        "teacher_cache_build_count": 0,
+                        "teacher_cache_hit_count": 0,
+                        "teacher_cache_hit_rate": 0.0,
+                        "dynamic_attenuated_count": 0,
+                        "mean_dynamic_weight": 0.0,
+                        "astar_lambda": 0.0,
+                    })
                 self.update_seconds += time.perf_counter() - update_started
                 self.updates += 1
                 row = self._update_row(metrics)
@@ -433,7 +548,7 @@ class BaselineRun:
                 if current_bucket > last_checkpoint_bucket:
                     self._checkpoint(self.directory / "checkpoint_latest.pt")
                     last_checkpoint_bucket = current_bucket
-            if self.experiment.method == "MAPPO-FP-DG" and self.planner_query_count != 0:
+            if self.goal_interface == "direct_goal" and self.planner_query_count != 0:
                 raise RuntimeError("DirectGoal baseline observed a planner query.")
             self._checkpoint(self.directory / "checkpoint_final.pt")
             evaluation = self.evaluate()
@@ -539,7 +654,7 @@ class BaselineRun:
             self.close()
 
     def _validate_evaluation_checkpoint(self, payload: Mapping[str, Any]) -> dict:
-        if payload.get("schema") != "mappo-fp-dg-checkpoint-v2":
+        if payload.get("schema") != self._checkpoint_schema:
             raise ValueError("MAPPO baseline checkpoint schema differs.")
         source_identity = payload.get("identity")
         if not isinstance(source_identity, dict):
@@ -569,8 +684,9 @@ class BaselineRun:
     def _evaluation_episode(
         self, seed: int, replay_path: Path | None = None
     ) -> dict[str, Any]:
+        values = self._evaluation_environment_values()
         environment = new_baseline_environment(
-            self.experiment.environment,
+            values,
             replenishment_mode=str(
                 self.experiment.evaluation.get(
                     "replenishment_mode", "dynamic_ingress"
@@ -584,7 +700,7 @@ class BaselineRun:
             critic_hidden = np.zeros((1, environment.n_agents, 64), dtype=np.float32)
             transition = None
             stride = int(self.experiment.evaluation["replay_frame_stride"])
-            for step in range(int(self.experiment.environment["max_steps"])):
+            for step in range(int(values["max_steps"])):
                 if replay_path is not None and step % stride == 0:
                     from llm_mappo.visualization import render_warehouse_frame
 
@@ -643,9 +759,19 @@ class BaselineRun:
         finally:
             environment.close()
 
+    def _evaluation_environment_values(self) -> dict[str, Any]:
+        """Apply explicit eval-only workload values without changing training."""
+
+        overrides = self.experiment.evaluation.get("environment_overrides", {})
+        if not isinstance(overrides, Mapping):
+            raise ValueError("Evaluation environment_overrides must be a mapping.")
+        values = {**self.experiment.environment, **overrides}
+        _validate_environment(values)
+        return values
+
     def _checkpoint(self, path: Path) -> None:
         payload = {
-            "schema": "mappo-fp-dg-checkpoint-v2",
+            "schema": self._checkpoint_schema,
             "identity": self.identity,
             "trainer": self.trainer.state_dict(),
             "global_environment_steps": self.global_steps,
@@ -676,7 +802,7 @@ class BaselineRun:
 
     def _restore(self, path: Path) -> None:
         payload = torch.load(path, map_location="cpu", weights_only=False)
-        if payload.get("schema") != "mappo-fp-dg-checkpoint-v2":
+        if payload.get("schema") != self._checkpoint_schema:
             raise ValueError("MAPPO baseline checkpoint schema differs.")
         if payload.get("identity") != self.identity:
             raise ValueError("MAPPO baseline checkpoint identity differs.")
@@ -715,6 +841,11 @@ class BaselineRun:
                 "policy_loss", "value_loss", "entropy", "total_loss", "approx_kl",
                 "clip_fraction", "explained_variance", "actor_grad_norm",
                 "critic_grad_norm", "actor_learning_rate", "critic_learning_rate",
+                "teacher_query_count", "teacher_valid_count", "teacher_valid_rate",
+                "teacher_invalid_counts", "teacher_cache_build_count",
+                "teacher_cache_hit_count", "teacher_cache_hit_rate",
+                "dynamic_attenuated_count", "mean_dynamic_weight", "astar_loss",
+                "astar_lambda",
             )},
             "grad_norm": max(
                 float(metrics["actor_grad_norm"]),

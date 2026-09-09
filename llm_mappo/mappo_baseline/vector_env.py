@@ -63,8 +63,9 @@ def new_baseline_environment(
     )
 
 
-def _payload(environment, schema, goal_interface, planner):
-    return {
+def _payload(environment, schema, goal_interface, planner, labeler=None, *,
+             use_semantic_validity=True):
+    payload = {
         "observations": build_structured_observations(
             environment,
             goal_interface=goal_interface,
@@ -74,6 +75,18 @@ def _payload(environment, schema, goal_interface, planner):
         "action_masks": environment.action_masks(),
         "active_masks": build_active_masks(environment),
     }
+    if labeler is not None:
+        labels = labeler.labels(use_semantic_validity=use_semantic_validity)
+        payload["astar_kd"] = {
+            "soft_targets": labels.soft_targets,
+            "validity": labels.validity,
+            "attenuation": labels.attenuation,
+            "failure_reasons": labels.failure_reasons,
+            "query_count": labels.query_count,
+            "cache_build_count": labels.cache_build_count,
+            "cache_hit_count": labels.cache_hit_count,
+        }
+    return payload
 
 
 def _snapshot(environment, episode_index, episode_step):
@@ -121,6 +134,16 @@ def _worker(  # noqa: C901
             from llm_mappo.planner import AStarPlanner
 
             planner = AStarPlanner()
+        labeler = None
+        use_semantic_validity = True
+        variant = values.get("astar_kd_variant")
+        if variant is not None:
+            if variant not in {"full", "no_validity"}:
+                raise ValueError("Unknown A*KD variant for MAPPO worker.")
+            from llm_mappo.mappo_astar_kd.labels import AStarKDLabeler
+
+            labeler = AStarKDLabeler(environment)
+            use_semantic_validity = variant == "full"
         schema = FPStateSchema(
             int(values["n_agents"]),
             n_shelves=144,
@@ -132,7 +155,8 @@ def _worker(  # noqa: C901
         worker_seed = int(base_seed) + int(worker_index) * 1_000_003
         environment.reset(seed=worker_seed)
         connection.send(("ok", _payload(
-            environment, schema, goal_interface, planner
+            environment, schema, goal_interface, planner, labeler,
+            use_semantic_validity=use_semantic_validity,
         )))
         while True:
             command, message = connection.recv()
@@ -163,7 +187,8 @@ def _worker(  # noqa: C901
                     "episode": episode,
                     "planner_query_count": environment.planner_query_counter.count,
                     "payload": _payload(
-                        environment, schema, goal_interface, planner
+                        environment, schema, goal_interface, planner, labeler,
+                        use_semantic_validity=use_semantic_validity,
                     ),
                 }))
             elif command == "snapshot":
@@ -176,7 +201,8 @@ def _worker(  # noqa: C901
                 episode_index = int(message["episode_index"])
                 episode_step = int(message["episode_step"])
                 connection.send(("ok", _payload(
-                    environment, schema, goal_interface, planner
+                    environment, schema, goal_interface, planner, labeler,
+                    use_semantic_validity=use_semantic_validity,
                 )))
             elif command == "close":
                 connection.send(("ok", {}))
@@ -305,6 +331,31 @@ class MAPPOVectorEnvironment:
         self.fp_states = np.stack([item["fp_states"] for item in payloads])
         self.action_masks = np.stack([item["action_masks"] for item in payloads])
         self.active_masks = np.stack([item["active_masks"] for item in payloads])
+        self.astar_kd = None
+        if all("astar_kd" in item for item in payloads):
+            self.astar_kd = {
+                "soft_targets": np.stack([
+                    item["astar_kd"]["soft_targets"] for item in payloads
+                ]),
+                "validity": np.stack([
+                    item["astar_kd"]["validity"] for item in payloads
+                ]),
+                "attenuation": np.stack([
+                    item["astar_kd"]["attenuation"] for item in payloads
+                ]),
+                "failure_reasons": tuple(
+                    item["astar_kd"]["failure_reasons"] for item in payloads
+                ),
+                "query_count": sum(
+                    int(item["astar_kd"]["query_count"]) for item in payloads
+                ),
+                "cache_build_count": sum(
+                    int(item["astar_kd"]["cache_build_count"]) for item in payloads
+                ),
+                "cache_hit_count": sum(
+                    int(item["astar_kd"]["cache_hit_count"]) for item in payloads
+                ),
+            }
 
     def step(
         self, actions, *, global_step: int, active_workers: int | None = None

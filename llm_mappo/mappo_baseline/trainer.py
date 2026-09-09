@@ -147,6 +147,20 @@ class MAPPOTrainer:
             "actor_hidden": actor_hidden[0].reshape(sequence_count, -1),
             "critic_hidden": critic_hidden[0].reshape(sequence_count, -1),
         }
+        if batch.astar_soft_targets is not None:
+            if batch.astar_validity is None or batch.astar_attenuation is None:
+                raise ValueError("A*KD rollout fields must be present together.")
+            tensors.update({
+                "astar_soft_targets": self._tensor(batch.astar_soft_targets).reshape(
+                    time_steps, sequence_count, 3
+                ),
+                "astar_validity": torch.as_tensor(
+                    batch.astar_validity, dtype=torch.bool, device=self.device
+                ).reshape(time_steps, sequence_count),
+                "astar_attenuation": self._tensor(batch.astar_attenuation).reshape(
+                    time_steps, sequence_count
+                ),
+            })
         chunks = self._sequence_chunks(sequence_count)
         totals = {
             "policy_loss": 0.0,
@@ -157,6 +171,7 @@ class MAPPOTrainer:
             "actor_grad_norm": 0.0,
             "critic_grad_norm": 0.0,
             "total_loss": 0.0,
+            "astar_loss": 0.0,
         }
         optimizer_steps = 0
         for _ in range(self.config.ppo_epochs):
@@ -171,7 +186,7 @@ class MAPPOTrainer:
                 active_weight = selected["active"]
                 if not bool(active_weight.any()):
                     continue
-                logits, _ = self.actor.forward_sequence(
+                logits, auxiliary = self._actor_sequence(
                     selected["observations"],
                     selected["actor_hidden"],
                     selected["continuation"],
@@ -192,7 +207,10 @@ class MAPPOTrainer:
                     torch.minimum(surrogate, clipped), active_weight
                 )
                 entropy = self._masked_mean(distribution.entropy(), active_weight)
-                actor_loss = policy_loss - self.config.entropy_coef * entropy
+                auxiliary_loss = self._actor_auxiliary_loss(auxiliary, selected)
+                actor_loss = (
+                    policy_loss - self.config.entropy_coef * entropy + auxiliary_loss
+                )
                 predicted, _ = self.critic.forward_sequence(
                     selected["fp_states"],
                     selected["critic_hidden"],
@@ -237,6 +255,7 @@ class MAPPOTrainer:
                     policy_loss
                     + self.config.value_loss_coef * value_loss
                     - self.config.entropy_coef * entropy,
+                    auxiliary_loss,
                 )
                 for name, value in zip(totals, measured):
                     totals[name] += float(value.detach().cpu())
@@ -266,10 +285,20 @@ class MAPPOTrainer:
             "critic_learning_rate": self.critic_optimizer.param_groups[0]["lr"],
         }
 
+    def _actor_sequence(self, observations, hidden, continuation):
+        logits, _ = self.actor.forward_sequence(observations, hidden, continuation)
+        return logits, None
+
+    def _actor_auxiliary_loss(self, auxiliary, selected) -> Tensor:
+        del auxiliary, selected
+        return torch.zeros((), device=self.device)
+
     def _sequence_chunks(self, sequence_count: int) -> tuple[Tensor, ...]:
         chunk_count = min(max(int(self.config.num_minibatches), 1), sequence_count)
         order = torch.randperm(sequence_count, device=self.device)
-        return tuple(chunk for chunk in torch.tensor_split(order, chunk_count) if chunk.numel())
+        return tuple(
+            chunk for chunk in torch.tensor_split(order, chunk_count) if chunk.numel()
+        )
 
     def _value_loss(
         self,
