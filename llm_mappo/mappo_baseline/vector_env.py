@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import multiprocessing as mp
 import os
+from pathlib import Path
 import traceback
 
 import numpy as np
@@ -71,7 +73,25 @@ def _snapshot(environment, episode_index, episode_step):
     }
 
 
-def _worker(connection, values, worker_index, base_seed):  # noqa: C901
+def _write_failure_evidence(directory, worker_index, payload) -> str | None:
+    """Persist a worker failure without relying on a live parent Pipe."""
+    if directory is None:
+        return None
+    root = Path(directory)
+    root.mkdir(parents=True, exist_ok=True)
+    source = str(payload.get("source", "unknown"))
+    path = root / f"worker_{int(worker_index):02d}_{source}_failure.json"
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    temporary.replace(path)
+    return str(path)
+
+
+def _worker(  # noqa: C901
+    connection, values, worker_index, base_seed, failure_directory
+):
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     worker_threads = str(int(values.get("worker_numerical_threads", 1)))
     os.environ.setdefault("OMP_NUM_THREADS", worker_threads)
@@ -154,8 +174,23 @@ def _worker(connection, values, worker_index, base_seed):  # noqa: C901
     except EOFError:
         pass
     except BaseException:
+        error_traceback = traceback.format_exc()
+        evidence_path = _write_failure_evidence(
+            failure_directory,
+            worker_index,
+            {
+                "schema": "mappo-vector-worker-failure-v1",
+                "source": "worker",
+                "worker_index": int(worker_index),
+                "pid": os.getpid(),
+                "traceback": error_traceback,
+            },
+        )
         try:
-            connection.send(("error", traceback.format_exc()))
+            connection.send(("error", {
+                "traceback": error_traceback,
+                "evidence_path": evidence_path,
+            }))
         except (BrokenPipeError, EOFError, OSError):
             pass
     finally:
@@ -176,13 +211,24 @@ class VectorStep:
 class MAPPOVectorEnvironment:
     """Persistent processes; all step requests are sent before any receive."""
 
-    def __init__(self, values, count: int, base_seed: int) -> None:
+    def __init__(
+        self,
+        values,
+        count: int,
+        base_seed: int,
+        *,
+        failure_directory: str | Path | None = None,
+    ) -> None:
         if count < 1:
             raise ValueError("MAPPO requires at least one environment worker.")
         self.values = dict(values)
         self.count = int(count)
         self.num_agents = int(values["n_agents"])
         self._closed = False
+        self._failure_directory = (
+            Path(failure_directory) if failure_directory is not None else None
+        )
+        self._worker_context = [{} for _ in range(self.count)]
         context = mp.get_context("spawn")
         self._connections = []
         self._processes = []
@@ -190,7 +236,14 @@ class MAPPOVectorEnvironment:
             parent, child = context.Pipe()
             process = context.Process(
                 target=_worker,
-                args=(child, self.values, index, int(base_seed)),
+                args=(
+                    child,
+                    self.values,
+                    index,
+                    int(base_seed),
+                    str(self._failure_directory)
+                    if self._failure_directory is not None else None,
+                ),
                 name=f"mappo-fp-env-{index:02d}",
             )
             process.start()
@@ -199,16 +252,40 @@ class MAPPOVectorEnvironment:
             self._processes.append(process)
         self._set_payloads([self._receive(index) for index in range(self.count)])
 
+    def _parent_failure(self, index, reason: str) -> str | None:
+        process = self._processes[index]
+        return _write_failure_evidence(
+            self._failure_directory,
+            index,
+            {
+                "schema": "mappo-vector-worker-failure-v1",
+                "source": "parent",
+                "worker_index": int(index),
+                "pid": process.pid,
+                "exit_code": process.exitcode,
+                "reason": reason,
+                "last_command": self._worker_context[index],
+            },
+        )
+
     def _receive(self, index):
         try:
             status, payload = self._connections[index].recv()
         except EOFError as error:
+            evidence_path = self._parent_failure(index, "pipe_eof")
             raise RuntimeError(
                 f"MAPPO environment worker {index} exited with "
-                f"code {self._processes[index].exitcode}."
+                f"code {self._processes[index].exitcode}; "
+                f"evidence={evidence_path}."
             ) from error
         if status != "ok":
-            raise RuntimeError(f"MAPPO environment worker {index} failed:\n{payload}")
+            evidence_path = self._parent_failure(index, "worker_error_response")
+            details = payload if isinstance(payload, dict) else {"traceback": payload}
+            raise RuntimeError(
+                f"MAPPO environment worker {index} failed; "
+                f"worker_evidence={details.get('evidence_path')}; "
+                f"parent_evidence={evidence_path}.\n{details.get('traceback')}"
+            )
         return payload
 
     def _set_payloads(self, payloads) -> None:
@@ -228,13 +305,23 @@ class MAPPOVectorEnvironment:
         if not 1 <= active_count <= self.count:
             raise ValueError("active_workers must be within the worker count.")
         terminal_step = int(global_step) + active_count
-        for connection, worker_actions in zip(
+        for index, (connection, worker_actions) in enumerate(zip(
             self._connections[:active_count], actions[:active_count]
-        ):
-            connection.send(("step", {
-                "actions": worker_actions,
-                "global_step": terminal_step,
-            }))
+        )):
+            self._worker_context[index] = {
+                "command": "step", "global_step": terminal_step,
+            }
+            try:
+                connection.send(("step", {
+                    "actions": worker_actions,
+                    "global_step": terminal_step,
+                }))
+            except (BrokenPipeError, EOFError, OSError) as error:
+                evidence_path = self._parent_failure(index, "pipe_send_error")
+                raise RuntimeError(
+                    f"MAPPO environment worker {index} rejected step command; "
+                    f"evidence={evidence_path}."
+                ) from error
         responses = [self._receive(index) for index in range(active_count)]
         for index, item in enumerate(responses):
             self.observations[index] = item["payload"]["observations"]
@@ -268,14 +355,20 @@ class MAPPOVectorEnvironment:
         )
 
     def snapshot(self) -> list[dict]:
-        for connection in self._connections:
+        for index, connection in enumerate(self._connections):
+            self._worker_context[index] = {
+                "command": "snapshot"
+            }
             connection.send(("snapshot", None))
         return [self._receive(index) for index in range(self.count)]
 
     def restore(self, states) -> None:
         if len(states) != self.count:
             raise ValueError("MAPPO checkpoint has a different worker count.")
-        for connection, state in zip(self._connections, states):
+        for index, (connection, state) in enumerate(zip(self._connections, states)):
+            self._worker_context[index] = {
+                "command": "restore"
+            }
             connection.send(("restore", state))
         self._set_payloads([self._receive(index) for index in range(self.count)])
 

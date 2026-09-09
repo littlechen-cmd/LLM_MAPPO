@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Hashable, Mapping, Sequence
 
@@ -15,10 +16,11 @@ SUPPORTED_REWARD_VERSIONS = frozenset({LEGACY_REWARD_V1, REWARD_V2})
 COMPLETION_REWARD = 5.0
 PICKUP_REWARD = 0.5
 PROGRESS_REWARD = 0.1
-BLOCKED_FORWARD_PENALTY = 0.15
-COLLISION_PENALTY = 2.0
+BLOCKED_FORWARD_PENALTY = 0.1
+COLLISION_PENALTY = 0.1
 STEP_COST = 0.005
 LEGACY_COMPLETION_REWARD = 5.0
+LEGACY_COLLISION_PENALTY = 2.0
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,43 @@ class RewardGoalSnapshot:
     distance: int
 
 
+def static_grid_distance(
+    start: tuple[int, int],
+    goal: tuple[int, int],
+    *,
+    width: int,
+    height: int,
+    blocked: set[tuple[int, int]],
+) -> int:
+    """Return static four-neighbour route distance, or ``-1`` when unreachable.
+
+    This intentionally excludes peer AGV positions, reservations, priorities and
+    plans.  It captures only geometry which a carrying AGV must respect, so a
+    route around shelves is rewarded even when its next cell increases Manhattan
+    distance to the target.
+    """
+    if start == goal:
+        return 0
+    blocked = set(blocked)
+    blocked.discard(start)
+    blocked.discard(goal)
+    frontier = deque([(start, 0)])
+    visited = {start}
+    while frontier:
+        (x, y), distance = frontier.popleft()
+        for next_point in ((x, y - 1), (x + 1, y), (x, y + 1), (x - 1, y)):
+            nx, ny = next_point
+            if not (0 <= nx < width and 0 <= ny < height):
+                continue
+            if next_point in blocked or next_point in visited:
+                continue
+            if next_point == goal:
+                return distance + 1
+            visited.add(next_point)
+            frontier.append((next_point, distance + 1))
+    return -1
+
+
 def reward_v2_progress_deltas(
     before: Sequence[RewardGoalSnapshot],
     after: Sequence[RewardGoalSnapshot],
@@ -76,7 +115,11 @@ def reward_v2_progress_deltas(
     return np.asarray(
         [
             float(prior.distance - current.distance)
-            if prior.identity == current.identity
+            if (
+                prior.identity == current.identity
+                and prior.distance >= 0
+                and current.distance >= 0
+            )
             else 0.0
             for prior, current in zip(before, after)
         ],
@@ -171,7 +214,7 @@ def reward_v2_team_reward_breakdown(
         float(np.sum(np.asarray(raw_rewards, dtype=np.float64)))
         - raw_completion
         + legacy_blocked_forward_penalty * blocked_events
-        + COLLISION_PENALTY * collision_events
+        + LEGACY_COLLISION_PENALTY * collision_events
     ) / agent_count
     energy_component = raw_energy + float(np.mean(energy))
     breakdown = RewardV2Breakdown(

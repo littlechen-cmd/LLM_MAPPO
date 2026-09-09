@@ -295,6 +295,7 @@ class BaselineRun:
             worker_values,
             int(experiment.training["num_env_workers"]),
             int(experiment.training["seed"]),
+            failure_directory=self.directory / "worker_failures",
         )
         self.global_steps = 0
         self.updates = 0
@@ -440,7 +441,10 @@ class BaselineRun:
             return summary
         except BaseException as error:
             _write_json(self.directory / "state.json", {
-                "status": "failed", "reason": type(error).__name__
+                "status": "failed",
+                "reason": type(error).__name__,
+                "message": str(error),
+                "worker_failure_directory": "worker_failures",
             })
             raise
         finally:

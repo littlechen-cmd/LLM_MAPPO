@@ -44,6 +44,11 @@
   review receipt.
 - [x] Record each pre-formal reward or training-configuration revision as a new
   run identity; do not overwrite or compare incompatible runs as paired data.
+- [x] Revise the pre-formal Reward-v2 candidate after the DG/WP diagnosis:
+  every blocked-forward and occupancy-conflict event is `-0.1`, static
+  traversable distance replaces Manhattan progress, and `max_steps=800` gives
+  dynamically admitted late tasks an executable delivery window. Worker faults
+  must leave per-worker evidence before any replacement long run is authorized.
 
 ## Task group 4: Medium 3-AGV DirectGoal diagnostic
 

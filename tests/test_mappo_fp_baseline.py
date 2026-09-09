@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 import torch
+import json
+from pathlib import Path
 
 from llm_mappo.mappo_baseline.fp_state import (
     FPStateSchema,
@@ -41,6 +43,75 @@ def _environment():
     )
     environment.reset(seed=7)
     return environment
+
+
+def test_worker_failure_evidence_is_atomic_and_contains_context(tmp_path: Path):
+    from llm_mappo.mappo_baseline.vector_env import _write_failure_evidence
+
+    path = _write_failure_evidence(
+        tmp_path / "worker_failures",
+        2,
+        {
+            "schema": "mappo-vector-worker-failure-v1",
+            "source": "parent",
+            "worker_index": 2,
+            "pid": 123,
+            "exit_code": 1,
+            "last_command": {"command": "step", "global_step": 768},
+        },
+    )
+
+    assert path is not None
+    record = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert record["worker_index"] == 2
+    assert record["last_command"]["global_step"] == 768
+
+
+def test_spawned_worker_failure_leaves_traceback_evidence(tmp_path: Path):
+    from llm_mappo.mappo_baseline.vector_env import MAPPOVectorEnvironment
+
+    values = {
+        "environment_id": "llm-mappo-medium-3ag-v1",
+        "n_agents": 1,
+        "max_steps": 8,
+        "charge_threshold": 0.3,
+        "charge_release_threshold": 0.8,
+        "battery_cost_scale": 1.1,
+        "deadlock_steps": 7,
+        "goal_progress_reward": 0.0,
+        "reward_version": "reward-v2",
+        "oracle_interaction_mask": True,
+        "dynamic_ingress_interval": 9,
+        "batch_size_range": [1, 1],
+        "initial_priority_label": "A",
+        "priority_schedule": ["A"],
+        "queue_size": 1,
+        "task_target": 1,
+        "charging_stations": [[0, 0]],
+        "picking_stations": [[9, 21]],
+        "observation_schema": "direct-goal-observation-v1",
+        "worker_numerical_threads": 1,
+    }
+    evidence_root = tmp_path / "worker_failures"
+    pool = MAPPOVectorEnvironment(
+        values, 1, 7, failure_directory=evidence_root
+    )
+    try:
+        pool._worker_context[0] = {"command": "forced_failure", "global_step": 12}
+        pool._connections[0].send(("not-a-command", None))
+        with pytest.raises(RuntimeError, match="worker_evidence"):
+            pool._receive(0)
+        record = json.loads((
+            evidence_root / "worker_00_parent_failure.json"
+        ).read_text(encoding="utf-8"))
+        assert record["source"] == "parent"
+        assert record["last_command"]["global_step"] == 12
+        worker_record = json.loads((
+            evidence_root / "worker_00_worker_failure.json"
+        ).read_text(encoding="utf-8"))
+        assert "Unknown MAPPO worker command" in worker_record["traceback"]
+    finally:
+        pool.close()
 
 
 def test_fp_state_is_deterministic_agent_specific_and_teacher_free():

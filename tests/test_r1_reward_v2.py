@@ -11,6 +11,7 @@ from llm_mappo.reward_v2 import (
     reward_v2_progress_deltas,
     reward_v2_team_reward,
     reward_v2_team_reward_breakdown,
+    static_grid_distance,
 )
 from rware.warehouse import Action, Direction
 
@@ -32,9 +33,9 @@ def test_reward_v2_matches_the_frozen_team_and_local_formula():
         legacy_blocked_forward_penalty=0.05,
     )
 
-    # Local mean: mean([0, -0.15, -2.1, -0.5, +0.5]) = -0.45.
-    # Team terms: +10 completion and -0.005 real-step cost.
-    assert reward == pytest.approx(9.565)
+    # Reward-v2 replaces old raw blockers/collisions with -0.1 each and
+    # retains the shared completion, pickup, energy and real-step terms.
+    assert reward == pytest.approx(9.955)
 
 
 def test_reward_v2_progress_is_signed_and_zero_when_the_goal_switches():
@@ -74,7 +75,7 @@ def test_reward_v2_successful_pickup_is_priority_independent_and_zero_switch_pro
         environment.close()
 
 
-def test_reward_v2_blocked_forward_is_minus_point_fifteen_before_step_cost():
+def test_reward_v2_blocked_forward_is_minus_point_one_before_step_cost():
     environment = Phase2Warehouse(
         n_agents=1,
         max_steps=8,
@@ -89,7 +90,7 @@ def test_reward_v2_blocked_forward_is_minus_point_fifteen_before_step_cost():
         transition = environment.step([Action.FORWARD])
 
         assert transition.info["blocked_forwards"] == 1
-        assert transition.team_reward == pytest.approx(-0.155)
+        assert transition.team_reward == pytest.approx(-0.105)
     finally:
         environment.close()
 
@@ -121,6 +122,47 @@ def test_reward_v2_completion_is_not_diluted_by_the_agent_mean():
         assert transition.team_reward == pytest.approx(5.045)
     finally:
         environment.close()
+
+
+def test_reward_v2_completed_delivery_is_better_than_equally_long_stagnation():
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=8,
+        reward_version="reward-v2",
+    )
+    try:
+        environment.reset(seed=8)
+        warehouse = environment.env
+        task = warehouse.task_queue.task_for_agent(1)
+        shelf = warehouse.shelfs[task.shelf_id - 1]
+        goal_x, goal_y = warehouse.goals[0]
+        agent = warehouse.agents[0]
+        agent.x, agent.y, agent.dir = goal_x, goal_y - 1, Direction.DOWN
+        shelf.x, shelf.y = goal_x, goal_y - 1
+        agent.carrying_shelf = shelf
+        warehouse._recalc_grid()
+
+        productive = environment.step([Action.FORWARD]).team_reward
+        environment.reset(seed=8)
+        stagnant = environment.step([Action.NOOP]).team_reward
+
+        assert productive > stagnant
+    finally:
+        environment.close()
+
+
+def test_static_grid_distance_rewards_a_necessary_manhattan_detour():
+    """A valid first detour step can increase Manhattan distance yet progress."""
+    start = (0, 0)
+    goal = (2, 0)
+    blocked = {(1, 0), (1, 1)}
+
+    before = static_grid_distance(start, goal, width=3, height=3, blocked=blocked)
+    after = static_grid_distance((0, 1), goal, width=3, height=3, blocked=blocked)
+
+    assert before == 6
+    assert after == 5
+    assert abs(goal[0] - 0) + abs(goal[1] - 1) > 2
 
 
 def test_reward_versions_are_explicit_and_legacy_remains_available():
@@ -222,8 +264,8 @@ def test_reward_v2_breakdown_records_every_candidate_component():
     assert breakdown.completion == pytest.approx(10.0)
     assert breakdown.pickup == pytest.approx(0.25)
     assert breakdown.progress == pytest.approx(0.0)
-    assert breakdown.blocked_forward == pytest.approx(-0.075)
-    assert breakdown.collision == pytest.approx(-1.0)
+    assert breakdown.blocked_forward == pytest.approx(-0.05)
+    assert breakdown.collision == pytest.approx(-0.05)
     assert breakdown.energy == pytest.approx(-0.25)
     assert breakdown.step_cost == pytest.approx(-0.005)
-    assert breakdown.team_reward == pytest.approx(8.92)
+    assert breakdown.team_reward == pytest.approx(9.895)

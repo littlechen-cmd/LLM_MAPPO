@@ -20,6 +20,7 @@ from llm_mappo.reward_v2 import (
     RewardGoalSnapshot,
     reward_v2_progress_deltas,
     reward_v2_team_reward_breakdown,
+    static_grid_distance,
 )
 from rware.warehouse import Action
 
@@ -839,10 +840,30 @@ class Phase2Warehouse:
                 RewardGoalSnapshot(
                     identity=(target_kind, *entity, target[0], target[1]),
                     coordinate=(int(target[0]), int(target[1])),
-                    distance=abs(target[0] - agent.x) + abs(target[1] - agent.y),
+                    distance=self._static_reward_distance(
+                        agent.id, (int(target[0]), int(target[1]))
+                    ),
                 )
             )
         return snapshots
+
+    def _static_reward_distance(
+        self, agent_id: int, target: Tuple[int, int]
+    ) -> int:
+        """Measure route progress on static geometry, never on peer occupancy."""
+        warehouse = self.env
+        agent = warehouse.agents[agent_id - 1]
+        blocked = set()
+        if agent.carrying_shelf is not None:
+            blocked.update((shelf.x, shelf.y) for shelf in warehouse.shelfs)
+        height, width = warehouse.grid_size
+        return static_grid_distance(
+            (int(agent.x), int(agent.y)),
+            target,
+            width=int(width),
+            height=int(height),
+            blocked=blocked,
+        )
 
     def _assigned_task_reward_state(self, agent_id: int) -> Optional[dict]:
         task = self.env.task_queue.task_for_agent(agent_id)

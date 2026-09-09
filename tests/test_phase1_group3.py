@@ -40,7 +40,7 @@ def test_phase1_config_accepts_the_six_worker_low_workload_profile(tmp_path):
             "profile_id": "medium-3ag-low-workload",
             "environment_id": "llm-mappo-medium-3ag-v1",
             "n_agents": 3,
-            "max_steps": 500,
+            "max_steps": 800,
             "dynamic_ingress_interval": 120,
             "batch_size_range": [1, 1],
             "queue_size": 3,
@@ -84,6 +84,7 @@ def test_phase1_config_accepts_the_six_worker_low_workload_profile(tmp_path):
     experiment = load_baseline_experiment(config)
 
     assert experiment.training["num_env_workers"] == 6
+    assert experiment.environment["max_steps"] == 800
     assert experiment.environment["picking_stations"] == [[9, 21]]
 
 

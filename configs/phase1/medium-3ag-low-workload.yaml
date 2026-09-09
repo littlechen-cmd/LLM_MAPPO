@@ -5,7 +5,7 @@ environment:
   profile_id: medium-3ag-low-workload
   environment_id: llm-mappo-medium-3ag-v1
   n_agents: 3
-  max_steps: 500
+  max_steps: 800
   dynamic_ingress_interval: 120
   batch_size_range: [1, 1]
   queue_size: 3

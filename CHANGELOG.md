@@ -2,6 +2,19 @@
 
 ## 2026-09-08
 
+- Changed: Phase 1 Reward-v2 now uses a `-0.1` shared penalty for every
+  blocked-forward event and AGV occupancy conflict, while retaining a separate
+  raw-event neutralization step so the legacy `-2.0` environment collision
+  consequence cannot leak back into the team reward.
+- Changed: Phase 1 3-AGV DirectGoal and paired waypoint diagnostics now allow
+  800 environment steps per episode. Training-worker count, PPO cadence and
+  cumulative environment-step budgets are unchanged.
+- Added: Reward-v2 progress is measured with static traversable-grid distance.
+  It excludes peer occupancy, priorities and plans, and therefore credits a
+  necessary shelf detour even when its immediate Manhattan distance increases.
+- Added: Spawned MAPPO workers now write per-worker failure evidence, including
+  worker/process identity, last command/global step and traceback or exit code;
+  failed run state records the evidence directory and parent error message.
 - Added: Phase 1 Group 5 now provides a paired `MAPPO-FP-WP` 300k
   configuration. It retains every DG environment, reward, seed, worker and
   PPO setting, replacing only the 208D Actor goal geometry with the current
