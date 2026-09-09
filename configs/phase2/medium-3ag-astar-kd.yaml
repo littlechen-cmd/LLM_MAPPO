@@ -5,9 +5,10 @@ environment:
   profile_id: medium-3ag-phase2-train
   environment_id: llm-mappo-medium-3ag-v1
   n_agents: 3
-  max_steps: 800
-  dynamic_ingress_interval: 120
-  batch_size_range: [1, 1]
+  max_steps: 500
+  dynamic_ingress_interval: 150
+  batch_size_range: [3, 3]
+  initial_ingress_batches: 1
   queue_size: 3
   task_target: 18
   terminate_on_task_target: false
@@ -55,5 +56,6 @@ evaluation:
   replay_frame_stride: 1
   replay_frame_duration_ms: 600
   environment_overrides:
+    max_steps: 800
     task_target: 6
     terminate_on_task_target: true

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-10
+
+- Changed: Phase 2 medium 3-AGV and medium 5-AGV training now uses a
+  500-step horizon to limit unproductive rollouts; its independent evaluation
+  remains explicitly fixed at 800 steps.
+- Fixed: Phase 2 continuous training now propagates
+  `terminate_on_task_target: false` to the underlying warehouse, so completed
+  task targets no longer reset a training episode before its 800-step horizon.
+- Changed: Phase 2 dynamic-ingress evaluation now starts with one AGV-sized
+  task batch and adds the same fixed-size batch every 150 steps; the former
+  low/high workload batch schedules are no longer used.
+
 ## 2026-09-09
 
 - Changed: Phase 2 training profiles now explicitly ignore task-target

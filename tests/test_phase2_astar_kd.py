@@ -151,6 +151,91 @@ def test_continuous_training_timeout_is_a_truncation_not_a_task_termination():
         environment.close()
 
 
+def test_continuous_training_does_not_end_when_inner_target_is_reached():
+    """Catch an inner warehouse target termination leaking past the wrapper."""
+
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=2,
+        request_queue_size=1,
+        task_completion_target=1,
+        replenishment_mode="rware_delivery",
+        terminate_on_task_target=False,
+    )
+    try:
+        environment.reset(seed=7)
+        task = environment.env.task_queue.active_tasks[0]
+        environment.env.task_queue.complete(task.task_id, completed_step=0)
+
+        transition = environment.step([Action.NOOP])
+
+        assert not transition.terminated
+        assert not transition.truncated
+        assert "task_completion_target_reached" not in {
+            event["type"] for event in transition.info["events"]
+        }
+    finally:
+        environment.close()
+
+
+def test_phase2_evaluation_profiles_use_fixed_agv_sized_dynamic_ingress():
+    """Catch random or under-filled evaluation arrivals across Phase 2 profiles."""
+
+    root = Path("configs/phase2")
+    names = (
+        "medium-3ag-astar-kd.yaml",
+        "medium-5ag-baseline.yaml",
+        "medium-5ag-astar-kd-no-validity.yaml",
+        "medium-5ag-astar-kd.yaml",
+        "medium-5ag-high-baseline-eval.yaml",
+        "medium-5ag-high-astar-kd-no-validity-eval.yaml",
+        "medium-5ag-high-astar-kd-eval.yaml",
+        "large-5ag-high-baseline-eval.yaml",
+        "large-5ag-high-astar-kd-no-validity-eval.yaml",
+        "large-5ag-high-astar-kd-eval.yaml",
+    )
+
+    for name in names:
+        profile = load_baseline_experiment(root / name)
+        values = {
+            **profile.environment,
+            **profile.evaluation.get("environment_overrides", {}),
+        }
+        agents = int(values["n_agents"])
+        assert values["dynamic_ingress_interval"] == 150
+        assert values["batch_size_range"] == [agents, agents]
+
+        if values["environment_id"] == "llm-mappo-large-5ag-v1":
+            continue
+        environment = new_baseline_environment(
+            values, replenishment_mode="dynamic_ingress"
+        )
+        try:
+            environment.reset(seed=9400)
+            assert len(environment.env.task_queue.active_tasks) == agents
+        finally:
+            environment.close()
+
+
+def test_non_phase2_dynamic_ingress_keeps_two_initial_batches_by_default():
+    """Catch Phase 2's one-batch evaluation policy leaking into other phases."""
+
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=20,
+        batch_interval=10,
+        batch_size_range=(1, 1),
+        request_queue_size=1,
+        task_completion_target=6,
+        replenishment_mode="dynamic_ingress",
+    )
+    try:
+        environment.reset(seed=7)
+        assert len(environment.env.task_queue.active_tasks) == 2
+    finally:
+        environment.close()
+
+
 def test_steps_per_task_keeps_zero_completion_undefined_and_aggregates_totals():
     """Catch finite zero-completion throughput and mean-of-ratios summaries."""
 
@@ -188,6 +273,27 @@ def test_phase2_training_profiles_disable_task_target_termination_only_in_traini
         assert profile.evaluation["environment_overrides"][
             "terminate_on_task_target"
         ] is True
+
+
+def test_phase2_training_horizon_is_shorter_than_its_evaluation_horizon():
+    """Catch a 500-step training cutoff leaking into independent evaluation."""
+
+    root = Path("configs/phase2")
+    names = (
+        "medium-3ag-astar-kd.yaml",
+        "medium-5ag-baseline.yaml",
+        "medium-5ag-astar-kd-no-validity.yaml",
+        "medium-5ag-astar-kd.yaml",
+    )
+
+    for name in names:
+        profile = load_baseline_experiment(root / name)
+        evaluation_values = {
+            **profile.environment,
+            **profile.evaluation["environment_overrides"],
+        }
+        assert profile.environment["max_steps"] == 500
+        assert evaluation_values["max_steps"] == 800
 
 
 def test_vector_step_refreshes_current_astar_kd_payload():
@@ -346,7 +452,7 @@ def test_phase2_training_profile_uses_target_18_only_for_training():
     assert profile.evaluation["seeds"] == [9400, 9401]
 
 
-def test_large_pressure_profiles_are_dynamic_high_workload_evaluations():
+def test_large_pressure_profiles_use_fixed_dynamic_ingress_evaluations():
     root = Path("configs/phase2")
     names = (
         "large-5ag-high-baseline-eval.yaml",
@@ -358,7 +464,7 @@ def test_large_pressure_profiles_are_dynamic_high_workload_evaluations():
         profile = load_baseline_experiment(root / name)
         assert profile.environment["environment_id"] == "llm-mappo-large-5ag-v1"
         assert profile.environment["max_steps"] == 800
-        assert profile.environment["dynamic_ingress_interval"] == 60
-        assert profile.environment["batch_size_range"] == [2, 2]
+        assert profile.environment["dynamic_ingress_interval"] == 150
+        assert profile.environment["batch_size_range"] == [5, 5]
         assert profile.environment["task_target"] == 12
         assert profile.evaluation["seeds"] == [9400, 9401]

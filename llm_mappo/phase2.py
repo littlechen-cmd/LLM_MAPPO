@@ -172,6 +172,7 @@ class Phase2Warehouse:
     priority_schedule: Optional[Sequence[str]] = None
     batch_interval: Optional[int] = None
     batch_size_range: Optional[Tuple[int, int]] = None
+    initial_ingress_batches: int = 2
     charging_stations: Optional[Sequence[Tuple[int, int]]] = None
     picking_stations: Optional[Sequence[Tuple[int, int]]] = None
     initial_priority_label: str = "B"
@@ -243,6 +244,8 @@ class Phase2Warehouse:
             lower, upper = self.batch_size_range
             if lower < 1 or lower > upper:
                 raise ValueError("batch_size_range must be a positive ordered pair.")
+        if self.initial_ingress_batches not in {1, 2}:
+            raise ValueError("initial_ingress_batches must be one or two.")
         if self.request_queue_size is not None and self.request_queue_size < 1:
             raise ValueError("request_queue_size must be positive when provided.")
         if self.task_completion_target is not None and self.task_completion_target < 1:
@@ -265,8 +268,10 @@ class Phase2Warehouse:
             "max_steps": self.max_steps,
             "batch_interval": self.batch_interval or self.max_steps + 1,
             "batch_size_range": self.batch_size_range or (1, 1),
+            "initial_ingress_batches": self.initial_ingress_batches,
             "initial_priority_label": self.initial_priority_label,
             "task_completion_target": self.task_completion_target,
+            "terminate_on_task_target": self.terminate_on_task_target,
             "battery_cost_scale": self.battery_cost_scale,
             "replenishment_mode": self.replenishment_mode,
         }

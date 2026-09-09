@@ -20,6 +20,7 @@ class DynamicWarehouse(Warehouse):
         *args,
         batch_interval: int = 40,
         batch_size_range: Tuple[int, int] = (1, 3),
+        initial_ingress_batches: int = 2,
         charging_stations: Optional[Sequence[Tuple[int, int]]] = None,
         picking_stations: Optional[Sequence[Tuple[int, int]]] = None,
         charging_rate: float = 0.02,
@@ -30,12 +31,14 @@ class DynamicWarehouse(Warehouse):
         priority_schedule: Optional[Sequence[str]] = None,
         blocked_forward_penalty: float = 0.05,
         task_completion_target: Optional[int] = None,
+        terminate_on_task_target: bool = True,
         replenishment_mode: str = "dynamic_ingress",
         **kwargs,
     ):
         self._validate_options(
             batch_interval,
             batch_size_range,
+            initial_ingress_batches,
             charging_rate,
             battery_cost_scale,
             picking_lock_steps,
@@ -43,10 +46,12 @@ class DynamicWarehouse(Warehouse):
             priority_schedule,
             blocked_forward_penalty,
             task_completion_target,
+            terminate_on_task_target,
             replenishment_mode,
         )
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
+        self.initial_ingress_batches = initial_ingress_batches
         self.charging_rate = charging_rate
         self.battery_cost_scale = battery_cost_scale
         self.picking_lock_steps = picking_lock_steps
@@ -54,6 +59,7 @@ class DynamicWarehouse(Warehouse):
         self.initial_priority_label = initial_priority_label
         self.priority_schedule = tuple(priority_schedule or ())
         self.blocked_forward_penalty = blocked_forward_penalty
+        self.terminate_on_task_target = terminate_on_task_target
         self.replenishment_mode = replenishment_mode
         self.task_queue = TaskQueue()
         self._batch_index = 0
@@ -112,6 +118,7 @@ class DynamicWarehouse(Warehouse):
     def _validate_options(  # noqa: C901
         batch_interval,
         batch_size_range,
+        initial_ingress_batches,
         charging_rate,
         battery_cost_scale,
         picking_lock_steps,
@@ -119,12 +126,15 @@ class DynamicWarehouse(Warehouse):
         priority_schedule,
         blocked_forward_penalty,
         task_completion_target,
+        terminate_on_task_target,
         replenishment_mode,
     ):
         if batch_interval <= 0:
             raise ValueError("batch_interval must be positive.")
         if batch_size_range[0] <= 0 or batch_size_range[0] > batch_size_range[1]:
             raise ValueError("batch_size_range must be a positive ordered pair.")
+        if initial_ingress_batches not in {1, 2}:
+            raise ValueError("initial_ingress_batches must be one or two.")
         if not 0.0 < charging_rate <= 1.0:
             raise ValueError("charging_rate must be within (0, 1].")
         if battery_cost_scale <= 0.0:
@@ -146,6 +156,8 @@ class DynamicWarehouse(Warehouse):
             isinstance(task_completion_target, bool) or task_completion_target < 1
         ):
             raise ValueError("task_completion_target must be a positive integer.")
+        if not isinstance(terminate_on_task_target, bool):
+            raise ValueError("terminate_on_task_target must be a boolean.")
         if replenishment_mode not in {"dynamic_ingress", "rware_delivery"}:
             raise ValueError("replenishment_mode is not supported.")
 
@@ -170,7 +182,10 @@ class DynamicWarehouse(Warehouse):
         }
         shelf_ids = [shelf.id for shelf in self.request_queue]
         if self._dynamic_ingress_enabled():
-            self._create_initial_batches(shelf_ids)
+            if self.initial_ingress_batches == 1:
+                self._create_initial_batch(shelf_ids)
+            else:
+                self._create_initial_batches(shelf_ids)
         elif self.priority_schedule:
             for shelf_id in shelf_ids:
                 self._create_batch([shelf_id])
@@ -192,12 +207,14 @@ class DynamicWarehouse(Warehouse):
             "reward_type": self.reward_type.name,
             "batch_interval": self.batch_interval,
             "batch_size_range": self.batch_size_range,
+            "initial_ingress_batches": self.initial_ingress_batches,
             "charging_stations": self.charging_stations,
             "charging_rate": self.charging_rate,
             "battery_cost_scale": self.battery_cost_scale,
             "picking_lock_steps": self.picking_lock_steps,
             "auto_assign": self.auto_assign,
             "task_completion_target": self.task_completion_target,
+            "terminate_on_task_target": self.terminate_on_task_target,
             "replenishment_mode": self.replenishment_mode,
         }
 
@@ -384,7 +401,7 @@ class DynamicWarehouse(Warehouse):
         self._apply_blocked_forward_penalties(blocked_forwards, rewards)
         self._update_batteries(pre_state, locked_before, rewards)
         self._advance_picking_locks(locked_before)
-        if self._completion_target_reached():
+        if self.terminate_on_task_target and self._completion_target_reached():
             terminated = True
             self.last_events.append(
                 {
@@ -499,8 +516,22 @@ class DynamicWarehouse(Warehouse):
         )
         return tasks
 
+    def _create_initial_batch(self, preferred_shelf_ids: Sequence[int]) -> None:
+        """Create one configured ingress batch before the first action."""
+        candidates = list(dict.fromkeys(preferred_shelf_ids))
+        candidates.extend(
+            shelf.id for shelf in self.shelfs if shelf.id not in candidates
+        )
+        minimum = self.batch_size_range[0]
+        if len(candidates) < minimum:
+            raise RuntimeError(
+                "Dynamic ingress requires enough shelves for its initial batch."
+            )
+        count = min(self._scheduled_batch_count(), len(candidates))
+        self._create_batch(candidates[:count])
+
     def _create_initial_batches(self, preferred_shelf_ids: Sequence[int]) -> None:
-        """Create the required A and B arrivals before the first action."""
+        """Create the historical A and B arrivals before the first action."""
         candidates = list(dict.fromkeys(preferred_shelf_ids))
         candidates.extend(
             shelf.id for shelf in self.shelfs if shelf.id not in candidates

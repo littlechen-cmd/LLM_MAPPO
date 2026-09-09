@@ -49,6 +49,7 @@ def new_baseline_environment(
         oracle_interaction_mask=bool(values["oracle_interaction_mask"]),
         batch_interval=int(values["dynamic_ingress_interval"]),
         batch_size_range=tuple(values["batch_size_range"]),
+        initial_ingress_batches=int(values.get("initial_ingress_batches", 2)),
         initial_priority_label=str(values["initial_priority_label"]),
         priority_schedule=tuple(values["priority_schedule"]),
         request_queue_size=int(values["queue_size"]),
