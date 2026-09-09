@@ -2,6 +2,10 @@
 
 ## 2026-09-08
 
+- Added: The DirectGoal recovery profile now applies a single `-5.0` team
+  reward only on the transition that first reaches episode deadlock. It retains
+  `-0.005` per-step cost and the known executable `-0.1/-0.1` blocked-forward/
+  occupancy-conflict pair; the deadlock amount is logged separately.
 - Changed: The conditional Phase 1 waypoint diagnostic now restores the
   owner-identified executable Reward-v2 pair (`-0.1` blocked-forward and
   `-0.1` occupancy-conflict) and disables the separate charging-reward probe,

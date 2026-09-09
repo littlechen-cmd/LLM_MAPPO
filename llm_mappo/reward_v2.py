@@ -33,6 +33,7 @@ class RewardV2Breakdown:
     blocked_forward: float
     collision: float
     charging: float
+    deadlock: float
     energy: float
     step_cost: float
 
@@ -45,6 +46,7 @@ class RewardV2Breakdown:
             + self.blocked_forward
             + self.collision
             + self.charging
+            + self.deadlock
             + self.energy
             + self.step_cost
         )
@@ -57,6 +59,7 @@ class RewardV2Breakdown:
             "reward_blocked_forward": self.blocked_forward,
             "reward_collision": self.collision,
             "reward_charging": self.charging,
+            "reward_deadlock": self.deadlock,
             "reward_energy": self.energy,
             "reward_step_cost": self.step_cost,
         }
@@ -139,9 +142,11 @@ def reward_v2_team_reward(
     progress_deltas: Sequence[float],
     low_battery_penalties: Sequence[float],
     charge_rewards: Sequence[float] | None = None,
+    terminal_deadlock: bool = False,
     legacy_blocked_forward_penalty: float,
     blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
     collision_penalty: float = COLLISION_PENALTY,
+    deadlock_penalty: float = 0.0,
 ) -> float:
     """Replace legacy shaping while preserving collision and energy rewards."""
     return reward_v2_team_reward_breakdown(
@@ -152,9 +157,11 @@ def reward_v2_team_reward(
         progress_deltas=progress_deltas,
         low_battery_penalties=low_battery_penalties,
         charge_rewards=charge_rewards,
+        terminal_deadlock=terminal_deadlock,
         legacy_blocked_forward_penalty=legacy_blocked_forward_penalty,
         blocked_forward_penalty=blocked_forward_penalty,
         collision_penalty=collision_penalty,
+        deadlock_penalty=deadlock_penalty,
     ).team_reward
 
 
@@ -167,9 +174,11 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
     progress_deltas: Sequence[float],
     low_battery_penalties: Sequence[float],
     charge_rewards: Sequence[float] | None = None,
+    terminal_deadlock: bool = False,
     legacy_blocked_forward_penalty: float,
     blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
     collision_penalty: float = COLLISION_PENALTY,
+    deadlock_penalty: float = 0.0,
 ) -> RewardV2Breakdown:
     """Compute Reward-v2 and retain each term in shared-reward units.
 
@@ -197,7 +206,11 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
         or not np.all(np.isfinite(charging))
     ):
         raise ValueError("Reward-v2 inputs must be finite.")
-    if blocked_forward_penalty < 0.0 or collision_penalty < 0.0:
+    if (
+        blocked_forward_penalty < 0.0
+        or collision_penalty < 0.0
+        or deadlock_penalty < 0.0
+    ):
         raise ValueError("Reward-v2 event penalties must not be negative.")
 
     agent_count = local.size
@@ -238,6 +251,7 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
     blocked = -blocked_forward_penalty * blocked_events / agent_count
     collision = -collision_penalty * collision_events / agent_count
     charging_component = float(np.mean(charging))
+    deadlock = -deadlock_penalty if terminal_deadlock else 0.0
     raw_energy = (
         float(np.sum(np.asarray(raw_rewards, dtype=np.float64)))
         - raw_completion
@@ -252,6 +266,7 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
         blocked_forward=blocked,
         collision=collision,
         charging=charging_component,
+        deadlock=deadlock,
         energy=energy_component,
         step_cost=-STEP_COST,
     )

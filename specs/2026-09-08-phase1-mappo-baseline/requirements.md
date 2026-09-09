@@ -147,6 +147,17 @@ Completion remains necessary, while completed tasks per evaluation step,
 conflicts per completed task, charging events and energy deaths determine the
 efficiency recommendation. These are diagnostic runs, not formal evidence.
 
+### Deadlock-recovery DirectGoal diagnostic
+
+The waypoint comparison established that waypoint geometry is not preferred for
+the present baseline. The next DirectGoal-only diagnostic retains the known
+executable `-0.1/-0.1` blocked-forward/occupancy-conflict pair and `-0.005`
+step cost. It adds one team-level `-5.0` cost only on the transition that first
+ends an episode in deadlock. It is never charged per step or more than once in
+an episode. The owner-approved exit condition is deliberately limited: once DG
+demonstrates task completion, Phase 1 baseline reward tuning stops regardless
+of its efficiency or one-seed success rate.
+
 ## Open questions
 
 The large-5AG workload intensity is deliberately deferred until the medium-5AG

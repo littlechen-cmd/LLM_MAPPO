@@ -63,6 +63,7 @@ class EpisodeMetrics:
     reward_blocked_forward: float = 0.0
     reward_collision: float = 0.0
     reward_charging: float = 0.0
+    reward_deadlock: float = 0.0
     reward_energy: float = 0.0
     reward_step_cost: float = 0.0
 
@@ -116,6 +117,7 @@ class EpisodeMetrics:
             "reward_blocked_forward": self.reward_blocked_forward,
             "reward_collision": self.reward_collision,
             "reward_charging": self.reward_charging,
+            "reward_deadlock": self.reward_deadlock,
             "reward_energy": self.reward_energy,
             "reward_step_cost": self.reward_step_cost,
             "success": self.success,
@@ -155,6 +157,7 @@ class Phase2Warehouse:
     reward_blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY
     reward_collision_penalty: float = COLLISION_PENALTY
     charge_event_reward: float = 0.0
+    reward_deadlock_penalty: float = 0.0
     include_waypoint_features: bool = True
     oracle_interaction_mask: bool = True
     priority_schedule: Optional[Sequence[str]] = None
@@ -212,6 +215,7 @@ class Phase2Warehouse:
             self.reward_blocked_forward_penalty < 0.0
             or self.reward_collision_penalty < 0.0
             or self.charge_event_reward < 0.0
+            or self.reward_deadlock_penalty < 0.0
         ):
             raise ValueError("Reward-v2 event magnitudes must not be negative.")
         if self.battery_cost_scale <= 0.0:
@@ -357,6 +361,10 @@ class Phase2Warehouse:
             pickup_weights = self._successful_pickup_weights(
                 carrying_before, assigned_before
             )
+            waypoint_progress = bool(np.any(progress_deltas > 0.0))
+            terminal_deadlock = self._will_trigger_deadlock(
+                info, waypoint_progress, picked_tasks
+            )
             reward_breakdown = reward_v2_team_reward_breakdown(
                 raw_rewards=rewards,
                 events=info["events"],
@@ -365,13 +373,14 @@ class Phase2Warehouse:
                 progress_deltas=progress_deltas,
                 low_battery_penalties=low_battery_penalties,
                 charge_rewards=charge_rewards,
+                terminal_deadlock=terminal_deadlock,
                 legacy_blocked_forward_penalty=self.env.blocked_forward_penalty,
                 blocked_forward_penalty=self.reward_blocked_forward_penalty,
                 collision_penalty=self.reward_collision_penalty,
+                deadlock_penalty=self.reward_deadlock_penalty,
             )
             team_reward = reward_breakdown.team_reward
             reward_components = reward_breakdown.as_dict()
-            waypoint_progress = bool(np.any(progress_deltas > 0.0))
         else:
             shaped_rewards = np.asarray(rewards, dtype=np.float32)
             movement_rewards = self._movement_rewards(before, charging_targets)
@@ -381,6 +390,9 @@ class Phase2Warehouse:
             team_reward = float(np.mean(shaped_rewards))
             reward_components = {}
             waypoint_progress = bool(np.any(movement_rewards))
+            terminal_deadlock = self._will_trigger_deadlock(
+                info, waypoint_progress, picked_tasks
+            )
 
         self._update_metrics(
             info,
@@ -392,6 +404,7 @@ class Phase2Warehouse:
             positions_before,
             batteries_before,
             actions,
+            terminal_deadlock,
         )
         self._previous_actions = np.asarray(
             [
@@ -974,6 +987,29 @@ class Phase2Warehouse:
                 rewards[index] = self.charge_event_reward
         return rewards
 
+    def _will_trigger_deadlock(
+        self,
+        info: dict,
+        waypoint_progress: bool,
+        picked_tasks: int,
+    ) -> bool:
+        """Return whether this transition first reaches the deadlock boundary."""
+        completed = sum(task["status"] == "completed" for task in info["tasks"])
+        progressed = (
+            waypoint_progress
+            or picked_tasks > 0
+            or completed > self._last_completed
+            or any(
+                event["type"] in {"task_completed", "charged"}
+                for event in info["events"]
+            )
+        )
+        return bool(
+            not self._metrics.deadlocked
+            and not progressed
+            and info["step"] - self._last_progress_step >= self.deadlock_steps
+        )
+
     def _update_metrics(
         self,
         info: dict,
@@ -985,6 +1021,7 @@ class Phase2Warehouse:
         positions_before: Dict[int, Tuple[int, int]],
         batteries_before: Dict[int, float],
         actions: Sequence[int],
+        terminal_deadlock: bool,
     ) -> None:
         completed = sum(task["status"] == "completed" for task in info["tasks"])
         events = info["events"]
@@ -1017,7 +1054,7 @@ class Phase2Warehouse:
         self._metrics.reward += reward
         for name, value in reward_components.items():
             setattr(self._metrics, name, getattr(self._metrics, name) + float(value))
-        if info["step"] - self._last_progress_step >= self.deadlock_steps:
+        if terminal_deadlock:
             self._metrics.deadlocked = True
 
     def _update_charging_metrics(

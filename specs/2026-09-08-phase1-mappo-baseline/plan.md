@@ -89,6 +89,15 @@
 - [ ] Owner/architect compare completion and execution efficiency before any
   further reward or training-configuration change.
 
+## Task group 5b: DirectGoal deadlock-recovery diagnostic
+
+- [x] Keep the owner-identified executable `-0.1/-0.1` event-penalty pair and
+  `-0.005` step cost; do not increase the step cost for this task.
+- [x] Add one `-5.0` terminal deadlock cost, with no repeated per-step charge.
+- [ ] Owner runs one fresh 300k DirectGoal diagnostic with the required review
+  package. If DG completes tasks, stop Phase 1 baseline reward optimization and
+  move to the next project task regardless of efficiency or one-seed rate.
+
 ## Task group 6: Medium 5-AGV capability diagnostic
 
 - [ ] Train the owner-selected goal-interface baseline from scratch for 300k

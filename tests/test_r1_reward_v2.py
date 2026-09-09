@@ -246,6 +246,29 @@ def test_reward_v2_accepts_configured_block_and_collision_penalties():
     assert breakdown.collision == pytest.approx(-0.5)
 
 
+def test_reward_v2_applies_terminal_deadlock_penalty_once():
+    environment = Phase2Warehouse(
+        n_agents=1,
+        max_steps=8,
+        deadlock_steps=1,
+        reward_version="reward-v2",
+        reward_deadlock_penalty=5.0,
+    )
+    try:
+        environment.reset(seed=3)
+
+        first = environment.step([Action.NOOP])
+        assert first.metrics.deadlocked is True
+        assert first.metrics.reward_deadlock == pytest.approx(-5.0)
+        assert first.team_reward == pytest.approx(-5.005)
+
+        second = environment.step([Action.NOOP])
+        assert second.metrics.reward_deadlock == pytest.approx(-5.0)
+        assert second.team_reward == pytest.approx(-0.005)
+    finally:
+        environment.close()
+
+
 def test_static_grid_distance_rewards_a_necessary_manhattan_detour():
     """A valid first detour step can increase Manhattan distance yet progress."""
     start = (0, 0)
