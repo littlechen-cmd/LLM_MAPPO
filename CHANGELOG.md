@@ -2,6 +2,11 @@
 
 ## 2026-09-08
 
+- Changed: The conditional Phase 1 waypoint diagnostic now restores the
+  owner-identified executable Reward-v2 pair (`-0.1` blocked-forward and
+  `-0.1` occupancy-conflict) and disables the separate charging-reward probe,
+  so its only intended learning-interface difference from the accepted DG
+  reference is waypoint geometry.
 - Added: Registered three fresh Phase 1 3-AGV DirectGoal efficiency diagnostics
   that share all training/environment settings and a `+0.05` confirmed charging
   event reward, varying only blocked-forward/occupancy-conflict penalties:

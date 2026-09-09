@@ -21,9 +21,9 @@ environment:
   observation_schema: direct-goal-observation-v1
   goal_interface: waypoint
   reward_version: reward-v2
-  reward_blocked_forward_penalty: 0.15
-  reward_collision_penalty: 0.50
-  charge_event_reward: 0.05
+  reward_blocked_forward_penalty: 0.10
+  reward_collision_penalty: 0.10
+  charge_event_reward: 0.00
   oracle_interaction_mask: true
 training:
   seed: 7
