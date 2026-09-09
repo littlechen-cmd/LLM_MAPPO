@@ -27,6 +27,27 @@ register(
 )
 
 register(
+    id="llm-mappo-large-5ag-v1",
+    entry_point="llm_mappo.environment:DynamicWarehouse",
+    kwargs={
+        "column_height": 8,
+        "shelf_rows": 3,
+        "shelf_columns": 5,
+        "n_agents": 5,
+        "msg_bits": 0,
+        "sensor_range": 4,
+        "request_queue_size": 5,
+        "max_inactivity_steps": None,
+        "max_steps": 800,
+        "reward_type": RewardType.INDIVIDUAL,
+        "batch_interval": 150,
+        "batch_size_range": (5, 5),
+        "picking_lock_steps": 3,
+        "outer_aisle_width": 2,
+    },
+)
+
+register(
     id="llm-mappo-small-1ag-v1",
     entry_point="llm_mappo.environment:DynamicWarehouse",
     kwargs={

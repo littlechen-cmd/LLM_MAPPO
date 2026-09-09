@@ -215,8 +215,20 @@ def test_checkpoint_evaluation_writes_a_separate_workload_receipt(tmp_path):
     target_experiment = replace(
         target_experiment,
         training={**target_experiment.training, "num_env_workers": 1},
+        evaluation={
+            **target_experiment.evaluation,
+            "environment_overrides": {
+                "max_steps": 2,
+                "dynamic_ingress_interval": 77,
+            },
+        },
     )
-    target = BaselineRun(target_experiment, device="cpu", output_root=tmp_path)
+    target = BaselineRun(
+        target_experiment,
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=True,
+    )
     result = target.evaluate_checkpoint(checkpoint)
 
     manifest = json.loads(
@@ -227,7 +239,8 @@ def test_checkpoint_evaluation_writes_a_separate_workload_receipt(tmp_path):
     assert manifest["source_checkpoint_sha256"] == sha256(
         checkpoint.read_bytes()
     ).hexdigest()
-    assert manifest["evaluation_environment"]["dynamic_ingress_interval"] == 60
+    assert manifest["evaluation_environment"]["dynamic_ingress_interval"] == 77
+    assert manifest["evaluation_environment"]["max_steps"] == 2
     assert json.loads((target.directory / "state.json").read_text()) == {
         "status": "complete"
     }

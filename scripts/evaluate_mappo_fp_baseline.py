@@ -24,8 +24,13 @@ def main() -> None:
         experiment,
         device=arguments.device,
         output_root=arguments.output_root,
+        evaluation_only=True,
     )
-    print(json.dumps(run.evaluate_checkpoint(arguments.checkpoint), indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            run.evaluate_checkpoint(arguments.checkpoint), indent=2, sort_keys=True
+        )
+    )
 
 
 if __name__ == "__main__":

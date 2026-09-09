@@ -1,5 +1,6 @@
 """Regression contract for the Phase 2 geometric A*KD teacher."""
 
+from dataclasses import replace
 import numpy as np
 import torch
 from pathlib import Path
@@ -14,9 +15,14 @@ from llm_mappo.mappo_astar_kd.networks import AStarKDActor
 from llm_mappo.mappo_astar_kd.trainer import astar_kd_loss, astar_kd_lambda
 from llm_mappo.mappo_astar_kd.trainer import AStarKDTrainer
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
-from llm_mappo.mappo_baseline.trainer import MAPPOConfig
+from llm_mappo.mappo_baseline.fp_state import FPStateSchema
+from llm_mappo.mappo_baseline.structured_observation import (
+    StructuredObservationSchema,
+)
+from llm_mappo.mappo_baseline.trainer import MAPPOConfig, MAPPOTrainer
 from llm_mappo.mappo_astar_kd.runner import load_astar_kd_experiment
 from llm_mappo.mappo_baseline.runner import (
+    BaselineRun,
     _episode_window,
     load_baseline_experiment,
 )
@@ -205,8 +211,6 @@ def test_phase2_evaluation_profiles_use_fixed_agv_sized_dynamic_ingress():
         assert values["dynamic_ingress_interval"] == 150
         assert values["batch_size_range"] == [agents, agents]
 
-        if values["environment_id"] == "llm-mappo-large-5ag-v1":
-            continue
         environment = new_baseline_environment(
             values, replenishment_mode="dynamic_ingress"
         )
@@ -468,3 +472,70 @@ def test_large_pressure_profiles_use_fixed_dynamic_ingress_evaluations():
         assert profile.environment["batch_size_range"] == [5, 5]
         assert profile.environment["task_target"] == 12
         assert profile.evaluation["seeds"] == [9400, 9401]
+
+
+def test_legacy_medium_evaluation_profiles_share_the_normal_workload_contract():
+    root = Path("configs/phase2")
+    names = (
+        "medium-5ag-high-baseline-eval.yaml",
+        "medium-5ag-high-astar-kd-no-validity-eval.yaml",
+        "medium-5ag-high-astar-kd-eval.yaml",
+    )
+
+    for name in names:
+        profile = load_baseline_experiment(root / name)
+        assert profile.environment["profile_id"] == "medium-5ag-evaluation"
+        assert profile.environment["task_target"] == 8
+
+
+def test_large_pressure_evaluation_uses_actor_without_medium_fp_critic_state():
+    """A medium-trained actor must run on large geometry without its critic."""
+
+    experiment = load_baseline_experiment(
+        Path("configs/phase2/large-5ag-high-baseline-eval.yaml")
+    )
+    run = BaselineRun.__new__(BaselineRun)
+    run.experiment = experiment
+    run.actor_schema = StructuredObservationSchema()
+    run.goal_interface = "direct_goal"
+    run._evaluation_planner = None
+    run.schema = FPStateSchema(
+        n_agents=5,
+        n_shelves=144,
+        n_chargers=5,
+        n_picking_stations=2,
+    )
+    run.trainer = MAPPOTrainer(
+        MAPPOConfig(
+            observation_dim=run.actor_schema.dimension,
+            state_dim=run.schema.dimension,
+            hidden_dim=64,
+        ),
+        "cpu",
+    )
+
+    result = run._evaluation_episode(9400)
+
+    assert result["seed"] == 9400
+    assert 0 < result["steps"] <= 800
+
+
+def test_large_checkpoint_evaluation_does_not_start_fp_training_workers(tmp_path):
+    experiment = load_baseline_experiment(
+        Path("configs/phase2/large-5ag-high-baseline-eval.yaml")
+    )
+    experiment = replace(
+        experiment,
+        training={**experiment.training, "num_env_workers": 1},
+    )
+
+    run = BaselineRun(
+        experiment,
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=True,
+    )
+    try:
+        assert run.pool is None
+    finally:
+        run.close()

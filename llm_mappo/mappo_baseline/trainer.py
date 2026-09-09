@@ -89,6 +89,29 @@ class MAPPOTrainer:
         )
 
     @torch.no_grad()
+    def act_policy(
+        self,
+        observations,
+        action_masks,
+        actor_hidden_states,
+        *,
+        deterministic: bool,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Select actions without evaluating the centralized critic."""
+
+        observations = self._tensor(observations)
+        masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device)
+        actor_hidden = self._tensor(actor_hidden_states)
+        logits, next_actor_hidden = self.actor(observations, actor_hidden)
+        logits = logits.masked_fill(~masks, -1e10)
+        actions = (
+            logits.argmax(dim=-1)
+            if deterministic
+            else Categorical(logits=logits).sample()
+        )
+        return actions.cpu().numpy(), next_actor_hidden.cpu().numpy()
+
+    @torch.no_grad()
     def values(self, fp_states, critic_hidden_states) -> tuple[np.ndarray, np.ndarray]:
         normalized, next_hidden = self.critic(
             self._tensor(fp_states), self._tensor(critic_hidden_states)

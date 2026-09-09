@@ -18,7 +18,7 @@ import numpy as np
 import torch
 import yaml
 
-from llm_mappo.mappo_baseline.fp_state import FPStateSchema, build_fp_state
+from llm_mappo.mappo_baseline.fp_state import FPStateSchema
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.structured_observation import (
     StructuredObservationSchema,
@@ -232,15 +232,19 @@ class BaselineRun:
         "success",
     )
 
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         experiment: BaselineExperiment,
         *,
         device: str,
         output_root: str | Path | None = None,
         resume: str | Path | None = None,
+        evaluation_only: bool = False,
     ) -> None:
+        if evaluation_only and resume is not None:
+            raise ValueError("Evaluation-only runs cannot resume training state.")
         self.experiment = experiment
+        self.evaluation_only = evaluation_only
         self._astar_kd_enabled = experiment.schema == "phase2-mappo-astar-kd-v1"
         self._astar_kd_variant = {
             "MAPPO-FP-ASTARKD": "full",
@@ -340,20 +344,22 @@ class BaselineRun:
             )
         else:
             self.trainer = MAPPOTrainer(config, self.device)
-        worker_values = {
-            **experiment.environment,
-            "worker_numerical_threads": experiment.training[
-                "worker_numerical_threads"
-            ],
-        }
-        if self._astar_kd_enabled:
-            worker_values["astar_kd_variant"] = self._astar_kd_variant
-        self.pool = MAPPOVectorEnvironment(
-            worker_values,
-            int(experiment.training["num_env_workers"]),
-            int(experiment.training["seed"]),
-            failure_directory=self.directory / "worker_failures",
-        )
+        self.pool = None
+        if not evaluation_only:
+            worker_values = {
+                **experiment.environment,
+                "worker_numerical_threads": experiment.training[
+                    "worker_numerical_threads"
+                ],
+            }
+            if self._astar_kd_enabled:
+                worker_values["astar_kd_variant"] = self._astar_kd_variant
+            self.pool = MAPPOVectorEnvironment(
+                worker_values,
+                int(experiment.training["num_env_workers"]),
+                int(experiment.training["seed"]),
+                failure_directory=self.directory / "worker_failures",
+            )
         self.global_steps = 0
         self.updates = 0
         hidden_shape = (
@@ -376,6 +382,8 @@ class BaselineRun:
             torch.cuda.reset_peak_memory_stats(self.device)
 
     def train(self) -> dict[str, Any]:  # noqa: C901
+        if self.pool is None:
+            raise RuntimeError("Evaluation-only MAPPO runs cannot train.")
         budget = int(self.experiment.training["environment_steps"])
         workers = int(self.experiment.training["num_env_workers"])
         rollout_length = int(self.experiment.training["rollout_length"])
@@ -624,7 +632,7 @@ class BaselineRun:
                 "source_checkpoint_sha256": sha256(source.read_bytes()).hexdigest(),
                 "source_identity": source_identity,
                 "evaluation_identity": self.identity,
-                "evaluation_environment": dict(self.experiment.environment),
+                "evaluation_environment": self._evaluation_environment_values(),
                 "evaluation": dict(self.experiment.evaluation),
                 "checkpoint_evaluation_only": True,
             }
@@ -697,8 +705,10 @@ class BaselineRun:
         frames = []
         try:
             environment.reset(seed=seed)
-            actor_hidden = np.zeros((1, environment.n_agents, 64), dtype=np.float32)
-            critic_hidden = np.zeros((1, environment.n_agents, 64), dtype=np.float32)
+            actor_hidden = np.zeros(
+                (1, environment.n_agents, self.trainer.config.hidden_dim),
+                dtype=np.float32,
+            )
             transition = None
             stride = int(self.experiment.evaluation["replay_frame_stride"])
             for step in range(int(values["max_steps"])):
@@ -712,14 +722,11 @@ class BaselineRun:
                     goal_interface=self.goal_interface,
                     planner=self._evaluation_planner,
                 )
-                states = build_fp_state(environment, self.schema)
                 masks = environment.action_masks()
-                actions, _, _, _, next_actor, next_critic = self.trainer.act(
+                actions, next_actor = self.trainer.act_policy(
                     observations[None],
-                    states[None],
                     masks[None],
                     actor_hidden,
-                    critic_hidden,
                     deterministic=True,
                 )
                 transition = environment.step(actions[0])
@@ -729,7 +736,6 @@ class BaselineRun:
                     or transition.metrics.deadlocked
                 ) else 1.0
                 actor_hidden = next_actor * continuation
-                critic_hidden = next_critic * continuation
                 if (
                     transition.terminated
                     or transition.truncated

@@ -2,6 +2,13 @@
 
 ## 2026-09-10
 
+- Fixed: Registered the Phase 2 large-5AG warehouse and made checkpoint
+  evaluation actor-only and worker-free, allowing medium-trained policies to
+  run on the larger geometry without constructing an incompatible FP critic
+  state.
+- Fixed: Checkpoint evaluation manifests now record the effective environment
+  after evaluation overrides, and legacy medium evaluation aliases use the
+  common target-8 workload contract instead of a separate high-workload mode.
 - Changed: Phase 2 medium 3-AGV and medium 5-AGV training now uses a
   500-step horizon to limit unproductive rollouts; its independent evaluation
   remains explicitly fixed at 800 steps.

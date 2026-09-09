@@ -21,7 +21,10 @@ def main() -> None:
     arguments = _arguments()
     experiment = load_baseline_experiment(arguments.config)
     run = BaselineRun(
-        experiment, device=arguments.device, output_root=arguments.output_root
+        experiment,
+        device=arguments.device,
+        output_root=arguments.output_root,
+        evaluation_only=True,
     )
     print(
         json.dumps(
