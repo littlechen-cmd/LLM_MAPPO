@@ -678,6 +678,15 @@ def test_phase2_training_profile_uses_target_18_only_for_training():
     assert profile.evaluation["seeds"] == [9400, 9401]
 
 
+def test_all_phase2_profiles_describe_the_formal_450k_training_budget():
+    """Keep training and checkpoint-evaluation metadata on one formal budget."""
+    root = Path("configs/phase2")
+
+    for path in root.glob("*.yaml"):
+        profile = load_baseline_experiment(path)
+        assert profile.training["environment_steps"] == 450_000, path.name
+
+
 def test_large_pressure_profiles_use_fixed_dynamic_ingress_evaluations():
     root = Path("configs/phase2")
     names = (

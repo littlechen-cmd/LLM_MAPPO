@@ -2,6 +2,9 @@
 
 ## 2026-09-11
 
+- Changed: All Phase 2 training and checkpoint-evaluation profiles now share
+  the formal 450k environment-step budget; the 25k checkpoint cadence and
+  budget-relative learning-rate/A*KD schedules remain unchanged.
 - Added: A*KD now applies a separately logged supervision-scope mask so
   auxiliary gradients cover only non-idle, motion-executable navigation away
   from the current goal, while teacher validity retains its existing meaning.

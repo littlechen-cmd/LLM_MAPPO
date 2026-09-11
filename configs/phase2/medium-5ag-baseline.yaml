@@ -31,7 +31,7 @@ environment:
   oracle_interaction_mask: true
 training: &phase2_training
   seed: 7
-  environment_steps: 300000
+  environment_steps: 450000
   num_env_workers: 6
   learner_torch_threads: 4
   worker_numerical_threads: 1
