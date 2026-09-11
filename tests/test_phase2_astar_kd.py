@@ -247,8 +247,8 @@ def test_continuous_training_does_not_end_when_inner_target_is_reached():
         environment.close()
 
 
-def test_phase2_evaluation_profiles_use_fixed_agv_sized_dynamic_ingress():
-    """Catch random or under-filled evaluation arrivals across Phase 2 profiles."""
+def test_phase2_evaluation_profiles_use_two_initial_batches_then_fixed_ingress():
+    """Keep evaluation supplied without randomizing AGV-sized arrivals."""
 
     root = Path("configs/phase2")
     names = (
@@ -271,15 +271,17 @@ def test_phase2_evaluation_profiles_use_fixed_agv_sized_dynamic_ingress():
             **profile.evaluation.get("environment_overrides", {}),
         }
         agents = int(values["n_agents"])
-        assert values["dynamic_ingress_interval"] == 150
+        assert values["dynamic_ingress_interval"] == 100
         assert values["batch_size_range"] == [agents, agents]
+        assert values["initial_ingress_batches"] == 2
+        assert values["task_target"] == 5 * agents
 
         environment = new_baseline_environment(
             values, replenishment_mode="dynamic_ingress"
         )
         try:
             environment.reset(seed=9400)
-            assert len(environment.env.task_queue.active_tasks) == agents
+            assert len(environment.env.task_queue.active_tasks) == 2 * agents
         finally:
             environment.close()
 
@@ -673,7 +675,7 @@ def test_phase2_training_profile_uses_target_18_only_for_training():
     )
 
     assert profile.environment["task_target"] == 18
-    assert profile.evaluation["environment_overrides"]["task_target"] == 8
+    assert profile.evaluation["environment_overrides"]["task_target"] == 25
     assert profile.training["seed"] == 7
     assert profile.evaluation["seeds"] == [9400, 9401]
 
@@ -697,11 +699,16 @@ def test_large_pressure_profiles_use_fixed_dynamic_ingress_evaluations():
 
     for name in names:
         profile = load_baseline_experiment(root / name)
-        assert profile.environment["environment_id"] == "llm-mappo-large-5ag-v1"
-        assert profile.environment["max_steps"] == 800
-        assert profile.environment["dynamic_ingress_interval"] == 150
-        assert profile.environment["batch_size_range"] == [5, 5]
-        assert profile.environment["task_target"] == 12
+        values = {
+            **profile.environment,
+            **profile.evaluation["environment_overrides"],
+        }
+        assert values["environment_id"] == "llm-mappo-large-5ag-v1"
+        assert values["max_steps"] == 800
+        assert values["dynamic_ingress_interval"] == 100
+        assert values["initial_ingress_batches"] == 2
+        assert values["batch_size_range"] == [5, 5]
+        assert values["task_target"] == 25
         assert profile.evaluation["seeds"] == [9400, 9401]
 
 
@@ -716,7 +723,7 @@ def test_legacy_medium_evaluation_profiles_share_the_normal_workload_contract():
     for name in names:
         profile = load_baseline_experiment(root / name)
         assert profile.environment["profile_id"] == "medium-5ag-evaluation"
-        assert profile.environment["task_target"] == 8
+        assert profile.evaluation["environment_overrides"]["task_target"] == 25
 
 
 def test_large_pressure_evaluation_uses_actor_without_medium_fp_critic_state():
