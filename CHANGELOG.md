@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-12
+
+- Changed: Integrated the Phase 2 A*KD implementation with the Phase 1 mainline,
+  including the formal 450k training profiles and deterministic evaluation
+  workload of two initial AGV-sized batches, one batch every 100 steps, and a
+  completion target of five tasks per AGV.
+
 ## 2026-09-11
 
 - Changed: Phase 2 evaluation now starts with two deterministic AGV-sized task
