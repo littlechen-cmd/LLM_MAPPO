@@ -190,6 +190,9 @@ class BaselineRun:
         "teacher_query_count",
         "teacher_valid_count",
         "teacher_valid_rate",
+        "teacher_supervision_scope_count",
+        "teacher_effective_supervision_count",
+        "teacher_effective_supervision_rate",
         "teacher_invalid_counts",
         "teacher_cache_build_count",
         "teacher_cache_hit_count",
@@ -424,6 +427,8 @@ class BaselineRun:
                 teacher_counts = Counter()
                 teacher_query_count = 0
                 teacher_valid_count = 0
+                teacher_supervision_scope_count = 0
+                teacher_effective_supervision_count = 0
                 teacher_cache_build_count = 0
                 teacher_cache_hit_count = 0
                 dynamic_attenuated_count = 0
@@ -443,12 +448,20 @@ class BaselineRun:
                         teacher_cache_build_count += int(astar_kd["cache_build_count"])
                         teacher_cache_hit_count += int(astar_kd["cache_hit_count"])
                         valid = np.asarray(astar_kd["validity"], dtype=bool)
+                        scope = np.asarray(
+                            astar_kd["supervision_scope"], dtype=bool
+                        )
+                        supervised = np.logical_and(valid, scope)
                         weights = np.asarray(astar_kd["attenuation"], dtype=np.float32)
                         teacher_valid_count += int(valid.sum())
-                        dynamic_attenuated_count += int(
-                            np.logical_and(valid, weights == 0.25).sum()
+                        teacher_supervision_scope_count += int(scope.sum())
+                        teacher_effective_supervision_count += int(
+                            supervised.sum()
                         )
-                        dynamic_weight_sum += float(weights[valid].sum())
+                        dynamic_attenuated_count += int(
+                            np.logical_and(supervised, weights == 0.25).sum()
+                        )
+                        dynamic_weight_sum += float(weights[supervised].sum())
                         for reasons in astar_kd["failure_reasons"]:
                             teacher_counts.update(
                                 reason for reason in reasons if reason != "ok"
@@ -502,6 +515,9 @@ class BaselineRun:
                             "astar_soft_targets": astar_kd["soft_targets"],
                             "astar_root_costs": astar_kd["root_costs"],
                             "astar_validity": astar_kd["validity"],
+                            "astar_supervision_scope": astar_kd[
+                                "supervision_scope"
+                            ],
                             "astar_attenuation": astar_kd["attenuation"],
                         } if self._astar_kd_enabled else {}),
                     )
@@ -530,6 +546,16 @@ class BaselineRun:
                         "teacher_valid_rate": teacher_valid_count / max(
                             teacher_query_count, 1
                         ),
+                        "teacher_supervision_scope_count": (
+                            teacher_supervision_scope_count
+                        ),
+                        "teacher_effective_supervision_count": (
+                            teacher_effective_supervision_count
+                        ),
+                        "teacher_effective_supervision_rate": (
+                            teacher_effective_supervision_count
+                            / max(teacher_query_count, 1)
+                        ),
                         "teacher_invalid_counts": json.dumps(
                             dict(sorted(teacher_counts.items())), sort_keys=True
                         ),
@@ -540,7 +566,7 @@ class BaselineRun:
                         ),
                         "dynamic_attenuated_count": dynamic_attenuated_count,
                         "mean_dynamic_weight": dynamic_weight_sum / max(
-                            teacher_valid_count, 1
+                            teacher_effective_supervision_count, 1
                         ),
                         "astar_lambda": astar_kd_lambda(self.global_steps, budget),
                     })
@@ -549,6 +575,9 @@ class BaselineRun:
                         "teacher_query_count": 0,
                         "teacher_valid_count": 0,
                         "teacher_valid_rate": 0.0,
+                        "teacher_supervision_scope_count": 0,
+                        "teacher_effective_supervision_count": 0,
+                        "teacher_effective_supervision_rate": 0.0,
                         "teacher_invalid_counts": "{}",
                         "teacher_cache_build_count": 0,
                         "teacher_cache_hit_count": 0,
@@ -872,6 +901,9 @@ class BaselineRun:
                 "clip_fraction", "explained_variance", "actor_grad_norm",
                 "critic_grad_norm", "actor_learning_rate", "critic_learning_rate",
                 "teacher_query_count", "teacher_valid_count", "teacher_valid_rate",
+                "teacher_supervision_scope_count",
+                "teacher_effective_supervision_count",
+                "teacher_effective_supervision_rate",
                 "teacher_invalid_counts", "teacher_cache_build_count",
                 "teacher_cache_hit_count", "teacher_cache_hit_rate",
                 "dynamic_attenuated_count", "mean_dynamic_weight", "astar_loss",
@@ -940,6 +972,9 @@ class BaselineRun:
             step,
         )
         for name in (
+            "teacher_supervision_scope_count",
+            "teacher_effective_supervision_count",
+            "teacher_effective_supervision_rate",
             "motion_prior_top1_agreement",
             "policy_teacher_motion_agreement",
             "static_route_regret",

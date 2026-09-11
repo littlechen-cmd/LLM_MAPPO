@@ -15,6 +15,7 @@ def astar_kd_diagnostics(
     soft_targets: torch.Tensor,
     root_costs: torch.Tensor,
     validity: torch.Tensor,
+    supervision_scope: torch.Tensor,
     active_masks: torch.Tensor,
 ) -> dict[str, float | int]:
     """Measure teacher transfer without changing policy or teacher semantics."""
@@ -32,10 +33,11 @@ def astar_kd_diagnostics(
         raise ValueError("A*KD diagnostic targets and root costs must be three-wide.")
     if (
         validity.shape != motion_logits.shape[:-1]
+        or supervision_scope.shape != validity.shape
         or active_masks.shape != validity.shape
     ):
         raise ValueError("A*KD diagnostic masks must match the sample axes.")
-    teacher_valid = validity.bool()
+    teacher_valid = validity.bool() & supervision_scope.bool()
     policy_eligible = teacher_valid & (active_masks > 0.0)
     teacher_top = soft_targets.argmax(dim=-1)
     motion_top = motion_logits.argmax(dim=-1)
@@ -112,6 +114,7 @@ def astar_kd_loss(
     soft_targets: torch.Tensor,
     validity: torch.Tensor,
     attenuation: torch.Tensor,
+    supervision_scope: torch.Tensor,
     *,
     lambda_value: float,
 ) -> torch.Tensor:
@@ -123,7 +126,11 @@ def astar_kd_loss(
         raise ValueError("A*KD validity must match the non-action axes.")
     if attenuation.shape != validity.shape:
         raise ValueError("A*KD attenuation must match validity.")
-    valid = validity.to(dtype=motion_logits.dtype)
+    if supervision_scope.shape != validity.shape:
+        raise ValueError("A*KD supervision scope must match validity.")
+    valid = (validity.bool() & supervision_scope.bool()).to(
+        dtype=motion_logits.dtype
+    )
     if not bool(valid.any()):
         return motion_logits.sum() * 0.0
     log_probabilities = functional.log_softmax(motion_logits, dim=-1)
@@ -167,7 +174,12 @@ class AStarKDTrainer(MAPPOTrainer):
     def _actor_auxiliary_loss(self, auxiliary, selected):
         if auxiliary is None:
             raise RuntimeError("A*KD Actor did not return MotionPriorHead logits.")
-        required = ("astar_soft_targets", "astar_validity", "astar_attenuation")
+        required = (
+            "astar_soft_targets",
+            "astar_validity",
+            "astar_supervision_scope",
+            "astar_attenuation",
+        )
         if any(name not in selected for name in required):
             raise ValueError("A*KD trainer received a rollout without teacher fields.")
         return astar_kd_loss(
@@ -175,6 +187,7 @@ class AStarKDTrainer(MAPPOTrainer):
             selected["astar_soft_targets"],
             selected["astar_validity"],
             selected["astar_attenuation"],
+            selected["astar_supervision_scope"],
             lambda_value=astar_kd_lambda(
                 self.global_environment_steps, self.total_environment_steps
             ),
@@ -194,6 +207,7 @@ class AStarKDTrainer(MAPPOTrainer):
             selected["astar_soft_targets"],
             selected["astar_root_costs"],
             selected["astar_validity"],
+            selected["astar_supervision_scope"],
             selected["active"],
         )
         shared_parameters = tuple(self.actor.encoder.parameters()) + tuple(

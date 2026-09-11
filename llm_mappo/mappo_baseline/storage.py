@@ -24,6 +24,7 @@ class MAPPOBatch:
     astar_soft_targets: np.ndarray | None = None
     astar_root_costs: np.ndarray | None = None
     astar_validity: np.ndarray | None = None
+    astar_supervision_scope: np.ndarray | None = None
     astar_attenuation: np.ndarray | None = None
 
 
@@ -110,6 +111,7 @@ class MAPPORolloutStorage:
                 "astar_soft_targets": (self.num_workers, self.num_agents, 3),
                 "astar_root_costs": (self.num_workers, self.num_agents, 3),
                 "astar_validity": (self.num_workers, self.num_agents),
+                "astar_supervision_scope": (self.num_workers, self.num_agents),
                 "astar_attenuation": (self.num_workers, self.num_agents),
             }
             for name, shape in teacher_shapes.items():
@@ -171,6 +173,10 @@ class MAPPORolloutStorage:
             ),
             astar_validity=(
                 self._stack("astar_validity", bool)
+                if self.astar_kd_enabled else None
+            ),
+            astar_supervision_scope=(
+                self._stack("astar_supervision_scope", bool)
                 if self.astar_kd_enabled else None
             ),
             astar_attenuation=(

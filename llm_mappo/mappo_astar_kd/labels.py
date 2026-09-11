@@ -23,6 +23,7 @@ class TeacherLabels:
     soft_targets: np.ndarray
     root_costs: np.ndarray
     validity: np.ndarray
+    supervision_scope: np.ndarray
     attenuation: np.ndarray
     failure_reasons: tuple[str, ...]
     query_count: int
@@ -45,8 +46,10 @@ class AStarKDLabeler:
             (len(warehouse.agents), 3), np.nan, dtype=np.float32
         )
         validity = np.zeros(len(warehouse.agents), dtype=bool)
+        supervision_scope = np.zeros(len(warehouse.agents), dtype=bool)
         attenuation = np.ones(len(warehouse.agents), dtype=np.float32)
         reasons = []
+        motion_executable = self.environment.action_masks()[:, 1:4].any(axis=-1)
         peer_positions = {(agent.x, agent.y) for agent in warehouse.agents}
         build_before = self.teacher.cache_build_count
         hit_before = self.teacher.cache_hit_count
@@ -80,6 +83,11 @@ class AStarKDLabeler:
                 dtype=np.float32,
             )
             validity[index] = result.valid
+            supervision_scope[index] = bool(
+                target_kind != "idle"
+                and (int(agent.x), int(agent.y)) != query.goal
+                and motion_executable[index]
+            )
             reasons.append(result.failure_reason)
             if (
                 result.valid
@@ -91,6 +99,7 @@ class AStarKDLabeler:
             soft_targets=targets,
             root_costs=root_costs,
             validity=validity,
+            supervision_scope=supervision_scope,
             attenuation=attenuation,
             failure_reasons=tuple(reasons),
             query_count=len(warehouse.agents),

@@ -174,6 +174,7 @@ class MAPPOTrainer:
             if (
                 batch.astar_root_costs is None
                 or batch.astar_validity is None
+                or batch.astar_supervision_scope is None
                 or batch.astar_attenuation is None
             ):
                 raise ValueError("A*KD rollout fields must be present together.")
@@ -186,6 +187,11 @@ class MAPPOTrainer:
                 ),
                 "astar_validity": torch.as_tensor(
                     batch.astar_validity, dtype=torch.bool, device=self.device
+                ).reshape(time_steps, sequence_count),
+                "astar_supervision_scope": torch.as_tensor(
+                    batch.astar_supervision_scope,
+                    dtype=torch.bool,
+                    device=self.device,
                 ).reshape(time_steps, sequence_count),
                 "astar_attenuation": self._tensor(batch.astar_attenuation).reshape(
                     time_steps, sequence_count

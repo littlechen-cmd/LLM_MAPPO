@@ -2,6 +2,9 @@
 
 ## 2026-09-11
 
+- Added: A*KD now applies a separately logged supervision-scope mask so
+  auxiliary gradients cover only non-idle, motion-executable navigation away
+  from the current goal, while teacher validity retains its existing meaning.
 - Added: Phase 2 diagnostics now record MotionPrior and policy agreement with
   the A* teacher, static route regret and invalid-root selection, per-phase
   action ratios, successful direction reversals, motion steps per task, and

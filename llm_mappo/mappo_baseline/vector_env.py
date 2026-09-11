@@ -85,6 +85,7 @@ def _payload(environment, schema, goal_interface, planner, labeler=None, *,
             "soft_targets": labels.soft_targets,
             "root_costs": labels.root_costs,
             "validity": labels.validity,
+            "supervision_scope": labels.supervision_scope,
             "attenuation": labels.attenuation,
             "failure_reasons": labels.failure_reasons,
             "query_count": labels.query_count,
@@ -348,6 +349,9 @@ class MAPPOVectorEnvironment:
                 "validity": np.stack([
                     item["astar_kd"]["validity"] for item in payloads
                 ]),
+                "supervision_scope": np.stack([
+                    item["astar_kd"]["supervision_scope"] for item in payloads
+                ]),
                 "attenuation": np.stack([
                     item["astar_kd"]["attenuation"] for item in payloads
                 ]),
@@ -376,7 +380,13 @@ class MAPPOVectorEnvironment:
         active_count = len(payloads)
         previous = self.astar_kd
         current = {}
-        for name in ("soft_targets", "root_costs", "validity", "attenuation"):
+        for name in (
+            "soft_targets",
+            "root_costs",
+            "validity",
+            "supervision_scope",
+            "attenuation",
+        ):
             values = np.asarray(previous[name]).copy()
             values[:active_count] = np.stack([
                 item["astar_kd"][name] for item in payloads

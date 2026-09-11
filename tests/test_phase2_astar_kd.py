@@ -133,6 +133,8 @@ def test_labeler_uses_direct_rule_goal_and_keeps_peer_occupancy_out_of_target():
         assert labels.soft_targets.shape == (3, 3)
         assert labels.root_costs.shape == (3, 3)
         assert labels.validity.shape == (3,)
+        assert labels.supervision_scope.shape == (3,)
+        assert labels.supervision_scope.tolist() == [True, True, True]
         assert labels.attenuation.shape == (3,)
         assert labels.query_count == 3
         assert np.all((labels.attenuation == 1.0) | (labels.attenuation == 0.25))
@@ -186,6 +188,7 @@ def test_full_validity_labels_forced_pickup_as_loaded_delivery_transition():
         labels = labeler.labels(use_semantic_validity=True)
 
         assert labels.validity.tolist() == [True]
+        assert labels.supervision_scope.tolist() == [False]
         assert labels.failure_reasons == ("ok",)
         assert queries[0].pose == (shelf.x, shelf.y)
         assert queries[0].goal == (9, 21)
@@ -392,6 +395,7 @@ def test_vector_step_refreshes_current_astar_kd_payload():
         current = pool.astar_kd
 
         assert current["root_costs"].shape == (1, 3, 3)
+        assert current["supervision_scope"].shape == (1, 3)
         assert current["query_count"] == 3
         assert current["cache_build_count"] == 0
         assert current["cache_hit_count"] == 3
@@ -436,6 +440,7 @@ def test_partial_vector_step_counts_only_active_teacher_queries():
 
         assert current["soft_targets"].shape == (2, 3, 3)
         assert current["root_costs"].shape == (2, 3, 3)
+        assert current["supervision_scope"].shape == (2, 3)
         assert current["query_count"] == 3
         assert current["cache_build_count"] == 0
         assert current["cache_hit_count"] == 3
@@ -460,9 +465,43 @@ def test_kd_loss_uses_valid_count_not_attenuation_sum_as_denominator():
     validity = torch.tensor([True, True])
     attenuation = torch.tensor([1.0, 0.25])
 
-    loss = astar_kd_loss(logits, targets, validity, attenuation, lambda_value=1.0)
+    loss = astar_kd_loss(
+        logits,
+        targets,
+        validity,
+        attenuation,
+        torch.ones(2, dtype=torch.bool),
+        lambda_value=1.0,
+    )
 
     assert torch.isclose(loss, torch.tensor(0.625 * np.log(3.0), dtype=loss.dtype))
+
+
+def test_kd_loss_excludes_valid_samples_outside_supervision_scope():
+    """Keep geometrically valid but non-motion states out of A*KD gradients."""
+    logits = torch.zeros((2, 3), requires_grad=True)
+    targets = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+
+    loss = astar_kd_loss(
+        logits,
+        targets,
+        torch.tensor([True, True]),
+        torch.ones(2),
+        torch.tensor([True, False]),
+        lambda_value=1.0,
+    )
+
+    loss.backward()
+    assert torch.count_nonzero(logits.grad[1]) == 0
+
+
+def test_update_schema_exposes_supervision_scope_density():
+    """Keep scope filtering auditable rather than hidden inside the loss."""
+    assert {
+        "teacher_supervision_scope_count",
+        "teacher_effective_supervision_count",
+        "teacher_effective_supervision_rate",
+    } <= set(BaselineRun.UPDATE_FIELDS)
 
 
 def test_astar_diagnostics_report_head_agreement_and_finite_route_regret():
@@ -495,6 +534,7 @@ def test_astar_diagnostics_report_head_agreement_and_finite_route_regret():
         soft_targets,
         root_costs,
         torch.tensor([True, True, True]),
+        torch.tensor([True, True, True]),
         torch.tensor([1.0, 1.0, 1.0]),
     )
 
@@ -513,6 +553,7 @@ def test_motion_prior_agreement_uses_valid_teacher_samples_even_when_inactive():
         torch.tensor([[3.0, 0.0, 1.0]]),
         torch.tensor([[0.8, 0.1, 0.1]]),
         torch.tensor([[1.0, 2.0, 3.0]]),
+        torch.tensor([True]),
         torch.tensor([True]),
         torch.tensor([0.0]),
     )
@@ -543,6 +584,7 @@ def test_astar_root_costs_survive_rollout_storage():
         astar_soft_targets=np.asarray([[[0.6, 0.3, 0.1]]], dtype=np.float32),
         astar_root_costs=np.asarray([[[2.0, 3.0, np.nan]]], dtype=np.float32),
         astar_validity=np.ones((1, 1), dtype=bool),
+        astar_supervision_scope=np.ones((1, 1), dtype=bool),
         astar_attenuation=np.ones((1, 1), dtype=np.float32),
     )
 
@@ -553,6 +595,7 @@ def test_astar_root_costs_survive_rollout_storage():
     assert batch.astar_root_costs.shape == (1, 1, 1, 3)
     assert batch.astar_root_costs[0, 0, 0, :2].tolist() == [2.0, 3.0]
     assert np.isnan(batch.astar_root_costs[0, 0, 0, 2])
+    assert batch.astar_supervision_scope.tolist() == [[[True]]]
 
 
 def test_lambda_schedule_has_a_nonzero_tail():
@@ -588,6 +631,7 @@ def test_astar_kd_trainer_updates_motion_head_from_recurrent_rollout():
             astar_soft_targets=np.array([[[1.0, 0.0, 0.0]]], dtype=np.float32),
             astar_root_costs=np.array([[[1.0, 2.0, 3.0]]], dtype=np.float32),
             astar_validity=np.ones((1, 1), dtype=bool),
+            astar_supervision_scope=np.ones((1, 1), dtype=bool),
             astar_attenuation=np.ones((1, 1), dtype=np.float32),
         )
         actor_hidden, critic_hidden = next_actor, next_critic
