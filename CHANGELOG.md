@@ -2,6 +2,9 @@
 
 ## 2026-09-12
 
+- Added: Documented the Phase 2 shared MAPPO baseline, continuous-throughput
+  training contract, deterministic evaluation workload, evidence boundaries,
+  and compatibility notes for subsequent LLM KD work.
 - Changed: Integrated the Phase 2 A*KD implementation with the Phase 1 mainline,
   including the formal 450k training profiles and deterministic evaluation
   workload of two initial AGV-sized batches, one batch every 100 steps, and a
