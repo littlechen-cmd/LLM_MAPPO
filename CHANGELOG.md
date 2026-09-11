@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-11
+
+- Fixed: Full-validity A*KD now supervises the forced pickup boundary as a
+  post-pickup transition using the loaded footprint and the rule-selected
+  delivery or charging goal, while `TOGGLE_LOAD` remains the only executable
+  environment action.
+
 ## 2026-09-10
 
 - Fixed: Registered the Phase 2 large-5AG warehouse and made checkpoint

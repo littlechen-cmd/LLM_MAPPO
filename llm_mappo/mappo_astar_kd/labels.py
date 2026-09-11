@@ -47,17 +47,25 @@ class AStarKDLabeler:
         build_before = self.teacher.cache_build_count
         hit_before = self.teacher.cache_hit_count
         for index, agent in enumerate(warehouse.agents):
-            goal, _ = self.environment._target_for_agent(
+            goal, target_kind = self.environment._target_for_agent(
                 agent.id, charging_targets=charging_targets
             )
+            requires_pickup = self.environment._requires_pickup(agent.id)
+            footprint = "loaded" if agent.carrying_shelf is not None else "unloaded"
+            if requires_pickup:
+                footprint = "loaded"
+                if target_kind == "task":
+                    goal = self.environment._nearest(
+                        (int(agent.x), int(agent.y)), warehouse.picking_stations
+                    )
             query = AStarKDQuery(
                 pose=(int(agent.x), int(agent.y)),
                 orientation=agent.dir.name,
                 goal=(int(goal[0]), int(goal[1])),
-                footprint="loaded" if agent.carrying_shelf is not None else "unloaded",
+                footprint=footprint,
                 dead=bool(agent.dead),
                 picking_lock=bool(agent.picking_lock_steps),
-                mandatory_toggle_load=bool(self.environment._requires_pickup(agent.id)),
+                mandatory_toggle_load=False,
             )
             result = self.teacher.query(
                 query, use_semantic_validity=use_semantic_validity

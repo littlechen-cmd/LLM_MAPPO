@@ -135,6 +135,60 @@ def test_labeler_uses_direct_rule_goal_and_keeps_peer_occupancy_out_of_target():
         environment.close()
 
 
+def test_full_validity_labels_forced_pickup_as_loaded_delivery_transition():
+    """Catch semantic gating or the old shelf goal at the pickup boundary."""
+
+    values = {
+        "environment_id": "llm-mappo-medium-3ag-v1",
+        "n_agents": 1,
+        "max_steps": 20,
+        "dynamic_ingress_interval": 30,
+        "batch_size_range": [1, 1],
+        "queue_size": 1,
+        "task_target": 1,
+        "training_replenishment_mode": "rware_delivery",
+        "initial_priority_label": "A",
+        "priority_schedule": ["A", "B", "C", "D"],
+        "charging_stations": [[0, 0]],
+        "picking_stations": [[9, 21]],
+        "battery_cost_scale": 1.1,
+        "charge_threshold": 0.3,
+        "charge_release_threshold": 0.8,
+        "deadlock_steps": 20,
+        "observation_schema": "direct-goal-observation-v1",
+        "reward_version": "reward-v2",
+        "oracle_interaction_mask": True,
+    }
+    environment = new_baseline_environment(values)
+    try:
+        environment.reset(seed=7)
+        agent = environment.env.agents[0]
+        task = environment.env.task_queue.task_for_agent(agent.id)
+        shelf = environment.env.shelfs[task.shelf_id - 1]
+        agent.x, agent.y = shelf.x, shelf.y
+        labeler = AStarKDLabeler(environment)
+        queries = []
+        query = labeler.teacher.query
+
+        def record(candidate, *, use_semantic_validity=True):
+            queries.append(candidate)
+            return query(
+                candidate, use_semantic_validity=use_semantic_validity
+            )
+
+        labeler.teacher.query = record
+        labels = labeler.labels(use_semantic_validity=True)
+
+        assert labels.validity.tolist() == [True]
+        assert labels.failure_reasons == ("ok",)
+        assert queries[0].pose == (shelf.x, shelf.y)
+        assert queries[0].goal == (9, 21)
+        assert queries[0].footprint == "loaded"
+        assert not queries[0].mandatory_toggle_load
+    finally:
+        environment.close()
+
+
 def test_continuous_training_timeout_is_a_truncation_not_a_task_termination():
     """Catch target-driven or terminal timeout endings in continuous training."""
 
