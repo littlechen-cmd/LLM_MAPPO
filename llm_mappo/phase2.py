@@ -32,6 +32,36 @@ if TYPE_CHECKING:
 
 
 ACTION_COUNT = len(Action)
+EPISODE_TARGET_PHASES = ("idle", "task", "delivery", "charging")
+EPISODE_ACTION_NAMES = tuple(action.name.lower() for action in Action)
+EPISODE_ACTION_COUNT_FIELDS = tuple(
+    f"{phase}_{action}_count"
+    for phase in EPISODE_TARGET_PHASES
+    for action in EPISODE_ACTION_NAMES
+)
+EPISODE_ACTION_RATE_FIELDS = tuple(
+    f"{phase}_{action}_rate"
+    for phase in EPISODE_TARGET_PHASES
+    for action in EPISODE_ACTION_NAMES
+)
+EPISODE_DIAGNOSTIC_FIELDS = (
+    *EPISODE_ACTION_COUNT_FIELDS,
+    *EPISODE_ACTION_RATE_FIELDS,
+    "direction_reversals",
+    "motion_steps",
+    "active_motion_steps",
+    "motion_steps_per_task",
+    "active_motion_steps_per_task",
+)
+
+
+def _new_phase_action_counts() -> Dict[str, int]:
+    """Build the fixed action-count schema for one episode."""
+    return {
+        f"{phase}_{action}_count": 0
+        for phase in EPISODE_TARGET_PHASES
+        for action in EPISODE_ACTION_NAMES
+    }
 
 
 @dataclass
@@ -66,6 +96,13 @@ class EpisodeMetrics:
     reward_deadlock: float = 0.0
     reward_energy: float = 0.0
     reward_step_cost: float = 0.0
+    phase_action_counts: Dict[str, int] = field(
+        default_factory=_new_phase_action_counts,
+        repr=False,
+    )
+    direction_reversals: int = 0
+    motion_steps: int = 0
+    active_motion_steps: int = 0
 
     @property
     def completion_rate(self) -> float:
@@ -83,6 +120,20 @@ class EpisodeMetrics:
         return float(self.steps) / float(self.completed_tasks)
 
     @property
+    def motion_steps_per_task(self) -> float | None:
+        """Return requested turning/forward actions per completed task."""
+        if self.completed_tasks < 1:
+            return None
+        return float(self.motion_steps) / float(self.completed_tasks)
+
+    @property
+    def active_motion_steps_per_task(self) -> float | None:
+        """Return non-idle requested turning/forward actions per completion."""
+        if self.completed_tasks < 1:
+            return None
+        return float(self.active_motion_steps) / float(self.completed_tasks)
+
+    @property
     def success(self) -> bool:
         if self.task_completion_target:
             return (
@@ -98,7 +149,7 @@ class EpisodeMetrics:
         return self.charging_target_steps / self.agent_steps
 
     def as_dict(self) -> Dict[str, float | bool | int | None]:
-        return {
+        values = {
             "completed_tasks": self.completed_tasks,
             "created_tasks": self.created_tasks,
             "task_completion_target": self.task_completion_target,
@@ -129,8 +180,26 @@ class EpisodeMetrics:
             "reward_deadlock": self.reward_deadlock,
             "reward_energy": self.reward_energy,
             "reward_step_cost": self.reward_step_cost,
+            "direction_reversals": self.direction_reversals,
+            "motion_steps": self.motion_steps,
+            "active_motion_steps": self.active_motion_steps,
+            "motion_steps_per_task": self.motion_steps_per_task,
+            "active_motion_steps_per_task": self.active_motion_steps_per_task,
             "success": self.success,
         }
+        for phase in EPISODE_TARGET_PHASES:
+            phase_total = sum(
+                self.phase_action_counts[f"{phase}_{action}_count"]
+                for action in EPISODE_ACTION_NAMES
+            )
+            for action in EPISODE_ACTION_NAMES:
+                count_key = f"{phase}_{action}_count"
+                values[count_key] = self.phase_action_counts[count_key]
+                values[f"{phase}_{action}_rate"] = (
+                    self.phase_action_counts[count_key] / phase_total
+                    if phase_total else 0.0
+                )
+        return values
 
 
 @dataclass
@@ -209,6 +278,9 @@ class Phase2Warehouse:
     _charging_active: set[int] = field(init=False, default_factory=set, repr=False)
     _previous_actions: np.ndarray = field(init=False, repr=False)
     _previous_blocked: np.ndarray = field(init=False, repr=False)
+    _last_successful_moves: List[
+        Optional[Tuple[Tuple[int, int], Tuple[int, int]]]
+    ] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:  # noqa: C901
         try:
@@ -330,6 +402,7 @@ class Phase2Warehouse:
         self._charging_active = set(self._low_battery_active)
         self._previous_actions = np.zeros(self.n_agents, dtype=np.int64)
         self._previous_blocked = np.zeros(self.n_agents, dtype=bool)
+        self._last_successful_moves = [None] * self.n_agents
         return self._observations()
 
     def step(self, actions: Sequence[int]) -> Phase2Step:
@@ -356,6 +429,10 @@ class Phase2Warehouse:
         positions_before = {
             agent.id: (agent.x, agent.y) for agent in self.env.agents
         }
+        target_phases_before = tuple(
+            self._target_for_agent(agent.id, charging_targets)[1]
+            for agent in self.env.agents
+        )
         batteries_before = {
             agent.id: float(agent.battery) for agent in self.env.agents
         }
@@ -426,6 +503,7 @@ class Phase2Warehouse:
             batteries_before,
             actions,
             terminal_deadlock,
+            target_phases_before,
         )
         self._previous_actions = np.asarray(
             [
@@ -489,6 +567,8 @@ class Phase2Warehouse:
             "charging_active": sorted(self._charging_active),
             "previous_actions": self._previous_actions.tolist(),
             "previous_blocked": self._previous_blocked.tolist(),
+            "phase_action_counts": dict(self._metrics.phase_action_counts),
+            "last_successful_moves": self._last_successful_moves,
             "planner_query_count": self._planner_query_counter.count,
         }
 
@@ -502,6 +582,10 @@ class Phase2Warehouse:
         for name, value in state["metrics"].items():
             if name in EpisodeMetrics.__dataclass_fields__:
                 setattr(metrics, name, value)
+        metrics.phase_action_counts = {
+            **_new_phase_action_counts(),
+            **state.get("phase_action_counts", {}),
+        }
         metrics.agent_steps = int(metrics.steps) * self.n_agents
         self._metrics = metrics
         self._last_progress_step = int(state["last_progress_step"])
@@ -516,6 +600,15 @@ class Phase2Warehouse:
         self._previous_blocked = np.asarray(
             state["previous_blocked"], dtype=bool
         )
+        self._last_successful_moves = [
+            None
+            if move is None
+            else (
+                (int(move[0][0]), int(move[0][1])),
+                (int(move[1][0]), int(move[1][1])),
+            )
+            for move in state.get("last_successful_moves", [None] * self.n_agents)
+        ]
         self._planner_query_counter.count = int(state["planner_query_count"])
 
     def previous_action(self, agent_id: int) -> int:
@@ -1051,6 +1144,7 @@ class Phase2Warehouse:
         batteries_before: Dict[int, float],
         actions: Sequence[int],
         terminal_deadlock: bool,
+        target_phases_before: Sequence[str],
     ) -> None:
         completed = sum(task["status"] == "completed" for task in info["tasks"])
         events = info["events"]
@@ -1076,6 +1170,9 @@ class Phase2Warehouse:
         self._metrics.agent_deaths = sum(agent["dead"] for agent in info["agents"])
         self._metrics.picked_tasks += picked_tasks
         self._metrics.blocked_forwards = int(info["blocked_forwards"])
+        self._update_episode_diagnostics(
+            positions_before, actions, target_phases_before
+        )
         self._update_charging_metrics(
             info, charging_targets, positions_before, batteries_before, actions
         )
@@ -1085,6 +1182,34 @@ class Phase2Warehouse:
             setattr(self._metrics, name, getattr(self._metrics, name) + float(value))
         if terminal_deadlock:
             self._metrics.deadlocked = True
+
+    def _update_episode_diagnostics(
+        self,
+        positions_before: Dict[int, Tuple[int, int]],
+        actions: Sequence[int],
+        target_phases_before: Sequence[str],
+    ) -> None:
+        """Record requested actions against their pre-transition rule target."""
+        for index, agent in enumerate(self.env.agents):
+            phase = target_phases_before[index]
+            action = Action(actions[index])
+            action_name = action.name.lower()
+            self._metrics.phase_action_counts[
+                f"{phase}_{action_name}_count"
+            ] += 1
+            if action in {Action.FORWARD, Action.LEFT, Action.RIGHT}:
+                self._metrics.motion_steps += 1
+                if phase != "idle":
+                    self._metrics.active_motion_steps += 1
+
+            origin = positions_before[agent.id]
+            destination = (agent.x, agent.y)
+            if origin == destination:
+                continue
+            previous = self._last_successful_moves[index]
+            if previous == (destination, origin):
+                self._metrics.direction_reversals += 1
+            self._last_successful_moves[index] = (origin, destination)
 
     def _update_charging_metrics(
         self,

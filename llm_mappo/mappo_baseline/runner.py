@@ -29,6 +29,11 @@ from llm_mappo.mappo_baseline.vector_env import (
     MAPPOVectorEnvironment,
     new_baseline_environment,
 )
+from llm_mappo.phase2 import (
+    EPISODE_ACTION_NAMES,
+    EPISODE_DIAGNOSTIC_FIELDS,
+    EPISODE_TARGET_PHASES,
+)
 
 
 @dataclass(frozen=True)
@@ -193,6 +198,14 @@ class BaselineRun:
         "mean_dynamic_weight",
         "astar_loss",
         "astar_lambda",
+        "motion_prior_top1_agreement",
+        "policy_teacher_motion_agreement",
+        "static_route_regret",
+        "static_route_regret_count",
+        "static_invalid_top1_rate",
+        "ppo_shared_grad_norm",
+        "astar_shared_grad_norm",
+        "astar_to_ppo_shared_grad_ratio",
     )
     EPISODE_FIELDS = (
         "global_environment_steps",
@@ -230,7 +243,7 @@ class BaselineRun:
         "reward_energy",
         "reward_step_cost",
         "success",
-    )
+    ) + EPISODE_DIAGNOSTIC_FIELDS
 
     def __init__(  # noqa: C901
         self,
@@ -487,6 +500,7 @@ class BaselineRun:
                         critic_hidden_states=self.critic_hidden_states,
                         **({
                             "astar_soft_targets": astar_kd["soft_targets"],
+                            "astar_root_costs": astar_kd["root_costs"],
                             "astar_validity": astar_kd["validity"],
                             "astar_attenuation": astar_kd["attenuation"],
                         } if self._astar_kd_enabled else {}),
@@ -542,6 +556,14 @@ class BaselineRun:
                         "dynamic_attenuated_count": 0,
                         "mean_dynamic_weight": 0.0,
                         "astar_lambda": 0.0,
+                        "motion_prior_top1_agreement": 0.0,
+                        "policy_teacher_motion_agreement": 0.0,
+                        "static_route_regret": 0.0,
+                        "static_route_regret_count": 0,
+                        "static_invalid_top1_rate": 0.0,
+                        "ppo_shared_grad_norm": 0.0,
+                        "astar_shared_grad_norm": 0.0,
+                        "astar_to_ppo_shared_grad_ratio": 0.0,
                     })
                 self.update_seconds += time.perf_counter() - update_started
                 self.updates += 1
@@ -608,6 +630,7 @@ class BaselineRun:
             "mean_completed_tasks": float(np.mean([
                 row["completed_tasks"] for row in results
             ])),
+            "episode_diagnostics": _episode_window(results),
             "fixed_replay": str(fixed_path.relative_to(self.directory)),
             "metrics_plot": "evaluation/evaluation_metrics.png",
         }
@@ -852,7 +875,11 @@ class BaselineRun:
                 "teacher_invalid_counts", "teacher_cache_build_count",
                 "teacher_cache_hit_count", "teacher_cache_hit_rate",
                 "dynamic_attenuated_count", "mean_dynamic_weight", "astar_loss",
-                "astar_lambda",
+                "astar_lambda", "motion_prior_top1_agreement",
+                "policy_teacher_motion_agreement", "static_route_regret",
+                "static_route_regret_count", "static_invalid_top1_rate",
+                "ppo_shared_grad_norm", "astar_shared_grad_norm",
+                "astar_to_ppo_shared_grad_ratio",
             )},
             "grad_norm": max(
                 float(metrics["actor_grad_norm"]),
@@ -912,6 +939,16 @@ class BaselineRun:
             float(row["peak_cuda_memory_allocated"]) / (1024.0 * 1024.0),
             step,
         )
+        for name in (
+            "motion_prior_top1_agreement",
+            "policy_teacher_motion_agreement",
+            "static_route_regret",
+            "static_invalid_top1_rate",
+            "ppo_shared_grad_norm",
+            "astar_shared_grad_norm",
+            "astar_to_ppo_shared_grad_ratio",
+        ):
+            self._board.add_scalar(f"teacher/{name}", float(row[name]), step)
         self._board.flush()
 
     def _write_episode_board(self, row) -> None:
@@ -1024,6 +1061,52 @@ def _episode_window(rows, *, primary_metric: str | None = None) -> dict[str, Any
     }
     if primary_metric is not None:
         summary["primary_metric"] = primary_metric
+    diagnostic_counts = [
+        f"{phase}_{action}_count"
+        for phase in EPISODE_TARGET_PHASES
+        for action in EPISODE_ACTION_NAMES
+    ]
+    if all(
+        row.get(field) not in (None, "")
+        for row in rows
+        for field in (*diagnostic_counts, "direction_reversals")
+    ):
+        summary["direction_reversals"] = sum(
+            float(row["direction_reversals"]) for row in rows
+        )
+        summary["mean_direction_reversals"] = float(np.mean([
+            float(row["direction_reversals"]) for row in rows
+        ]))
+        for phase in EPISODE_TARGET_PHASES:
+            phase_total = sum(
+                float(row[f"{phase}_{action}_count"])
+                for row in rows
+                for action in EPISODE_ACTION_NAMES
+            )
+            for action in EPISODE_ACTION_NAMES:
+                count_field = f"{phase}_{action}_count"
+                count = sum(float(row[count_field]) for row in rows)
+                summary[count_field] = count
+                summary[f"{phase}_{action}_rate"] = (
+                    count / phase_total if phase_total else 0.0
+                )
+    if all(
+        row.get(field) not in (None, "")
+        for row in rows
+        for field in ("motion_steps", "active_motion_steps")
+    ):
+        total_motion = sum(float(row["motion_steps"]) for row in rows)
+        total_active_motion = sum(
+            float(row["active_motion_steps"]) for row in rows
+        )
+        summary["motion_steps"] = total_motion
+        summary["active_motion_steps"] = total_active_motion
+        summary["motion_steps_per_task"] = (
+            total_motion / total_completed if total_completed else None
+        )
+        summary["active_motion_steps_per_task"] = (
+            total_active_motion / total_completed if total_completed else None
+        )
     return summary
 
 

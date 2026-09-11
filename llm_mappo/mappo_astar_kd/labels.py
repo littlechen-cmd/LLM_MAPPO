@@ -21,6 +21,7 @@ class TeacherLabels:
     """Axis-preserving labels emitted at the pre-transition environment state."""
 
     soft_targets: np.ndarray
+    root_costs: np.ndarray
     validity: np.ndarray
     attenuation: np.ndarray
     failure_reasons: tuple[str, ...]
@@ -40,6 +41,9 @@ class AStarKDLabeler:
         warehouse = self.environment.env
         charging_targets = self.environment._charging_targets()
         targets = np.zeros((len(warehouse.agents), 3), dtype=np.float32)
+        root_costs = np.full(
+            (len(warehouse.agents), 3), np.nan, dtype=np.float32
+        )
         validity = np.zeros(len(warehouse.agents), dtype=bool)
         attenuation = np.ones(len(warehouse.agents), dtype=np.float32)
         reasons = []
@@ -71,6 +75,10 @@ class AStarKDLabeler:
                 query, use_semantic_validity=use_semantic_validity
             )
             targets[index] = result.soft_target
+            root_costs[index] = np.asarray(
+                [np.nan if cost is None else cost for cost in result.root_costs],
+                dtype=np.float32,
+            )
             validity[index] = result.valid
             reasons.append(result.failure_reason)
             if (
@@ -81,6 +89,7 @@ class AStarKDLabeler:
                 attenuation[index] = 0.25
         return TeacherLabels(
             soft_targets=targets,
+            root_costs=root_costs,
             validity=validity,
             attenuation=attenuation,
             failure_reasons=tuple(reasons),

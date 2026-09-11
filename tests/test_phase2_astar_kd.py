@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 import numpy as np
+import pytest
 import torch
 from pathlib import Path
 
@@ -12,7 +13,11 @@ from llm_mappo.mappo_astar_kd.teacher import (
 )
 from llm_mappo.mappo_astar_kd.labels import AStarKDLabeler
 from llm_mappo.mappo_astar_kd.networks import AStarKDActor
-from llm_mappo.mappo_astar_kd.trainer import astar_kd_loss, astar_kd_lambda
+from llm_mappo.mappo_astar_kd.trainer import (
+    astar_kd_diagnostics,
+    astar_kd_loss,
+    astar_kd_lambda,
+)
 from llm_mappo.mappo_astar_kd.trainer import AStarKDTrainer
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.fp_state import FPStateSchema
@@ -126,6 +131,7 @@ def test_labeler_uses_direct_rule_goal_and_keeps_peer_occupancy_out_of_target():
         environment.reset(seed=7)
         labels = AStarKDLabeler(environment).labels(use_semantic_validity=True)
         assert labels.soft_targets.shape == (3, 3)
+        assert labels.root_costs.shape == (3, 3)
         assert labels.validity.shape == (3,)
         assert labels.attenuation.shape == (3,)
         assert labels.query_count == 3
@@ -385,6 +391,7 @@ def test_vector_step_refreshes_current_astar_kd_payload():
         pool.step(np.zeros((1, 3), dtype=np.int64), global_step=0)
         current = pool.astar_kd
 
+        assert current["root_costs"].shape == (1, 3, 3)
         assert current["query_count"] == 3
         assert current["cache_build_count"] == 0
         assert current["cache_hit_count"] == 3
@@ -428,6 +435,7 @@ def test_partial_vector_step_counts_only_active_teacher_queries():
         current = pool.astar_kd
 
         assert current["soft_targets"].shape == (2, 3, 3)
+        assert current["root_costs"].shape == (2, 3, 3)
         assert current["query_count"] == 3
         assert current["cache_build_count"] == 0
         assert current["cache_hit_count"] == 3
@@ -455,6 +463,96 @@ def test_kd_loss_uses_valid_count_not_attenuation_sum_as_denominator():
     loss = astar_kd_loss(logits, targets, validity, attenuation, lambda_value=1.0)
 
     assert torch.isclose(loss, torch.tensor(0.625 * np.log(3.0), dtype=loss.dtype))
+
+
+def test_astar_diagnostics_report_head_agreement_and_finite_route_regret():
+    """Catch diagnostics that conflate policy actions or hide invalid roots."""
+
+    policy_logits = torch.tensor([
+        [0.0, 1.0, 0.0, 3.0, -1.0],
+        [0.0, 0.0, 4.0, 1.0, -1.0],
+        [0.0, 0.0, 1.0, 5.0, -1.0],
+    ])
+    motion_logits = torch.tensor([
+        [3.0, 0.0, 1.0],
+        [0.0, 3.0, 1.0],
+        [2.0, 0.0, 1.0],
+    ])
+    soft_targets = torch.tensor([
+        [0.8, 0.1, 0.1],
+        [0.1, 0.8, 0.1],
+        [0.8, 0.1, 0.1],
+    ])
+    root_costs = torch.tensor([
+        [1.0, 2.0, 3.0],
+        [4.0, 2.0, float("nan")],
+        [1.0, 2.0, float("nan")],
+    ])
+
+    metrics = astar_kd_diagnostics(
+        policy_logits,
+        motion_logits,
+        soft_targets,
+        root_costs,
+        torch.tensor([True, True, True]),
+        torch.tensor([1.0, 1.0, 1.0]),
+    )
+
+    assert metrics["motion_prior_top1_agreement"] == 1.0
+    assert metrics["policy_teacher_motion_agreement"] == pytest.approx(1 / 3)
+    assert metrics["static_route_regret"] == 1.0
+    assert metrics["static_route_regret_count"] == 2
+    assert metrics["static_invalid_top1_rate"] == pytest.approx(1 / 3)
+
+
+def test_motion_prior_agreement_uses_valid_teacher_samples_even_when_inactive():
+    """Keep policy-only active masking out of the auxiliary-head diagnostic."""
+
+    metrics = astar_kd_diagnostics(
+        torch.tensor([[0.0, 0.0, 0.0, 1.0, 0.0]]),
+        torch.tensor([[3.0, 0.0, 1.0]]),
+        torch.tensor([[0.8, 0.1, 0.1]]),
+        torch.tensor([[1.0, 2.0, 3.0]]),
+        torch.tensor([True]),
+        torch.tensor([0.0]),
+    )
+
+    assert metrics["motion_prior_top1_agreement"] == 1.0
+    assert metrics["policy_teacher_motion_agreement"] == 0.0
+    assert metrics["static_route_regret_count"] == 0
+
+
+def test_astar_root_costs_survive_rollout_storage():
+    """Catch root costs being dropped before the learner diagnostics."""
+
+    storage = MAPPORolloutStorage(
+        1, 1, 1, 2, 3, 5, 4, astar_kd_enabled=True
+    )
+    storage.insert(
+        observations=np.zeros((1, 1, 2), dtype=np.float32),
+        fp_states=np.zeros((1, 1, 3), dtype=np.float32),
+        actions=np.zeros((1, 1), dtype=np.int64),
+        action_masks=np.ones((1, 1, 5), dtype=bool),
+        log_probs=np.zeros((1, 1), dtype=np.float32),
+        values=np.zeros((1, 1), dtype=np.float32),
+        rewards=np.zeros((1, 1), dtype=np.float32),
+        dones=np.zeros((1, 1), dtype=bool),
+        active_masks=np.ones((1, 1), dtype=np.float32),
+        actor_hidden_states=np.zeros((1, 1, 4), dtype=np.float32),
+        critic_hidden_states=np.zeros((1, 1, 4), dtype=np.float32),
+        astar_soft_targets=np.asarray([[[0.6, 0.3, 0.1]]], dtype=np.float32),
+        astar_root_costs=np.asarray([[[2.0, 3.0, np.nan]]], dtype=np.float32),
+        astar_validity=np.ones((1, 1), dtype=bool),
+        astar_attenuation=np.ones((1, 1), dtype=np.float32),
+    )
+
+    batch = storage.compute_returns(
+        np.zeros((1, 1), dtype=np.float32), gamma=0.99, gae_lambda=0.95
+    )
+
+    assert batch.astar_root_costs.shape == (1, 1, 1, 3)
+    assert batch.astar_root_costs[0, 0, 0, :2].tolist() == [2.0, 3.0]
+    assert np.isnan(batch.astar_root_costs[0, 0, 0, 2])
 
 
 def test_lambda_schedule_has_a_nonzero_tail():
@@ -488,15 +586,41 @@ def test_astar_kd_trainer_updates_motion_head_from_recurrent_rollout():
             active_masks=np.ones((1, 1), dtype=np.float32),
             actor_hidden_states=actor_hidden, critic_hidden_states=critic_hidden,
             astar_soft_targets=np.array([[[1.0, 0.0, 0.0]]], dtype=np.float32),
+            astar_root_costs=np.array([[[1.0, 2.0, 3.0]]], dtype=np.float32),
             astar_validity=np.ones((1, 1), dtype=bool),
             astar_attenuation=np.ones((1, 1), dtype=np.float32),
         )
         actor_hidden, critic_hidden = next_actor, next_critic
     trainer.set_global_environment_steps(4)
-    batch = storage.compute_returns(np.zeros((1, 1), dtype=np.float32), gamma=.99, gae_lambda=.95)
+    batch = storage.compute_returns(
+        np.zeros((1, 1), dtype=np.float32), gamma=.99, gae_lambda=.95
+    )
+    reference = AStarKDTrainer(
+        MAPPOConfig(observation_dim=4, state_dim=3, action_dim=5, ppo_epochs=1),
+        "cpu",
+        total_environment_steps=20,
+    )
+    reference.actor.load_state_dict(trainer.actor.state_dict())
+    reference.critic.load_state_dict(trainer.critic.state_dict())
+    reference.set_global_environment_steps(4)
+    reference._actor_diagnostics = lambda *args: {}
+
+    torch.manual_seed(101)
     metrics = trainer.update(batch)
+    torch.manual_seed(101)
+    reference.update(batch)
+
     assert metrics["astar_loss"] > 0.0
     assert np.isfinite(metrics["total_loss"])
+    assert 0.0 <= metrics["motion_prior_top1_agreement"] <= 1.0
+    assert 0.0 <= metrics["policy_teacher_motion_agreement"] <= 1.0
+    assert metrics["static_route_regret"] >= 0.0
+    assert metrics["static_route_regret_count"] > 0
+    assert metrics["ppo_shared_grad_norm"] > 0.0
+    assert metrics["astar_shared_grad_norm"] > 0.0
+    assert np.isfinite(metrics["astar_to_ppo_shared_grad_ratio"])
+    for name, parameter in trainer.actor.state_dict().items():
+        assert torch.equal(parameter, reference.actor.state_dict()[name])
 
 
 def test_phase2_training_profile_uses_target_18_only_for_training():

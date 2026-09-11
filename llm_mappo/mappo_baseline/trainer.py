@@ -171,10 +171,17 @@ class MAPPOTrainer:
             "critic_hidden": critic_hidden[0].reshape(sequence_count, -1),
         }
         if batch.astar_soft_targets is not None:
-            if batch.astar_validity is None or batch.astar_attenuation is None:
+            if (
+                batch.astar_root_costs is None
+                or batch.astar_validity is None
+                or batch.astar_attenuation is None
+            ):
                 raise ValueError("A*KD rollout fields must be present together.")
             tensors.update({
                 "astar_soft_targets": self._tensor(batch.astar_soft_targets).reshape(
+                    time_steps, sequence_count, 3
+                ),
+                "astar_root_costs": self._tensor(batch.astar_root_costs).reshape(
                     time_steps, sequence_count, 3
                 ),
                 "astar_validity": torch.as_tensor(
@@ -196,6 +203,7 @@ class MAPPOTrainer:
             "total_loss": 0.0,
             "astar_loss": 0.0,
         }
+        actor_diagnostics = {}
         optimizer_steps = 0
         for _ in range(self.config.ppo_epochs):
             for indices in chunks:
@@ -234,6 +242,14 @@ class MAPPOTrainer:
                 actor_loss = (
                     policy_loss - self.config.entropy_coef * entropy + auxiliary_loss
                 )
+                if not actor_diagnostics:
+                    actor_diagnostics = self._actor_diagnostics(
+                        logits,
+                        auxiliary,
+                        selected,
+                        policy_loss - self.config.entropy_coef * entropy,
+                        auxiliary_loss,
+                    )
                 predicted, _ = self.critic.forward_sequence(
                     selected["fp_states"],
                     selected["critic_hidden"],
@@ -302,6 +318,7 @@ class MAPPOTrainer:
             )
         return {
             **{name: value / optimizer_steps for name, value in totals.items()},
+            **actor_diagnostics,
             "explained_variance": explained_variance,
             "optimizer_steps": optimizer_steps,
             "actor_learning_rate": self.actor_optimizer.param_groups[0]["lr"],
@@ -315,6 +332,17 @@ class MAPPOTrainer:
     def _actor_auxiliary_loss(self, auxiliary, selected) -> Tensor:
         del auxiliary, selected
         return torch.zeros((), device=self.device)
+
+    def _actor_diagnostics(
+        self,
+        logits,
+        auxiliary,
+        selected,
+        ppo_actor_loss,
+        auxiliary_loss,
+    ) -> dict[str, float | int]:
+        del logits, auxiliary, selected, ppo_actor_loss, auxiliary_loss
+        return {}
 
     def _sequence_chunks(self, sequence_count: int) -> tuple[Tensor, ...]:
         chunk_count = min(max(int(self.config.num_minibatches), 1), sequence_count)

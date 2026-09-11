@@ -2,6 +2,10 @@
 
 ## 2026-09-11
 
+- Added: Phase 2 diagnostics now record MotionPrior and policy agreement with
+  the A* teacher, static route regret and invalid-root selection, per-phase
+  action ratios, successful direction reversals, motion steps per task, and
+  separate PPO/A*KD gradient norms on the shared actor trunk.
 - Fixed: Full-validity A*KD now supervises the forced pickup boundary as a
   post-pickup transition using the loaded footprint and the rule-selected
   delivery or charging goal, while `TOGGLE_LOAD` remains the only executable

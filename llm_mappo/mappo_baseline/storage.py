@@ -22,6 +22,7 @@ class MAPPOBatch:
     actor_hidden_states: np.ndarray
     critic_hidden_states: np.ndarray
     astar_soft_targets: np.ndarray | None = None
+    astar_root_costs: np.ndarray | None = None
     astar_validity: np.ndarray | None = None
     astar_attenuation: np.ndarray | None = None
 
@@ -107,6 +108,7 @@ class MAPPORolloutStorage:
         if self.astar_kd_enabled:
             teacher_shapes = {
                 "astar_soft_targets": (self.num_workers, self.num_agents, 3),
+                "astar_root_costs": (self.num_workers, self.num_agents, 3),
                 "astar_validity": (self.num_workers, self.num_agents),
                 "astar_attenuation": (self.num_workers, self.num_agents),
             }
@@ -161,6 +163,10 @@ class MAPPORolloutStorage:
             critic_hidden_states=self._stack("critic_hidden_states", np.float32),
             astar_soft_targets=(
                 self._stack("astar_soft_targets", np.float32)
+                if self.astar_kd_enabled else None
+            ),
+            astar_root_costs=(
+                self._stack("astar_root_costs", np.float32)
                 if self.astar_kd_enabled else None
             ),
             astar_validity=(
