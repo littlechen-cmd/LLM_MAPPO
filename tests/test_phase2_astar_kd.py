@@ -606,6 +606,50 @@ def test_lambda_schedule_has_a_nonzero_tail():
     assert astar_kd_lambda(300_000, 300_000) == 0.01
 
 
+def test_runner_replays_300k_schedule_before_low_rate_450k_tail(tmp_path):
+    """Catch the formal budget stretching the proven optimization schedule."""
+
+    profile = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity.yaml")
+    )
+    profile = replace(
+        profile,
+        training={
+            **profile.training,
+            "num_env_workers": 1,
+            "optimization_schedule_steps": 300_000,
+            "post_schedule_learning_rate": 1e-5,
+        },
+    )
+    run = BaselineRun(
+        profile,
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=True,
+    )
+    try:
+        assert getattr(run, "optimization_schedule_steps", None) == 300_000
+        assert run.trainer.total_environment_steps == 300_000
+        assert run.post_schedule_learning_rate == 1e-5
+
+        run.global_steps = 150_000
+        run._apply_learning_rate_schedule()
+        assert run.trainer.actor_optimizer.param_groups[0]["lr"] == pytest.approx(
+            1.5e-4
+        )
+
+        run.global_steps = 300_000
+        run._apply_learning_rate_schedule()
+        assert run.trainer.actor_optimizer.param_groups[0]["lr"] == 0.0
+
+        run.global_steps = 300_384
+        run._apply_learning_rate_schedule()
+        assert run.trainer.actor_optimizer.param_groups[0]["lr"] == 1e-5
+        assert run.trainer.critic_optimizer.param_groups[0]["lr"] == 1e-5
+    finally:
+        run.close()
+
+
 def test_astar_kd_trainer_updates_motion_head_from_recurrent_rollout():
     trainer = AStarKDTrainer(
         MAPPOConfig(observation_dim=4, state_dim=3, action_dim=5, ppo_epochs=1),
@@ -681,12 +725,18 @@ def test_phase2_training_profile_uses_target_18_only_for_training():
 
 
 def test_all_phase2_profiles_describe_the_formal_450k_training_budget():
-    """Keep training and checkpoint-evaluation metadata on one formal budget."""
+    """Keep the formal budget separate from the proven optimization schedule."""
     root = Path("configs/phase2")
 
     for path in root.glob("*.yaml"):
         profile = load_baseline_experiment(path)
         assert profile.training["environment_steps"] == 450_000, path.name
+        assert profile.training.get("optimization_schedule_steps") == 300_000, (
+            path.name
+        )
+        assert profile.training.get("post_schedule_learning_rate") == 1e-5, (
+            path.name
+        )
 
 
 def test_large_pressure_profiles_use_fixed_dynamic_ingress_evaluations():
