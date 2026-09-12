@@ -2,6 +2,9 @@
 
 ## 2026-09-12
 
+- Fixed: A*KD supervision scope now preserves the post-pickup navigation signal
+  across forced-toggle and temporary action-lock states; scope filters only idle
+  or already-at-goal states, while semantic validity remains a separate gate.
 - Changed: Integrated the Phase 2 A*KD implementation with the Phase 1 mainline,
   including the formal 450k training profiles and deterministic evaluation
   workload of two initial AGV-sized batches, one batch every 100 steps, and a

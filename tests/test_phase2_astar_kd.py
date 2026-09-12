@@ -144,7 +144,7 @@ def test_labeler_uses_direct_rule_goal_and_keeps_peer_occupancy_out_of_target():
 
 
 def test_full_validity_labels_forced_pickup_as_loaded_delivery_transition():
-    """Catch semantic gating or the old shelf goal at the pickup boundary."""
+    """Keep the post-pickup route supervised across the forced-toggle boundary."""
 
     values = {
         "environment_id": "llm-mappo-medium-3ag-v1",
@@ -188,7 +188,7 @@ def test_full_validity_labels_forced_pickup_as_loaded_delivery_transition():
         labels = labeler.labels(use_semantic_validity=True)
 
         assert labels.validity.tolist() == [True]
-        assert labels.supervision_scope.tolist() == [False]
+        assert labels.supervision_scope.tolist() == [True]
         assert labels.failure_reasons == ("ok",)
         assert queries[0].pose == (shelf.x, shelf.y)
         assert queries[0].goal == (9, 21)

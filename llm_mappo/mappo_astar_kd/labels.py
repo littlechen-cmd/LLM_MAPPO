@@ -49,7 +49,6 @@ class AStarKDLabeler:
         supervision_scope = np.zeros(len(warehouse.agents), dtype=bool)
         attenuation = np.ones(len(warehouse.agents), dtype=np.float32)
         reasons = []
-        motion_executable = self.environment.action_masks()[:, 1:4].any(axis=-1)
         peer_positions = {(agent.x, agent.y) for agent in warehouse.agents}
         build_before = self.teacher.cache_build_count
         hit_before = self.teacher.cache_hit_count
@@ -83,10 +82,11 @@ class AStarKDLabeler:
                 dtype=np.float32,
             )
             validity[index] = result.valid
+            # Scope describes route applicability. Temporary action locks belong
+            # to semantic validity and must not sever the post-pickup route signal.
             supervision_scope[index] = bool(
                 target_kind != "idle"
                 and (int(agent.x), int(agent.y)) != query.goal
-                and motion_executable[index]
             )
             reasons.append(result.failure_reason)
             if (
