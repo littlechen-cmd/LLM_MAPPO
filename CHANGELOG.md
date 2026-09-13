@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-13
+
+- Fixed: Restored full pytest collection by migrating the retained A*
+  coordinator and action-pipeline tests into a Phase 2 test module and removing
+  the dead tests that targeted the pruned dynamic-ingress A* evaluator.
+
 ## 2026-09-12
 
 - Fixed: Phase 2 retains the formal 450k rollout budget while replaying the
