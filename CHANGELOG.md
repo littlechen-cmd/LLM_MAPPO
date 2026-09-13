@@ -2,6 +2,12 @@
 
 ## 2026-09-12
 
+- Fixed: Phase 2 retains the formal 450k rollout budget while replaying the
+  proven 300k learning-rate and A*KD schedules, then uses a `1e-5` optimizer
+  tail after 300k instead of stretching the successful learning curriculum.
+- Fixed: A*KD supervision scope now preserves the post-pickup navigation signal
+  across forced-toggle and temporary action-lock states; scope filters only idle
+  or already-at-goal states, while semantic validity remains a separate gate.
 - Added: Documented the Phase 2 shared MAPPO baseline, continuous-throughput
   training contract, deterministic evaluation workload, evidence boundaries,
   and compatibility notes for subsequent LLM KD work.

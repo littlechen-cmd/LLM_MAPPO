@@ -146,6 +146,19 @@ def _validate_training(training: Mapping[str, Any]) -> None:
         raise ValueError("Phase 1 MAPPO GRU hidden dimension must be 64.")
     if int(training["environment_steps"]) < 1:
         raise ValueError("MAPPO baseline environment-step budget is invalid.")
+    budget = int(training["environment_steps"])
+    schedule_steps = int(training.get("optimization_schedule_steps", budget))
+    if schedule_steps < 1 or schedule_steps > budget:
+        raise ValueError("MAPPO optimization schedule horizon is invalid.")
+    post_schedule_lr = float(training.get("post_schedule_learning_rate", 0.0))
+    maximum_lr = min(
+        float(training["actor_learning_rate"]),
+        float(training["critic_learning_rate"]),
+    )
+    if post_schedule_lr < 0.0 or post_schedule_lr > maximum_lr:
+        raise ValueError("MAPPO post-schedule learning rate is invalid.")
+    if schedule_steps < budget and post_schedule_lr == 0.0:
+        raise ValueError("MAPPO extended training needs a positive tail rate.")
 
 
 def _validate_evaluation(evaluation: Mapping[str, Any]) -> None:
@@ -335,6 +348,13 @@ class BaselineRun:
             )
             if state.get("status") != "running":
                 raise ValueError("Only a running MAPPO baseline artifact can resume.")
+        budget = int(experiment.training["environment_steps"])
+        self.optimization_schedule_steps = int(
+            experiment.training.get("optimization_schedule_steps", budget)
+        )
+        self.post_schedule_learning_rate = float(
+            experiment.training.get("post_schedule_learning_rate", 0.0)
+        )
         config = MAPPOConfig(
             observation_dim=self.actor_schema.dimension,
             state_dim=self.schema.dimension,
@@ -356,7 +376,7 @@ class BaselineRun:
 
             self.trainer = AStarKDTrainer(
                 config, self.device,
-                total_environment_steps=int(experiment.training["environment_steps"]),
+                total_environment_steps=self.optimization_schedule_steps,
             )
         else:
             self.trainer = MAPPOTrainer(config, self.device)
@@ -532,7 +552,7 @@ class BaselineRun:
                     gamma=float(self.experiment.training["gamma"]),
                     gae_lambda=float(self.experiment.training["gae_lambda"]),
                 )
-                self.trainer.linear_lr_decay(self.global_steps, budget)
+                self._apply_learning_rate_schedule()
                 if self._astar_kd_enabled:
                     self.trainer.set_global_environment_steps(self.global_steps)
                 update_started = time.perf_counter()
@@ -634,6 +654,13 @@ class BaselineRun:
             raise
         finally:
             self.close()
+
+    def _apply_learning_rate_schedule(self) -> None:
+        self.trainer.linear_lr_decay(
+            self.global_steps,
+            self.optimization_schedule_steps,
+            self.post_schedule_learning_rate,
+        )
 
     def evaluate(
         self, *, checkpoint_reference: str = "checkpoint_final.pt"

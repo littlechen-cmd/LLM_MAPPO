@@ -384,10 +384,21 @@ class MAPPOTrainer:
     def _masked_mean(values: Tensor, weights: Tensor) -> Tensor:
         return (values * weights).sum() / weights.sum().clamp_min(1.0)
 
-    def linear_lr_decay(self, completed_steps: int, total_steps: int) -> None:
-        fraction = max(0.0, 1.0 - completed_steps / max(total_steps, 1))
-        self.actor_optimizer.param_groups[0]["lr"] = self.config.actor_lr * fraction
-        self.critic_optimizer.param_groups[0]["lr"] = self.config.critic_lr * fraction
+    def linear_lr_decay(
+        self,
+        completed_steps: int,
+        total_steps: int,
+        post_schedule_lr: float = 0.0,
+    ) -> None:
+        if completed_steps <= total_steps:
+            fraction = max(0.0, 1.0 - completed_steps / max(total_steps, 1))
+            actor_lr = self.config.actor_lr * fraction
+            critic_lr = self.config.critic_lr * fraction
+        else:
+            actor_lr = post_schedule_lr
+            critic_lr = post_schedule_lr
+        self.actor_optimizer.param_groups[0]["lr"] = actor_lr
+        self.critic_optimizer.param_groups[0]["lr"] = critic_lr
 
     def state_dict(self) -> dict:
         return {
