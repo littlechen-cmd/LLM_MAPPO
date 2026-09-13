@@ -760,6 +760,59 @@ def test_milestone_checkpoint_skips_steps_passed_before_resume(
         run.close()
 
 
+def test_train_smoke_persists_milestone_checkpoint_at_its_step(
+    tmp_path, monkeypatch
+):
+    """End-to-end wiring smoke: train() must keep the milestone checkpoint.
+
+    The final evaluation pass is stubbed because this smoke only verifies
+    checkpoint wiring, not policy quality.
+    """
+    profile = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity.yaml")
+    )
+    profile = replace(
+        profile,
+        training={
+            **profile.training,
+            "num_env_workers": 1,
+            "environment_steps": 16,
+            "rollout_length": 4,
+            "checkpoint_interval_steps": 4,
+            "milestone_checkpoint_steps": [8],
+        },
+    )
+    run = BaselineRun(
+        profile,
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=False,
+    )
+    try:
+        monkeypatch.setattr(run, "evaluate", lambda **kwargs: {"episodes": []})
+        monkeypatch.setattr(run, "_summary", lambda evaluation: {"schema": "smoke"})
+        run.train()
+
+        milestone_path = run.directory / "checkpoint_8.pt"
+        assert milestone_path.exists()
+        assert (run.directory / "checkpoint_latest.pt").exists()
+        assert (run.directory / "checkpoint_final.pt").exists()
+
+        milestone = torch.load(
+            milestone_path, map_location="cpu", weights_only=False
+        )
+        latest = torch.load(
+            run.directory / "checkpoint_latest.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        assert milestone["global_environment_steps"] == 8
+        assert milestone["identity"] == run.identity
+        assert latest["global_environment_steps"] == 16
+    finally:
+        run.close()
+
+
 def test_astar_kd_trainer_updates_motion_head_from_recurrent_rollout():
     trainer = AStarKDTrainer(
         MAPPOConfig(observation_dim=4, state_dim=3, action_dim=5, ppo_epochs=1),

@@ -2,6 +2,9 @@
 
 ## 2026-09-13
 
+- Added: An end-to-end training smoke now verifies the milestone checkpoint
+  wiring: a short train() run persists the named milestone checkpoint at its
+  exact step, and later periodic or final checkpoints cannot overwrite it.
 - Added: Phase 2 training profiles now persist a named 300k milestone
   checkpoint (`checkpoint_300000.pt`) that later periodic latest-checkpoints
   cannot overwrite; milestone steps are validated against the training budget
