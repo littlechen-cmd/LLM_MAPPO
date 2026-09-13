@@ -2,6 +2,13 @@
 
 ## 2026-09-13
 
+- Added: Phase 2 training profiles now persist a named 300k milestone
+  checkpoint (`checkpoint_300000.pt`) that later periodic latest-checkpoints
+  cannot overwrite; milestone steps are validated against the training budget
+  and skipped when a resumed run already passed them.
+- Fixed: The `astar_lambda` logged to updates.csv and TensorBoard now follows
+  the 300k optimization schedule instead of the 450k rollout budget, matching
+  the lambda actually applied to A*KD gradients.
 - Fixed: Restored full pytest collection by migrating the retained A*
   coordinator and action-pipeline tests into a Phase 2 test module and removing
   the dead tests that targeted the pruned dynamic-ingress A* evaluator.

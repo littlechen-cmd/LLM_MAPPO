@@ -159,6 +159,17 @@ def _validate_training(training: Mapping[str, Any]) -> None:
         raise ValueError("MAPPO post-schedule learning rate is invalid.")
     if schedule_steps < budget and post_schedule_lr == 0.0:
         raise ValueError("MAPPO extended training needs a positive tail rate.")
+    milestones = training.get("milestone_checkpoint_steps", [])
+    _validate_milestone_checkpoints(milestones, budget)
+
+
+def _validate_milestone_checkpoints(milestones: Any, budget: int) -> None:
+    if not isinstance(milestones, list) or not all(
+        isinstance(step, int) for step in milestones
+    ):
+        raise ValueError("MAPPO milestone checkpoints must be a list of steps.")
+    if any(step < 1 or step > budget for step in milestones):
+        raise ValueError("MAPPO milestone checkpoint step is outside the budget.")
 
 
 def _validate_evaluation(evaluation: Mapping[str, Any]) -> None:
@@ -355,6 +366,10 @@ class BaselineRun:
         self.post_schedule_learning_rate = float(
             experiment.training.get("post_schedule_learning_rate", 0.0)
         )
+        self.milestone_checkpoint_steps = [
+            int(step)
+            for step in experiment.training.get("milestone_checkpoint_steps", [])
+        ]
         config = MAPPOConfig(
             observation_dim=self.actor_schema.dimension,
             state_dim=self.schema.dimension,
@@ -397,6 +412,7 @@ class BaselineRun:
                 failure_directory=self.directory / "worker_failures",
             )
         self.global_steps = 0
+        self._milestone_progress_steps = 0
         self.updates = 0
         hidden_shape = (
             int(experiment.training["num_env_workers"]),
@@ -558,8 +574,6 @@ class BaselineRun:
                 update_started = time.perf_counter()
                 metrics = self.trainer.update(batch)
                 if self._astar_kd_enabled:
-                    from llm_mappo.mappo_astar_kd.trainer import astar_kd_lambda
-
                     metrics.update({
                         "teacher_query_count": teacher_query_count,
                         "teacher_valid_count": teacher_valid_count,
@@ -588,7 +602,7 @@ class BaselineRun:
                         "mean_dynamic_weight": dynamic_weight_sum / max(
                             teacher_effective_supervision_count, 1
                         ),
-                        "astar_lambda": astar_kd_lambda(self.global_steps, budget),
+                        "astar_lambda": self._current_astar_lambda(),
                     })
                 else:
                     metrics.update({
@@ -628,6 +642,7 @@ class BaselineRun:
                 if current_bucket > last_checkpoint_bucket:
                     self._checkpoint(self.directory / "checkpoint_latest.pt")
                     last_checkpoint_bucket = current_bucket
+                self._write_due_milestone_checkpoints()
             if self.goal_interface == "direct_goal" and self.planner_query_count != 0:
                 raise RuntimeError("DirectGoal baseline observed a planner query.")
             self._checkpoint(self.directory / "checkpoint_final.pt")
@@ -661,6 +676,25 @@ class BaselineRun:
             self.optimization_schedule_steps,
             self.post_schedule_learning_rate,
         )
+
+    def _current_astar_lambda(self) -> float:
+        from llm_mappo.mappo_astar_kd.trainer import astar_kd_lambda
+
+        return astar_kd_lambda(
+            self.global_steps, self.optimization_schedule_steps
+        )
+
+    def _write_due_milestone_checkpoints(self) -> None:
+        """Persist named milestone checkpoints when this session crosses them."""
+        for milestone in self.milestone_checkpoint_steps:
+            if not (
+                self._milestone_progress_steps
+                < milestone
+                <= self.global_steps
+            ):
+                continue
+            self._checkpoint(self.directory / f"checkpoint_{milestone}.pt")
+        self._milestone_progress_steps = self.global_steps
 
     def evaluate(
         self, *, checkpoint_reference: str = "checkpoint_final.pt"
@@ -898,6 +932,7 @@ class BaselineRun:
         self.actor_hidden_states = np.asarray(recurrent["actor"], dtype=np.float32)
         self.critic_hidden_states = np.asarray(recurrent["critic"], dtype=np.float32)
         self.global_steps = int(payload["global_environment_steps"])
+        self._milestone_progress_steps = self.global_steps
         self.updates = int(payload["updates"])
         self.planner_query_count = int(payload["planner_query_count"])
         timing = payload["timing"]

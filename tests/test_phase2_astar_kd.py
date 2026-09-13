@@ -29,6 +29,7 @@ from llm_mappo.mappo_astar_kd.runner import load_astar_kd_experiment
 from llm_mappo.mappo_baseline.runner import (
     BaselineRun,
     _episode_window,
+    _validate_training,
     load_baseline_experiment,
 )
 from llm_mappo.mappo_baseline.vector_env import (
@@ -646,6 +647,115 @@ def test_runner_replays_300k_schedule_before_low_rate_450k_tail(tmp_path):
         run._apply_learning_rate_schedule()
         assert run.trainer.actor_optimizer.param_groups[0]["lr"] == 1e-5
         assert run.trainer.critic_optimizer.param_groups[0]["lr"] == 1e-5
+    finally:
+        run.close()
+
+
+def test_logged_astar_lambda_uses_schedule_not_total_budget(tmp_path):
+    """Catch updates.csv astar_lambda drifting from the trained schedule."""
+    profile = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity.yaml")
+    )
+    profile = replace(
+        profile,
+        training={
+            **profile.training,
+            "num_env_workers": 1,
+            "optimization_schedule_steps": 300_000,
+            "post_schedule_learning_rate": 1e-5,
+        },
+    )
+    run = BaselineRun(
+        profile,
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=True,
+    )
+    try:
+        run.global_steps = 150_000
+        scheduled_lambda = astar_kd_lambda(150_000, 300_000)
+        budget_lambda = astar_kd_lambda(150_000, 450_000)
+        assert scheduled_lambda != budget_lambda
+        assert run._current_astar_lambda() == pytest.approx(scheduled_lambda)
+    finally:
+        run.close()
+
+
+def _milestone_profile():
+    profile = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity.yaml")
+    )
+    return replace(
+        profile,
+        training={
+            **profile.training,
+            "num_env_workers": 1,
+            "milestone_checkpoint_steps": [300_000],
+        },
+    )
+
+
+def test_milestone_checkpoint_steps_are_validated_against_the_budget():
+    """Catch milestone checkpoints that can never fire inside the budget."""
+    profile = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity.yaml")
+    )
+    training = {**profile.training, "milestone_checkpoint_steps": [0]}
+    with pytest.raises(ValueError, match="milestone"):
+        _validate_training(training)
+    training = {**profile.training, "milestone_checkpoint_steps": [450_001]}
+    with pytest.raises(ValueError, match="milestone"):
+        _validate_training(training)
+    training = {**profile.training, "milestone_checkpoint_steps": [300_000]}
+    _validate_training(training)
+
+
+def test_milestone_checkpoint_is_written_once_when_crossed(tmp_path, monkeypatch):
+    """Catch the 300k milestone being overwritten by later latest-checkpoints."""
+    run = BaselineRun(
+        _milestone_profile(),
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=True,
+    )
+    try:
+        written = []
+        monkeypatch.setattr(
+            run, "_checkpoint", lambda path: written.append(path.name)
+        )
+        run.global_steps = 299_994
+        run._write_due_milestone_checkpoints()
+        assert written == []
+
+        run.global_steps = 300_000
+        run._write_due_milestone_checkpoints()
+        assert written == ["checkpoint_300000.pt"]
+
+        run._write_due_milestone_checkpoints()
+        assert written == ["checkpoint_300000.pt"]
+    finally:
+        run.close()
+
+
+def test_milestone_checkpoint_skips_steps_passed_before_resume(
+    tmp_path, monkeypatch
+):
+    """Catch a resumed run rewriting milestones with post-milestone state."""
+    run = BaselineRun(
+        _milestone_profile(),
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=True,
+    )
+    try:
+        written = []
+        monkeypatch.setattr(
+            run, "_checkpoint", lambda path: written.append(path.name)
+        )
+        run.global_steps = 320_000
+        run._milestone_progress_steps = 320_000
+        run._write_due_milestone_checkpoints()
+        assert written == []
     finally:
         run.close()
 

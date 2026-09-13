@@ -33,6 +33,7 @@ training: &phase2_training
   seed: 7
   environment_steps: 450000
   optimization_schedule_steps: 300000
+  milestone_checkpoint_steps: [300000]
   post_schedule_learning_rate: 0.00001
   num_env_workers: 6
   learner_torch_threads: 4
