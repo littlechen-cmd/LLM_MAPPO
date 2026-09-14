@@ -98,11 +98,22 @@ def _gradient_norm(loss: torch.Tensor, parameters) -> torch.Tensor:
     return torch.stack(terms).sum().sqrt()
 
 
-def astar_kd_lambda(global_environment_steps: int, total_steps: int) -> float:
-    """Linearly decay 0.05 to 0.01 in 70% of cumulative env transitions."""
+def astar_kd_lambda(
+    global_environment_steps: int,
+    total_steps: int,
+    *,
+    post_schedule_lambda: float = 0.01,
+) -> float:
+    """Linearly decay 0.05 to 0.01 in 70% of cumulative env transitions.
+
+    Steps at or beyond the schedule horizon use ``post_schedule_lambda`` so a
+    decoupled tail can hold or disable A*KD without stretching the curriculum.
+    """
 
     if total_steps < 1:
         raise ValueError("A*KD schedule requires a positive total step budget.")
+    if global_environment_steps >= total_steps:
+        return float(post_schedule_lambda)
     ratio = max(0.0, min(float(global_environment_steps) / total_steps, 1.0))
     if ratio >= 0.70:
         return 0.01
@@ -149,11 +160,15 @@ class AStarKDTrainer(MAPPOTrainer):
         device: str | torch.device,
         *,
         total_environment_steps: int,
+        post_schedule_astar_lambda: float = 0.01,
     ) -> None:
         super().__init__(config, device)
         if total_environment_steps < 1:
             raise ValueError("A*KD trainer needs a positive environment-step budget.")
+        if post_schedule_astar_lambda < 0.0:
+            raise ValueError("A*KD post-schedule lambda must be non-negative.")
         self.total_environment_steps = int(total_environment_steps)
+        self.post_schedule_astar_lambda = float(post_schedule_astar_lambda)
         self.global_environment_steps = 0
         self.actor = AStarKDActor(
             config.observation_dim, config.action_dim, config.hidden_dim
@@ -189,7 +204,9 @@ class AStarKDTrainer(MAPPOTrainer):
             selected["astar_attenuation"],
             selected["astar_supervision_scope"],
             lambda_value=astar_kd_lambda(
-                self.global_environment_steps, self.total_environment_steps
+                self.global_environment_steps,
+                self.total_environment_steps,
+                post_schedule_lambda=self.post_schedule_astar_lambda,
             ),
         )
 

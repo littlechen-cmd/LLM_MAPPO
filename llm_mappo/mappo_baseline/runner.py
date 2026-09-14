@@ -161,6 +161,13 @@ def _validate_training(training: Mapping[str, Any]) -> None:
         raise ValueError("MAPPO extended training needs a positive tail rate.")
     milestones = training.get("milestone_checkpoint_steps", [])
     _validate_milestone_checkpoints(milestones, budget)
+    _validate_post_schedule_astar_lambda(training)
+
+
+def _validate_post_schedule_astar_lambda(training: Mapping[str, Any]) -> None:
+    post_kd_lambda = float(training.get("post_schedule_astar_lambda", 0.01))
+    if post_kd_lambda < 0.0 or post_kd_lambda > 0.05:
+        raise ValueError("MAPPO post-schedule A*KD lambda is invalid.")
 
 
 def _validate_milestone_checkpoints(milestones: Any, budget: int) -> None:
@@ -370,6 +377,9 @@ class BaselineRun:
             int(step)
             for step in experiment.training.get("milestone_checkpoint_steps", [])
         ]
+        self.post_schedule_astar_lambda = float(
+            experiment.training.get("post_schedule_astar_lambda", 0.01)
+        )
         config = MAPPOConfig(
             observation_dim=self.actor_schema.dimension,
             state_dim=self.schema.dimension,
@@ -390,8 +400,10 @@ class BaselineRun:
             from llm_mappo.mappo_astar_kd.trainer import AStarKDTrainer
 
             self.trainer = AStarKDTrainer(
-                config, self.device,
+                config,
+                self.device,
                 total_environment_steps=self.optimization_schedule_steps,
+                post_schedule_astar_lambda=self.post_schedule_astar_lambda,
             )
         else:
             self.trainer = MAPPOTrainer(config, self.device)
@@ -681,7 +693,9 @@ class BaselineRun:
         from llm_mappo.mappo_astar_kd.trainer import astar_kd_lambda
 
         return astar_kd_lambda(
-            self.global_steps, self.optimization_schedule_steps
+            self.global_steps,
+            self.optimization_schedule_steps,
+            post_schedule_lambda=self.post_schedule_astar_lambda,
         )
 
     def _write_due_milestone_checkpoints(self) -> None:

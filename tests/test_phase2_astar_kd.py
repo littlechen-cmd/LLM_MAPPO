@@ -607,6 +607,75 @@ def test_lambda_schedule_has_a_nonzero_tail():
     assert astar_kd_lambda(300_000, 300_000) == 0.01
 
 
+def test_lambda_tail_can_be_disabled_after_the_schedule_horizon():
+    """Catch the decoupled tail forcing a nonzero geometric prior forever."""
+    assert astar_kd_lambda(
+        300_000, 300_000, post_schedule_lambda=0.0
+    ) == 0.0
+    assert astar_kd_lambda(
+        450_000, 300_000, post_schedule_lambda=0.0
+    ) == 0.0
+    assert astar_kd_lambda(
+        299_999, 300_000, post_schedule_lambda=0.0
+    ) == 0.01
+    assert astar_kd_lambda(0, 300_000, post_schedule_lambda=0.0) == 0.05
+    assert astar_kd_lambda(150_000, 300_000, post_schedule_lambda=0.0) == (
+        astar_kd_lambda(150_000, 300_000)
+    )
+
+
+def test_lambda_zero_tail_profile_replays_the_same_schedule_until_300k(
+    tmp_path,
+):
+    """Catch the ablation profile changing anything before the tail horizon."""
+    profile = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity-lambda0-tail.yaml")
+    )
+    formal = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity.yaml")
+    )
+    assert profile.training["post_schedule_astar_lambda"] == 0.0
+    assert profile.artifact_root != formal.artifact_root
+    assert profile.environment == formal.environment
+    assert (
+        profile.training["optimization_schedule_steps"]
+        == formal.training["optimization_schedule_steps"]
+    )
+
+    profile = replace(
+        profile, training={**profile.training, "num_env_workers": 1}
+    )
+    run = BaselineRun(
+        profile, device="cpu", output_root=tmp_path, evaluation_only=True
+    )
+    try:
+        assert run.trainer.post_schedule_astar_lambda == 0.0
+        run.global_steps = 350_000
+        assert run._current_astar_lambda() == 0.0
+        run.global_steps = 150_000
+        assert run._current_astar_lambda() == pytest.approx(
+            astar_kd_lambda(150_000, 300_000)
+        )
+    finally:
+        run.close()
+
+
+def test_post_schedule_astar_lambda_is_validated():
+    """Catch a tail lambda that is negative or above the starting weight."""
+    profile = load_astar_kd_experiment(
+        Path("configs/phase2/medium-5ag-astar-kd-no-validity.yaml")
+    )
+    for bad in (-0.1, 0.06):
+        training = {
+            **profile.training,
+            "post_schedule_astar_lambda": bad,
+        }
+        with pytest.raises(ValueError, match="lambda"):
+            _validate_training(training)
+    training = {**profile.training, "post_schedule_astar_lambda": 0.0}
+    _validate_training(training)
+
+
 def test_runner_replays_300k_schedule_before_low_rate_450k_tail(tmp_path):
     """Catch the formal budget stretching the proven optimization schedule."""
 

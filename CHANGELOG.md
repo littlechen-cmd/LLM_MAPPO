@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-14
+
+- Added: A*KD now supports a `post_schedule_astar_lambda` training option that
+  replaces the held 0.01 tail at the optimization-schedule horizon; the default
+  keeps the proven 0.01 tail, and a new Phase 2 ablation profile uses 0.0 to
+  test whether the tail's geometric prior drives evaluation overfitting.
+
 ## 2026-09-13
 
 - Added: An end-to-end training smoke now verifies the milestone checkpoint
