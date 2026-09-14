@@ -676,6 +676,17 @@ def test_post_schedule_astar_lambda_is_validated():
     _validate_training(training)
 
 
+def test_phase2_astar_kd_training_profiles_disable_the_kd_tail():
+    """Formal A*KD profiles must drop the geometric prior after the schedule."""
+    for name in (
+        "medium-3ag-astar-kd.yaml",
+        "medium-5ag-astar-kd.yaml",
+        "medium-5ag-astar-kd-no-validity.yaml",
+    ):
+        profile = load_astar_kd_experiment(Path("configs/phase2") / name)
+        assert profile.training["post_schedule_astar_lambda"] == 0.0, name
+
+
 def test_runner_replays_300k_schedule_before_low_rate_450k_tail(tmp_path):
     """Catch the formal budget stretching the proven optimization schedule."""
 

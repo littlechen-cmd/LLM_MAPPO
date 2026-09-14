@@ -2,6 +2,14 @@
 
 ## 2026-09-14
 
+- Changed: All formal Phase 2 A*KD training profiles now set
+  `post_schedule_astar_lambda: 0.0`, dropping the held 0.01 geometric prior
+  after the 300k optimization schedule; the server-controlled diagnostic runs
+  showed the held tail degraded fixed evaluation throughput from 51/50 at 300k
+  to 33/50 at 450k while the zero tail held 50/50.
+- Added: `docs/report.md` records the causal analysis of the 450k tail
+  degradation, the paired 300k/450k/zero-tail evaluation evidence, and the
+  approved training-contract decision.
 - Added: A*KD now supports a `post_schedule_astar_lambda` training option that
   replaces the held 0.01 tail at the optimization-schedule horizon; the default
   keeps the proven 0.01 tail, and a new Phase 2 ablation profile uses 0.0 to
