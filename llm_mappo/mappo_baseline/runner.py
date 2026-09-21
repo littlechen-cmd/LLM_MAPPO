@@ -29,7 +29,7 @@ from llm_mappo.mappo_baseline.vector_env import (
     MAPPOVectorEnvironment,
     new_baseline_environment,
 )
-from llm_mappo.phase2 import (
+from llm_mappo.warehouse_environment import (
     EPISODE_ACTION_NAMES,
     EPISODE_DIAGNOSTIC_FIELDS,
     EPISODE_TARGET_PHASES,

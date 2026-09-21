@@ -122,7 +122,7 @@ def build_active_masks(environment) -> np.ndarray:
     )
 
 
-def build_fp_state(
+def build_fp_state(  # noqa: C901
     environment, schema: FPStateSchema | None = None
 ) -> np.ndarray:
     """Build `[agents, fp_dim]` from current, non-predictive environment state."""

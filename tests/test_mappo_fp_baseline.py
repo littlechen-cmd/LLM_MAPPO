@@ -17,8 +17,8 @@ from llm_mappo.mappo_baseline.structured_observation import (
 )
 from llm_mappo.mappo_baseline.trainer import MAPPOConfig, MAPPOTrainer
 from llm_mappo.mappo_baseline.value_norm import ValueNorm
-from llm_mappo.optimization_observation import ObservationSchema
-from llm_mappo.phase2 import Phase2Warehouse
+from llm_mappo.warehouse_observation import ObservationSchema
+from llm_mappo.warehouse_environment import Phase2Warehouse
 from llm_mappo.planner import AStarPlanner
 from rware.warehouse import Direction
 

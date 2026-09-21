@@ -14,17 +14,17 @@ from llm_mappo.mappo_baseline.vector_env import MAPPOVectorEnvironment
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs" / "phase1" / "medium-3ag-low-workload.yaml"
+CONFIG = ROOT / "configs" / "core_integration" / "medium-5ag-baseline.yaml"
 
 
-def test_phase1_baseline_contract_is_teacher_free_and_cpu_executable():
+def test_baseline_contract_is_teacher_free_and_cpu_executable():
     experiment = load_baseline_experiment(CONFIG)
-    assert experiment.environment["n_agents"] == 3
+    assert experiment.environment["n_agents"] == 5
     assert experiment.environment["observation_schema"] == (
         "direct-goal-observation-v1"
     )
     assert experiment.environment["reward_version"] == "reward-v2"
-    assert experiment.training["environment_steps"] == 300_000
+    assert experiment.training["environment_steps"] == 450_000
     assert experiment.training["num_env_workers"] == 6
     assert experiment.training["rollout_length"] == 64
     assert experiment.training["ppo_epochs"] == 5
@@ -37,17 +37,18 @@ def test_phase1_baseline_contract_is_teacher_free_and_cpu_executable():
 
 def test_vector_worker_returns_fp_state_and_independent_agent_axes():
     experiment = load_baseline_experiment(CONFIG)
+    agents = int(experiment.environment["n_agents"])
     values = dict(experiment.environment)
     pool = MAPPOVectorEnvironment(values, count=2, base_seed=91)
     try:
-        assert pool.observations.shape == (2, 3, 208)
-        assert pool.fp_states.shape[:2] == (2, 3)
-        assert pool.action_masks.shape == (2, 3, 5)
-        responses = pool.step(np.zeros((2, 3), dtype=np.int64), global_step=0)
-        assert responses.rewards.shape == (2, 3)
-        assert responses.dones.shape == (2, 3)
-        assert responses.active_masks.shape == (2, 3)
-        assert pool.observations.shape == (2, 3, 208)
+        assert pool.observations.shape == (2, agents, 208)
+        assert pool.fp_states.shape[:2] == (2, agents)
+        assert pool.action_masks.shape == (2, agents, 5)
+        responses = pool.step(np.zeros((2, agents), dtype=np.int64), global_step=0)
+        assert responses.rewards.shape == (2, agents)
+        assert responses.dones.shape == (2, agents)
+        assert responses.active_masks.shape == (2, agents)
+        assert pool.observations.shape == (2, agents, 208)
     finally:
         pool.close()
 
@@ -57,7 +58,7 @@ def test_vector_worker_exposes_compact_structured_actor_observations():
     pool = MAPPOVectorEnvironment(experiment.environment, count=1, base_seed=92)
     try:
         # self (16) + DirectGoal (7) + 5x5x5 local map (125) + 3 peers (20)
-        assert pool.observations.shape == (1, 3, 208)
+        assert pool.observations.shape == (1, 5, 208)
     finally:
         pool.close()
 
@@ -92,6 +93,7 @@ def test_waypoint_method_requires_a_waypoint_goal_interface(tmp_path):
 
 def test_two_worker_rollout_reaches_one_canonical_update():
     experiment = load_baseline_experiment(CONFIG)
+    agents = int(experiment.environment["n_agents"])
     pool = MAPPOVectorEnvironment(experiment.environment, count=2, base_seed=101)
     trainer = MAPPOTrainer(
         MAPPOConfig(
@@ -105,13 +107,13 @@ def test_two_worker_rollout_reaches_one_canonical_update():
     storage = MAPPORolloutStorage(
         rollout_length=2,
         num_workers=2,
-        num_agents=3,
+        num_agents=agents,
         observation_dim=208,
         state_dim=pool.fp_states.shape[-1],
         action_dim=5,
     )
-    actor_hidden = np.zeros((2, 3, 64), dtype=np.float32)
-    critic_hidden = np.zeros((2, 3, 64), dtype=np.float32)
+    actor_hidden = np.zeros((2, agents, 64), dtype=np.float32)
+    critic_hidden = np.zeros((2, agents, 64), dtype=np.float32)
     try:
         for global_step in (0, 2):
             observations = pool.observations.copy()
@@ -161,7 +163,10 @@ def test_worker_snapshot_restore_recovers_observation_and_fp_state():
         observations = pool.observations.copy()
         fp_states = pool.fp_states.copy()
         states = pool.snapshot()
-        pool.step(np.zeros((1, 3), dtype=np.int64), global_step=0)
+        pool.step(
+            np.zeros((1, int(experiment.environment["n_agents"])), dtype=np.int64),
+            global_step=0,
+        )
         pool.restore(states)
         np.testing.assert_array_equal(pool.observations, observations)
         np.testing.assert_array_equal(pool.fp_states, fp_states)
@@ -186,19 +191,17 @@ def test_checkpoint_resume_restores_actor_and_critic_hidden_states(tmp_path):
     resumed = BaselineRun(experiment, device="cpu", resume=directory)
     try:
         np.testing.assert_array_equal(
-            resumed.actor_hidden_states, np.full((1, 3, 64), 0.25)
+            resumed.actor_hidden_states, np.full((1, 5, 64), 0.25)
         )
         np.testing.assert_array_equal(
-            resumed.critic_hidden_states, np.full((1, 3, 64), -0.5)
+            resumed.critic_hidden_states, np.full((1, 5, 64), -0.5)
         )
     finally:
         resumed.close()
 
 
 def test_checkpoint_evaluation_writes_a_separate_workload_receipt(tmp_path):
-    source_experiment = load_baseline_experiment(
-        ROOT / "configs" / "phase1" / "medium-5ag-low-workload.yaml"
-    )
+    source_experiment = load_baseline_experiment(CONFIG)
     source_experiment = replace(
         source_experiment,
         training={**source_experiment.training, "num_env_workers": 1},
@@ -210,8 +213,7 @@ def test_checkpoint_evaluation_writes_a_separate_workload_receipt(tmp_path):
     finally:
         source.close()
 
-    high_config = ROOT / "configs" / "phase1" / "medium-5ag-high-workload-eval.yaml"
-    target_experiment = load_baseline_experiment(high_config)
+    target_experiment = load_baseline_experiment(CONFIG)
     target_experiment = replace(
         target_experiment,
         training={**target_experiment.training, "num_env_workers": 1},

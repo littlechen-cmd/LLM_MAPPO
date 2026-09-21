@@ -19,8 +19,8 @@ from llm_mappo.mappo_baseline.fp_state import (
 from llm_mappo.mappo_baseline.structured_observation import (
     build_structured_observations,
 )
-from llm_mappo.optimization_observation import ObservationSchema
-from llm_mappo.phase2 import Phase2Warehouse
+from llm_mappo.warehouse_observation import ObservationSchema
+from llm_mappo.warehouse_environment import Phase2Warehouse
 
 
 def new_baseline_environment(
