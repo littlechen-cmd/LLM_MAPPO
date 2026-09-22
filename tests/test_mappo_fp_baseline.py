@@ -374,6 +374,12 @@ def test_trainer_uses_separate_optimizers_and_reports_canonical_losses():
         "critic_grad_norm",
     ):
         assert np.isfinite(metrics[key])
+    for prefix in ("raw_advantage", "raw_return"):
+        assert metrics[f"{prefix}_count"] == 6
+        assert metrics[f"{prefix}_max_abs"] >= 0.0
+        assert np.isfinite(metrics[f"{prefix}_p05"])
+        assert np.isfinite(metrics[f"{prefix}_p50"])
+        assert np.isfinite(metrics[f"{prefix}_p95"])
 
 
 def test_storage_rejects_wrong_agent_axis():

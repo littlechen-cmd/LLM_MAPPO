@@ -141,6 +141,11 @@ class MAPPOTrainer:
         if not bool(active.any()):
             raise RuntimeError("MAPPO update has no active robot samples.")
         valid_advantages = advantages[active]
+        valid_returns = returns[active]
+        raw_diagnostics = {
+            **_distribution_metrics("raw_advantage", valid_advantages),
+            **_distribution_metrics("raw_return", valid_returns),
+        }
         advantages = (advantages - valid_advantages.mean()) / (
             valid_advantages.std(unbiased=False) + 1e-5
         )
@@ -276,12 +281,14 @@ class MAPPOTrainer:
                     self.actor.parameters(), self.config.max_grad_norm
                 )
                 self.actor_optimizer.step()
+                _require_finite_parameters(self.actor, "actor")
                 self.critic_optimizer.zero_grad(set_to_none=True)
                 (self.config.value_loss_coef * value_loss).backward()
                 critic_grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.critic.parameters(), self.config.max_grad_norm
                 )
                 self.critic_optimizer.step()
+                _require_finite_parameters(self.critic, "critic")
                 with torch.no_grad():
                     approx_kl = self._masked_mean(
                         (ratio - 1.0) - log_ratio, active_weight
@@ -330,6 +337,7 @@ class MAPPOTrainer:
             "optimizer_steps": optimizer_steps,
             "actor_learning_rate": self.actor_optimizer.param_groups[0]["lr"],
             "critic_learning_rate": self.critic_optimizer.param_groups[0]["lr"],
+            **raw_diagnostics,
         }
 
     def _actor_sequence(self, observations, hidden, continuation):
@@ -429,3 +437,29 @@ class MAPPOTrainer:
 
     def _tensor(self, values) -> Tensor:
         return torch.as_tensor(values, dtype=torch.float32, device=self.device)
+
+
+def _distribution_metrics(prefix: str, values: Tensor) -> dict[str, float | int]:
+    """Return a finite, pre-normalization distribution summary for one update."""
+
+    detached = values.detach().cpu().numpy().astype(np.float64, copy=False)
+    if detached.size == 0 or not np.all(np.isfinite(detached)):
+        raise RuntimeError(f"MAPPO {prefix} contains non-finite values.")
+    return {
+        f"{prefix}_count": int(detached.size),
+        f"{prefix}_mean": float(np.mean(detached)),
+        f"{prefix}_std": float(np.std(detached)),
+        f"{prefix}_min": float(np.min(detached)),
+        f"{prefix}_max": float(np.max(detached)),
+        f"{prefix}_p05": float(np.quantile(detached, 0.05)),
+        f"{prefix}_p50": float(np.quantile(detached, 0.50)),
+        f"{prefix}_p95": float(np.quantile(detached, 0.95)),
+        f"{prefix}_max_abs": float(np.max(np.abs(detached))),
+    }
+
+
+def _require_finite_parameters(module: torch.nn.Module, name: str) -> None:
+    """Fail the update before a non-finite parameter reaches the next rollout."""
+
+    if not all(torch.isfinite(parameter).all() for parameter in module.parameters()):
+        raise RuntimeError(f"MAPPO {name} parameters became non-finite.")

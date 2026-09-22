@@ -75,6 +75,8 @@ class EpisodeMetrics:
     deadlocked: bool = False
     agent_deaths: int = 0
     picked_tasks: int = 0
+    progress_positive_events: int = 0
+    progress_negative_events: int = 0
     blocked_forwards: int = 0
     low_battery_triggers: int = 0
     charging_target_steps: int = 0
@@ -159,6 +161,8 @@ class EpisodeMetrics:
             "deadlocked": self.deadlocked,
             "agent_deaths": self.agent_deaths,
             "picked_tasks": self.picked_tasks,
+            "progress_positive_events": self.progress_positive_events,
+            "progress_negative_events": self.progress_negative_events,
             "blocked_forwards": self.blocked_forwards,
             "low_battery_triggers": self.low_battery_triggers,
             "charging_target_steps": self.charging_target_steps,
@@ -451,6 +455,7 @@ class Phase2Warehouse:
             carrying_before[agent.id] is None and agent.carrying_shelf is not None
             for agent in self.env.agents
         )
+        progress_deltas = np.zeros(self.n_agents, dtype=np.float64)
         if self.reward_version == REWARD_V2:
             charging_targets_after = self._charging_targets()
             reward_goals_after = self._reward_goal_snapshots(
@@ -501,6 +506,7 @@ class Phase2Warehouse:
             reward_components,
             waypoint_progress,
             picked_tasks,
+            progress_deltas,
             charging_targets,
             positions_before,
             batteries_before,
@@ -1158,6 +1164,7 @@ class Phase2Warehouse:
         reward_components: Dict[str, float],
         waypoint_progress: bool,
         picked_tasks: int,
+        progress_deltas: np.ndarray,
         charging_targets: Dict[int, Tuple[int, int]],
         positions_before: Dict[int, Tuple[int, int]],
         batteries_before: Dict[int, float],
@@ -1188,6 +1195,12 @@ class Phase2Warehouse:
         self._metrics.collisions = int(info["collisions"])
         self._metrics.agent_deaths = sum(agent["dead"] for agent in info["agents"])
         self._metrics.picked_tasks += picked_tasks
+        self._metrics.progress_positive_events += int(
+            np.count_nonzero(progress_deltas > 0)
+        )
+        self._metrics.progress_negative_events += int(
+            np.count_nonzero(progress_deltas < 0)
+        )
         self._metrics.blocked_forwards = int(info["blocked_forwards"])
         self._update_episode_diagnostics(
             positions_before, actions, target_phases_before

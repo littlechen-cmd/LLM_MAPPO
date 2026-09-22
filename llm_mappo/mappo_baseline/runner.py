@@ -52,6 +52,7 @@ class BaselineExperiment:
 
 LEGACY_CORE_INTEGRATION_SCHEMA = "core-mappo-209d-v1"
 CORE_INTEGRATION_SCHEMA = "core-mappo-209d-delivery-v2"
+REWARD_DIAGNOSTIC_SCHEMA = "reward-diagnostic-mappo-209d-delivery-v1"
 CORE_INTEGRATION_SCHEMAS = frozenset({
     LEGACY_CORE_INTEGRATION_SCHEMA,
     CORE_INTEGRATION_SCHEMA,
@@ -81,9 +82,24 @@ def checkpoint_schema_for_method(method: str) -> str:
         raise ValueError("Core-integration MAPPO method is incompatible.") from error
 
 
+def _run_directory_name(
+    requested: str | None, *, seed: int, timestamp: str
+) -> str:
+    """Accept one safe artifact leaf name or retain the ordinary timestamp layout."""
+
+    if requested is None:
+        return f"seed_{seed:04d}_{timestamp}"
+    name = Path(requested)
+    if name.is_absolute() or len(name.parts) != 1 or name.name in {"", ".", ".."}:
+        raise ValueError("MAPPO artifact directory name must be one relative leaf.")
+    return name.name
+
+
 def checkpoint_schema_for_experiment(experiment: BaselineExperiment) -> str:
     """Resolve one experiment's strict checkpoint namespace."""
 
+    if experiment.schema == REWARD_DIAGNOSTIC_SCHEMA:
+        return "mappo-fp-209d-delivery-reward-diagnostic-checkpoint-v1"
     if experiment.schema == CORE_INTEGRATION_SCHEMA:
         try:
             return DELIVERY_CHECKPOINT_SCHEMAS[experiment.method]
@@ -104,6 +120,10 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     source = Path(path)
     raw = source.read_bytes()
     values = yaml.safe_load(raw)
+    if values.get("schema") == REWARD_DIAGNOSTIC_SCHEMA:
+        raise ValueError(
+            "Reward diagnostic configurations require the diagnostic runner."
+        )
     required = {
         "schema", "method", "artifact_root", "environment", "training", "evaluation"
     }
@@ -336,6 +356,24 @@ class BaselineRun:
         "ppo_shared_grad_norm",
         "astar_shared_grad_norm",
         "astar_to_ppo_shared_grad_ratio",
+        "raw_advantage_count",
+        "raw_advantage_mean",
+        "raw_advantage_std",
+        "raw_advantage_min",
+        "raw_advantage_max",
+        "raw_advantage_p05",
+        "raw_advantage_p50",
+        "raw_advantage_p95",
+        "raw_advantage_max_abs",
+        "raw_return_count",
+        "raw_return_mean",
+        "raw_return_std",
+        "raw_return_min",
+        "raw_return_max",
+        "raw_return_p05",
+        "raw_return_p50",
+        "raw_return_p95",
+        "raw_return_max_abs",
     )
     EPISODE_FIELDS = (
         "global_environment_steps",
@@ -351,6 +389,8 @@ class BaselineRun:
         "deadlocked",
         "agent_deaths",
         "picked_tasks",
+        "progress_positive_events",
+        "progress_negative_events",
         "blocked_forwards",
         "low_battery_triggers",
         "charging_target_steps",
@@ -381,13 +421,32 @@ class BaselineRun:
         *,
         device: str,
         output_root: str | Path | None = None,
+        run_directory_name: str | None = None,
         resume: str | Path | None = None,
         evaluation_only: bool = False,
+        diagnostic_authorized: bool = False,
+        diagnostic_reward_definition: Mapping[str, Any] | None = None,
+        diagnostic_reward_definition_sha256: str | None = None,
     ) -> None:
-        if not evaluation_only and experiment.approval_status == "provisional":
+        diagnostic_schema = experiment.schema == REWARD_DIAGNOSTIC_SCHEMA
+        if diagnostic_schema and not diagnostic_authorized:
+            raise ValueError("Reward diagnostic runs require diagnostic authorization.")
+        if not diagnostic_schema and diagnostic_authorized:
+            raise ValueError("Diagnostic authorization requires a diagnostic schema.")
+        if diagnostic_schema and (
+            not isinstance(diagnostic_reward_definition, Mapping)
+            or not isinstance(diagnostic_reward_definition_sha256, str)
+            or len(diagnostic_reward_definition_sha256) != 64
+        ):
+            raise ValueError("Reward diagnostic identity is incomplete.")
+        if not evaluation_only and experiment.approval_status == "provisional" and not (
+            diagnostic_schema and diagnostic_authorized
+        ):
             raise ValueError("provisional configuration cannot start real training.")
         if evaluation_only and resume is not None:
             raise ValueError("Evaluation-only runs cannot resume training state.")
+        if resume is not None and run_directory_name is not None:
+            raise ValueError("Resumed runs cannot select a new output directory.")
         self.experiment = experiment
         self.evaluation_only = evaluation_only
         self._astar_kd_enabled = experiment.method in {
@@ -441,6 +500,10 @@ class BaselineRun:
             "reward_version": experiment.environment["reward_version"],
             "profile_id": experiment.environment["profile_id"],
         }
+        if diagnostic_schema:
+            self.identity["reward_definition_sha256"] = (
+                diagnostic_reward_definition_sha256
+            )
         if experiment.schema == "mappo-collection-209d-v1":
             environment_contract = dict(experiment.environment)
             encoded_environment = json.dumps(
@@ -455,7 +518,15 @@ class BaselineRun:
         if resume is None:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             root = Path(output_root or experiment.artifact_root)
-            self.directory = root / f"seed_{self.identity['seed']:04d}_{timestamp}"
+            self.directory = root / _run_directory_name(
+                run_directory_name,
+                seed=int(self.identity["seed"]),
+                timestamp=timestamp,
+            )
+            if self.directory.exists():
+                raise FileExistsError(
+                    f"MAPPO artifact directory already exists: {self.directory}"
+                )
             self.directory.mkdir(parents=True, exist_ok=False)
             _write_json(self.directory / "run_manifest.json", {
                 "identity": self.identity,
@@ -465,6 +536,14 @@ class BaselineRun:
                 "teacher_modules_enabled": self._astar_kd_enabled,
                 "astar_kd_variant": self._astar_kd_variant,
             })
+            if diagnostic_schema:
+                manifest_path = self.directory / "run_manifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["reward_diagnostic"] = {
+                    "reward_definition": dict(diagnostic_reward_definition),
+                    "reward_definition_sha256": diagnostic_reward_definition_sha256,
+                }
+                _write_json(manifest_path, manifest)
             _write_json(self.directory / "state.json", {"status": "running"})
             self._create_csv(self.directory / "updates.csv", self.UPDATE_FIELDS)
             self._create_csv(self.directory / "episodes.csv", self.EPISODE_FIELDS)
@@ -938,6 +1017,7 @@ class BaselineRun:
             "actor_observation_dimension",
             "fp_state_dimension",
             "reward_version",
+            "reward_definition_sha256",
         )
         mismatched = [
             field for field in compatibility_fields
@@ -1148,6 +1228,12 @@ class BaselineRun:
                 "static_route_regret_count", "static_invalid_top1_rate",
                 "ppo_shared_grad_norm", "astar_shared_grad_norm",
                 "astar_to_ppo_shared_grad_ratio",
+                "raw_advantage_count", "raw_advantage_mean", "raw_advantage_std",
+                "raw_advantage_min", "raw_advantage_max", "raw_advantage_p05",
+                "raw_advantage_p50", "raw_advantage_p95", "raw_advantage_max_abs",
+                "raw_return_count", "raw_return_mean", "raw_return_std",
+                "raw_return_min", "raw_return_max", "raw_return_p05",
+                "raw_return_p50", "raw_return_p95", "raw_return_max_abs",
             )},
             "grad_norm": max(
                 float(metrics["actor_grad_norm"]),

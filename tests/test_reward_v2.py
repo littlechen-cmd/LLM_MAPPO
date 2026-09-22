@@ -302,6 +302,50 @@ def test_rware_delivery_replenishment_keeps_training_request_queue_full():
         environment.close()
 
 
+@pytest.mark.parametrize("n_agents", (1, 5))
+def test_reward_v2_fixed_seed_rollout_reconciles_the_full_reward_ledger(n_agents):
+    """A deterministic rollout cannot hide a reward term outside the ledger."""
+    snapshots = []
+    for _ in range(2):
+        environment = Phase2Warehouse(
+            n_agents=n_agents,
+            max_steps=12,
+            deadlock_steps=11,
+            reward_version="reward-v2",
+            replenishment_mode="rware_delivery",
+        )
+        try:
+            environment.reset(seed=41)
+            rewards = []
+            events = []
+            for _ in range(8):
+                transition = environment.step([Action.NOOP] * n_agents)
+                rewards.append(transition.team_reward)
+                events.append(tuple(transition.info["events"]))
+            metrics = transition.metrics
+            ledger_total = sum(
+                getattr(metrics, name)
+                for name in (
+                    "reward_completion",
+                    "reward_pickup",
+                    "reward_progress",
+                    "reward_blocked_forward",
+                    "reward_collision",
+                    "reward_charging",
+                    "reward_deadlock",
+                    "reward_energy",
+                    "reward_step_cost",
+                )
+            )
+            assert metrics.reward == pytest.approx(sum(rewards))
+            assert ledger_total == pytest.approx(metrics.reward)
+            snapshots.append((rewards, events, metrics.as_dict()))
+        finally:
+            environment.close()
+
+    assert snapshots[0] == snapshots[1]
+
+
 def test_static_grid_distance_rewards_a_necessary_manhattan_detour():
     """A valid first detour step can increase Manhattan distance yet progress."""
     start = (0, 0)
