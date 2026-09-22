@@ -1,0 +1,96 @@
+schema_version: phase3-m1-diagnostics-v1
+metric_definition_version: llm-kd-diagnostic-metrics-v1
+semantic_dimensions:
+  - mission_urgency
+  - concession_appropriateness
+  - interaction_risk
+  - deadlock_severity
+test_access:
+  split_unit: episode
+  selection_partition: validation
+  test_evaluations_per_representation_seed: 1
+  test_access_after_model_and_threshold_freeze: true
+label_metrics:
+  parse_rate_denominator: requested_samples
+  retry_rate_denominator: requested_samples
+  forbidden_content_rate_denominator: requested_samples
+  evidence_path_valid_rate_denominator: returned_evidence_paths
+  standard_deviation: population
+  boundary_epsilon: 0.05
+  disagreement: mean_absolute_score_difference_over_pairs_and_dimensions
+prediction_metrics:
+  losses: [mae, mse]
+  constant_predictor: per_dimension_train_partition_mean
+  delta_direction: constant_minus_candidate
+  relative_reduction: (constant_minus_candidate)/constant
+  zero_constant_error_rule: null_unless_candidate_error_is_also_zero
+probe:
+  architecture: Linear(64,4)+Sigmoid
+  initialization: fresh_per_representation_and_seed
+  representation_state: frozen
+  training_labels: true_train_partition_labels
+  selection_partition: validation
+  test_evaluations: 1
+  seeds: [7301, 7302, 7303]
+  optimizer: Adam
+  learning_rate: 0.001
+  batch_size: 256
+  max_epochs: 100
+  loss: MSE
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.0001
+controls:
+  - constant_predictor
+  - random_init
+  - shuffled_label
+  - shuffled_history
+  - single_frame
+  - normal_history
+representation_health_metrics:
+  embedding_variance: mean_population_variance_over_64_features
+  effective_rank: exp_entropy_of_centered_squared_singular_values
+  temporal_sensitivity: mean_l2_normal_minus_shuffled_history_embedding
+  gradient_norm: global_l2_per_encoder_and_gru
+  import_export_error: maximum_absolute_embedding_difference
+  non_finite_count: all_embedding_matrices
+downstream_report:
+  arms:
+    - baseline
+    - llm_kd
+    - astar_kd_no_validity
+    - astar_kd_no_validity_plus_llm_kd
+  factor_design: two_by_two_llm_initialization_x_astar_kd
+  seed_claim: diagnostic_only_no_formal_performance_claim
+go_no_go_thresholds:
+  label:
+    parse_rate_min: 0.98
+    retry_rate_max: 0.10
+    forbidden_content_rate_max: 0.0
+    evidence_path_valid_rate_min: 0.98
+    per_dimension_standard_deviation_min: 0.08
+    per_dimension_boundary_saturation_rate_max: 0.60
+    repeated_call_mean_absolute_disagreement_max: 0.15
+    cross_model_mean_absolute_disagreement_max: 0.20
+  end_to_end:
+    macro_mae_relative_reduction_min: 0.10
+    per_dimension_mae_relative_reduction_min: 0.05
+    dimensions_meeting_minimum: 3
+    maximum_dimension_absolute_mae_regression: 0.02
+    joint_rmse_relative_reduction_min: 0.10
+  probe:
+    normal_vs_constant_macro_mae_relative_reduction_min: 0.08
+    normal_vs_random_init_macro_mae_relative_reduction_min: 0.05
+    normal_vs_shuffled_label_macro_mae_relative_reduction_min: 0.05
+    temporal_dimension_names: [interaction_risk, deadlock_severity]
+    normal_vs_shuffled_history_temporal_mae_relative_reduction_min: 0.03
+    normal_vs_single_frame_temporal_mae_relative_reduction_min: 0.03
+    representation_seed_count: 3
+    maximum_macro_mae_coefficient_of_variation: 0.15
+  representation_health:
+    non_finite_count_max: 0
+    mean_feature_variance_min: 0.00001
+    effective_rank_min: 8.0
+    temporal_sensitivity_mean_l2_min: 0.0001
+    encoder_gradient_norm_min: 0.00000001
+    gru_gradient_norm_min: 0.00000001
+    import_export_max_absolute_error_max: 0.0000001

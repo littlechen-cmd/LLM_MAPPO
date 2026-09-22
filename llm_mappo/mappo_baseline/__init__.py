@@ -3,6 +3,8 @@
 from llm_mappo.mappo_baseline.fp_state import FPStateSchema, build_fp_state
 from llm_mappo.mappo_baseline.networks import MAPPOActor, MAPPOFPCritic
 from llm_mappo.mappo_baseline.structured_observation import (
+    DIRECT_GOAL_OBSERVATION_V1,
+    DIRECT_GOAL_OBSERVATION_V2,
     StructuredObservationSchema,
     build_structured_observations,
 )
@@ -14,6 +16,8 @@ __all__ = [
     "MAPPOConfig",
     "MAPPOFPCritic",
     "MAPPOTrainer",
+    "DIRECT_GOAL_OBSERVATION_V1",
+    "DIRECT_GOAL_OBSERVATION_V2",
     "StructuredObservationSchema",
     "build_fp_state",
     "build_structured_observations",

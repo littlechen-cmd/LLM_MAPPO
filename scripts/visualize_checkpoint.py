@@ -247,16 +247,13 @@ def _load_controller(
     if controller_kind != "policy":
         raise ValueError(f"Unsupported controller: {controller_kind}")
     experiment = load_baseline_experiment(config_path)
+    from llm_mappo.mappo_baseline.runner import checkpoint_schema_for_experiment
     if experiment.environment["goal_interface"] != "direct_goal":
         raise ValueError("Checkpoint visualization requires direct-goal evaluation.")
     checkpoint = torch.load(
         str(checkpoint_path), map_location="cpu", weights_only=False
     )
-    expected_schema = (
-        "mappo-fp-astar-kd-checkpoint-v1"
-        if experiment.schema == "phase2-mappo-astar-kd-v1"
-        else "mappo-fp-phase2-baseline-checkpoint-v1"
-    )
+    expected_schema = checkpoint_schema_for_experiment(experiment)
     if checkpoint.get("schema") != expected_schema:
         raise ValueError("Checkpoint schema differs from the selected config.")
     identity = checkpoint.get("identity")
@@ -281,7 +278,9 @@ def _load_controller(
     )
     actor.load_state_dict(actor_state, strict=True)
     actor.eval()
-    observation_schema = StructuredObservationSchema()
+    observation_schema = StructuredObservationSchema(
+        observation_schema=str(experiment.environment["observation_schema"])
+    )
     hidden = np.zeros(
         (int(experiment.environment["n_agents"]), actor.hidden_dim),
         dtype=np.float32,

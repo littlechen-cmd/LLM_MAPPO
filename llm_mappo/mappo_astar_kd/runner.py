@@ -11,7 +11,11 @@ def load_astar_kd_experiment(path: str | Path):
     """Load one Phase 2 A*KD training or checkpoint-evaluation profile."""
 
     experiment = load_baseline_experiment(path)
-    if experiment.schema != "phase2-mappo-astar-kd-v1":
+    if experiment.method not in {
+        "MAPPO-FP-ASTARKD",
+        "MAPPO-FP-ASTARKD-NO-VALIDITY",
+        "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT",
+    }:
         raise ValueError("Phase 2 A*KD runner requires an A*KD experiment schema.")
     return experiment
 

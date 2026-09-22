@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -411,6 +412,13 @@ class MAPPOTrainer:
         }
 
     def load_state_dict(self, state: dict) -> None:
+        """Commit checkpoint state only after an isolated full validation load."""
+
+        candidate = deepcopy(self)
+        candidate._load_state_dict_unchecked(state)
+        self._load_state_dict_unchecked(state)
+
+    def _load_state_dict_unchecked(self, state: dict) -> None:
         if state.get("config") != asdict(self.config):
             raise ValueError("MAPPO checkpoint trainer configuration differs.")
         self.actor.load_state_dict(state["actor"])

@@ -21,6 +21,8 @@ import yaml
 from llm_mappo.mappo_baseline.fp_state import FPStateSchema
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.structured_observation import (
+    DIRECT_GOAL_OBSERVATION_V1,
+    DIRECT_GOAL_OBSERVATION_V2,
     StructuredObservationSchema,
     build_structured_observations,
 )
@@ -45,15 +47,54 @@ class BaselineExperiment:
     training: Mapping[str, Any]
     evaluation: Mapping[str, Any]
     config_sha256: str
+    approval_status: str = "approved"
 
 
-def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
+CORE_INTEGRATION_SCHEMA = "core-mappo-209d-v1"
+CORE_CHECKPOINT_SCHEMAS = {
+    "MAPPO-FP-DG": "mappo-fp-direct-goal-209d-checkpoint-v1",
+    "MAPPO-FP-DG-LLM-INIT": "mappo-fp-llm-init-209d-checkpoint-v1",
+    "MAPPO-FP-ASTARKD-NO-VALIDITY": (
+        "mappo-fp-astar-kd-209d-checkpoint-v1"
+    ),
+    "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT": (
+        "mappo-fp-astar-kd-llm-init-209d-checkpoint-v1"
+    ),
+}
+
+
+def checkpoint_schema_for_method(method: str) -> str:
+    """Return the frozen core-integration checkpoint schema for one method."""
+
+    try:
+        return CORE_CHECKPOINT_SCHEMAS[method]
+    except KeyError as error:
+        raise ValueError("Core-integration MAPPO method is incompatible.") from error
+
+
+def checkpoint_schema_for_experiment(experiment: BaselineExperiment) -> str:
+    """Resolve one experiment's strict checkpoint namespace."""
+
+    if experiment.schema == CORE_INTEGRATION_SCHEMA:
+        return checkpoint_schema_for_method(experiment.method)
+    if experiment.schema == "mappo-collection-209d-v1":
+        return "mappo-fp-collection-209d-checkpoint-v1"
+    if experiment.schema == "phase2-mappo-astar-kd-v1":
+        return "mappo-fp-astar-kd-checkpoint-v1"
+    if experiment.schema == "phase2-mappo-baseline-v1":
+        return "mappo-fp-phase2-baseline-checkpoint-v1"
+    return "mappo-fp-dg-checkpoint-v2"
+
+
+def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C901
     source = Path(path)
     raw = source.read_bytes()
     values = yaml.safe_load(raw)
     required = {
         "schema", "method", "artifact_root", "environment", "training", "evaluation"
     }
+    if values.get("schema") == CORE_INTEGRATION_SCHEMA:
+        required.add("approval_status")
     if set(values) != required:
         raise ValueError("MAPPO baseline configuration has unexpected top-level keys.")
     environment = dict(values["environment"])
@@ -61,14 +102,37 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
     _validate_environment(environment)
     _validate_training(training)
     _validate_evaluation(dict(values["evaluation"]))
+    if values["schema"] == "mappo-collection-209d-v1":
+        if values["method"] != "MAPPO-FP-DG":
+            raise ValueError("Collection baseline must use MAPPO-FP-DG.")
+        if environment["observation_schema"] != DIRECT_GOAL_OBSERVATION_V2:
+            raise ValueError("Collection baseline requires native 209D v2.")
+    if values["schema"] == CORE_INTEGRATION_SCHEMA:
+        checkpoint_schema_for_method(str(values["method"]))
+        if environment["observation_schema"] != DIRECT_GOAL_OBSERVATION_V2:
+            raise ValueError("Core integration requires native 209D v2.")
+        if values["approval_status"] not in {"provisional", "approved"}:
+            raise ValueError("Core-integration approval status is invalid.")
+        has_initialization = "representation_initialization" in training
+        expects_initialization = str(values["method"]).endswith("LLM-INIT")
+        if has_initialization != expects_initialization:
+            raise ValueError("LLM method and representation initialization must agree.")
+        if has_initialization:
+            from llm_mappo.mappo_llm_kd.initialization import (
+                load_representation_initialization,
+            )
+
+            load_representation_initialization(training["representation_initialization"])
     if values["schema"] not in {
         "phase1-mappo-baseline-v1", "phase2-mappo-baseline-v1",
         "phase2-mappo-astar-kd-v1",
+        "mappo-collection-209d-v1", CORE_INTEGRATION_SCHEMA,
     }:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
     if values["method"] not in {
         "MAPPO-FP-DG", "MAPPO-FP-WP", "MAPPO-FP-ASTARKD",
-        "MAPPO-FP-ASTARKD-NO-VALIDITY",
+        "MAPPO-FP-ASTARKD-NO-VALIDITY", "MAPPO-FP-DG-LLM-INIT",
+        "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT",
     }:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
     expected_interface = {
@@ -76,6 +140,8 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
         "MAPPO-FP-WP": "waypoint",
         "MAPPO-FP-ASTARKD": "direct_goal",
         "MAPPO-FP-ASTARKD-NO-VALIDITY": "direct_goal",
+        "MAPPO-FP-DG-LLM-INIT": "direct_goal",
+        "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT": "direct_goal",
     }[values["method"]]
     if environment.get("goal_interface") != expected_interface:
         raise ValueError("MAPPO method and goal_interface must agree.")
@@ -87,6 +153,7 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:
         training=training,
         evaluation=dict(values["evaluation"]),
         config_sha256=sha256(raw).hexdigest(),
+        approval_status=str(values.get("approval_status", "approved")),
     )
 
 
@@ -103,7 +170,10 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:
     missing = sorted(required - set(environment))
     if missing:
         raise ValueError(f"MAPPO baseline environment is missing: {', '.join(missing)}.")
-    if environment["observation_schema"] != "direct-goal-observation-v1":
+    if environment["observation_schema"] not in {
+        DIRECT_GOAL_OBSERVATION_V1,
+        DIRECT_GOAL_OBSERVATION_V2,
+    }:
         raise ValueError("MAPPO-FP-DG requires the DirectGoal observation schema.")
     if environment["goal_interface"] not in {"direct_goal", "waypoint"}:
         raise ValueError("MAPPO baseline goal_interface is incompatible.")
@@ -288,25 +358,25 @@ class BaselineRun:
         resume: str | Path | None = None,
         evaluation_only: bool = False,
     ) -> None:
+        if not evaluation_only and experiment.approval_status == "provisional":
+            raise ValueError("provisional configuration cannot start real training.")
         if evaluation_only and resume is not None:
             raise ValueError("Evaluation-only runs cannot resume training state.")
         self.experiment = experiment
         self.evaluation_only = evaluation_only
-        self._astar_kd_enabled = experiment.schema == "phase2-mappo-astar-kd-v1"
+        self._astar_kd_enabled = experiment.method in {
+            "MAPPO-FP-ASTARKD",
+            "MAPPO-FP-ASTARKD-NO-VALIDITY",
+            "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT",
+        }
         self._astar_kd_variant = {
             "MAPPO-FP-ASTARKD": "full",
             "MAPPO-FP-ASTARKD-NO-VALIDITY": "no_validity",
+            "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT": "no_validity",
         }.get(experiment.method)
         if self._astar_kd_enabled != (self._astar_kd_variant is not None):
             raise ValueError("Phase 2 A*KD schema and method must agree.")
-        self._checkpoint_schema = (
-            "mappo-fp-astar-kd-checkpoint-v1" if self._astar_kd_enabled
-            else (
-                "mappo-fp-phase2-baseline-checkpoint-v1"
-                if experiment.schema == "phase2-mappo-baseline-v1"
-                else "mappo-fp-dg-checkpoint-v2"
-            )
-        )
+        self._checkpoint_schema = checkpoint_schema_for_experiment(experiment)
         self.device = torch.device(device)
         torch.set_num_threads(int(experiment.training["learner_torch_threads"]))
         self.schema = FPStateSchema(
@@ -315,7 +385,14 @@ class BaselineRun:
             n_chargers=len(experiment.environment["charging_stations"]),
             n_picking_stations=len(experiment.environment["picking_stations"]),
         )
-        self.actor_schema = StructuredObservationSchema()
+        self.actor_schema = StructuredObservationSchema(
+            observation_schema=str(experiment.environment["observation_schema"])
+        )
+        actor_schema_version = (
+            "v2"
+            if self.actor_schema.observation_schema == DIRECT_GOAL_OBSERVATION_V2
+            else "v1"
+        )
         self.goal_interface = str(experiment.environment["goal_interface"])
         self._evaluation_planner = None
         if self.goal_interface == "waypoint":
@@ -330,7 +407,7 @@ class BaselineRun:
             "seed": int(experiment.training["seed"]),
             "observation_schema": experiment.environment["observation_schema"],
             "actor_observation_schema": (
-                f"structured-{self.goal_interface}-v1"
+                f"structured-{self.goal_interface}-{actor_schema_version}"
             ),
             "actor_observation_dimension": self.actor_schema.dimension,
             "fp_state_dimension": self.schema.dimension,
@@ -338,6 +415,17 @@ class BaselineRun:
             "reward_version": experiment.environment["reward_version"],
             "profile_id": experiment.environment["profile_id"],
         }
+        if experiment.schema == "mappo-collection-209d-v1":
+            environment_contract = dict(experiment.environment)
+            encoded_environment = json.dumps(
+                environment_contract, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            self.identity.update({
+                "environment_id": environment_contract["environment_id"],
+                "n_agents": int(environment_contract["n_agents"]),
+                "goal_interface": environment_contract["goal_interface"],
+                "environment_sha256": sha256(encoded_environment).hexdigest(),
+            })
         if resume is None:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             root = Path(output_root or experiment.artifact_root)
@@ -407,6 +495,27 @@ class BaselineRun:
             )
         else:
             self.trainer = MAPPOTrainer(config, self.device)
+        self.representation_initialization_receipt = None
+        initialization_values = experiment.training.get("representation_initialization")
+        if initialization_values is not None and resume is None:
+            from llm_mappo.mappo_llm_kd.initialization import (
+                initialize_final_actor,
+                load_representation_initialization,
+            )
+
+            initialization = load_representation_initialization(initialization_values)
+            self.representation_initialization_receipt = initialize_final_actor(
+                self.trainer.actor, initialization
+            )
+            manifest_path = self.directory / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["representation_initialization"] = {
+                "schema": "mappo-representation-initialization-v1",
+                "artifact_sha256": initialization.artifact_sha256,
+                "identity": dict(initialization.identity),
+                "receipt": self.representation_initialization_receipt,
+            }
+            _write_json(manifest_path, manifest)
         self.pool = None
         if not evaluation_only:
             worker_values = {
@@ -929,6 +1038,31 @@ class BaselineRun:
                 "torch_cuda": torch.cuda.get_rng_state_all()
                 if torch.cuda.is_available() else None,
             },
+        }
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        torch.save(payload, temporary)
+        temporary.replace(path)
+        if self.experiment.schema == "mappo-collection-209d-v1":
+            self._export_collection_actor(
+                path.with_name(
+                    path.stem.replace("checkpoint_", "collection_actor_")
+                    + path.suffix
+                )
+            )
+
+    def _export_collection_actor(self, path: Path) -> None:
+        """Export a weights-only-safe Actor artifact for offline collection."""
+
+        config = self.trainer.config
+        payload = {
+            "schema": "mappo-collection-actor-209d-v1",
+            "identity": dict(self.identity),
+            "actor_config": {
+                "observation_dim": int(config.observation_dim),
+                "action_dim": int(config.action_dim),
+                "hidden_dim": int(config.hidden_dim),
+            },
+            "actor_state_dict": self.trainer.actor.state_dict(),
         }
         temporary = path.with_suffix(path.suffix + ".tmp")
         torch.save(payload, temporary)

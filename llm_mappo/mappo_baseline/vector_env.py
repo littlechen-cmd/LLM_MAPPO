@@ -17,6 +17,9 @@ from llm_mappo.mappo_baseline.fp_state import (
     build_fp_state,
 )
 from llm_mappo.mappo_baseline.structured_observation import (
+    DIRECT_GOAL_OBSERVATION_V1,
+    DIRECT_GOAL_OBSERVATION_V2,
+    StructuredObservationSchema,
     build_structured_observations,
 )
 from llm_mappo.warehouse_observation import ObservationSchema
@@ -28,7 +31,10 @@ def new_baseline_environment(
 ) -> Phase2Warehouse:
     """Construct the exact DirectGoal environment from its frozen profile."""
 
-    if values["observation_schema"] != ObservationSchema.DIRECT_GOAL_V1.value:
+    if values["observation_schema"] not in {
+        DIRECT_GOAL_OBSERVATION_V1,
+        DIRECT_GOAL_OBSERVATION_V2,
+    }:
         raise ValueError("MAPPO-FP-DG only accepts the DirectGoal observation.")
     return Phase2Warehouse(
         n_agents=int(values["n_agents"]),
@@ -67,11 +73,12 @@ def new_baseline_environment(
     )
 
 
-def _payload(environment, schema, goal_interface, planner, labeler=None, *,
+def _payload(environment, schema, actor_schema, goal_interface, planner, labeler=None, *,
              use_semantic_validity=True):
     payload = {
         "observations": build_structured_observations(
             environment,
+            actor_schema,
             goal_interface=goal_interface,
             planner=planner,
         ),
@@ -156,12 +163,15 @@ def _worker(  # noqa: C901
             n_chargers=len(environment.env.charging_stations),
             n_picking_stations=len(environment.env.picking_stations),
         )
+        actor_schema = StructuredObservationSchema(
+            observation_schema=str(values["observation_schema"])
+        )
         episode_index = 0
         episode_step = 0
         worker_seed = int(base_seed) + int(worker_index) * 1_000_003
         environment.reset(seed=worker_seed)
         connection.send(("ok", _payload(
-            environment, schema, goal_interface, planner, labeler,
+            environment, schema, actor_schema, goal_interface, planner, labeler,
             use_semantic_validity=use_semantic_validity,
         )))
         while True:
@@ -193,7 +203,8 @@ def _worker(  # noqa: C901
                     "episode": episode,
                     "planner_query_count": environment.planner_query_counter.count,
                     "payload": _payload(
-                        environment, schema, goal_interface, planner, labeler,
+                        environment, schema, actor_schema, goal_interface,
+                        planner, labeler,
                         use_semantic_validity=use_semantic_validity,
                     ),
                 }))
@@ -207,7 +218,7 @@ def _worker(  # noqa: C901
                 episode_index = int(message["episode_index"])
                 episode_step = int(message["episode_step"])
                 connection.send(("ok", _payload(
-                    environment, schema, goal_interface, planner, labeler,
+                    environment, schema, actor_schema, goal_interface, planner, labeler,
                     use_semantic_validity=use_semantic_validity,
                 )))
             elif command == "close":

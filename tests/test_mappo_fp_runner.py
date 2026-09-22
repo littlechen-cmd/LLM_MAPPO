@@ -21,7 +21,7 @@ def test_baseline_contract_is_teacher_free_and_cpu_executable():
     experiment = load_baseline_experiment(CONFIG)
     assert experiment.environment["n_agents"] == 5
     assert experiment.environment["observation_schema"] == (
-        "direct-goal-observation-v1"
+        "direct-goal-observation-v2"
     )
     assert experiment.environment["reward_version"] == "reward-v2"
     assert experiment.training["environment_steps"] == 450_000
@@ -41,14 +41,14 @@ def test_vector_worker_returns_fp_state_and_independent_agent_axes():
     values = dict(experiment.environment)
     pool = MAPPOVectorEnvironment(values, count=2, base_seed=91)
     try:
-        assert pool.observations.shape == (2, agents, 208)
+        assert pool.observations.shape == (2, agents, 209)
         assert pool.fp_states.shape[:2] == (2, agents)
         assert pool.action_masks.shape == (2, agents, 5)
         responses = pool.step(np.zeros((2, agents), dtype=np.int64), global_step=0)
         assert responses.rewards.shape == (2, agents)
         assert responses.dones.shape == (2, agents)
         assert responses.active_masks.shape == (2, agents)
-        assert pool.observations.shape == (2, agents, 208)
+        assert pool.observations.shape == (2, agents, 209)
     finally:
         pool.close()
 
@@ -57,8 +57,8 @@ def test_vector_worker_exposes_compact_structured_actor_observations():
     experiment = load_baseline_experiment(CONFIG)
     pool = MAPPOVectorEnvironment(experiment.environment, count=1, base_seed=92)
     try:
-        # self (16) + DirectGoal (7) + 5x5x5 local map (125) + 3 peers (20)
-        assert pool.observations.shape == (1, 5, 208)
+        # self (17) + DirectGoal (7) + 5x5x5 local map (125) + 3 peers (20)
+        assert pool.observations.shape == (1, 5, 209)
     finally:
         pool.close()
 
@@ -87,7 +87,7 @@ def test_waypoint_method_requires_a_waypoint_goal_interface(tmp_path):
     config = tmp_path / "invalid_wp.yaml"
     config.write_text(yaml.safe_dump(values), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="must agree"):
+    with pytest.raises(ValueError, match="incompatible"):
         load_baseline_experiment(config)
 
 
@@ -97,7 +97,7 @@ def test_two_worker_rollout_reaches_one_canonical_update():
     pool = MAPPOVectorEnvironment(experiment.environment, count=2, base_seed=101)
     trainer = MAPPOTrainer(
         MAPPOConfig(
-            observation_dim=208,
+            observation_dim=pool.observations.shape[-1],
             state_dim=pool.fp_states.shape[-1],
             ppo_epochs=1,
             num_minibatches=1,
@@ -108,7 +108,7 @@ def test_two_worker_rollout_reaches_one_canonical_update():
         rollout_length=2,
         num_workers=2,
         num_agents=agents,
-        observation_dim=208,
+        observation_dim=pool.observations.shape[-1],
         state_dim=pool.fp_states.shape[-1],
         action_dim=5,
     )
@@ -178,7 +178,9 @@ def test_checkpoint_resume_restores_actor_and_critic_hidden_states(tmp_path):
     original = load_baseline_experiment(CONFIG)
     training = dict(original.training)
     training.update({"num_env_workers": 1, "rollout_length": 1})
-    experiment = replace(original, training=training)
+    experiment = replace(
+        original, training=training, approval_status="approved"
+    )
     run = BaselineRun(experiment, device="cpu", output_root=tmp_path)
     try:
         run.actor_hidden_states.fill(0.25)
@@ -204,6 +206,7 @@ def test_checkpoint_evaluation_writes_a_separate_workload_receipt(tmp_path):
     source_experiment = load_baseline_experiment(CONFIG)
     source_experiment = replace(
         source_experiment,
+        approval_status="approved",
         training={**source_experiment.training, "num_env_workers": 1},
     )
     source = BaselineRun(source_experiment, device="cpu", output_root=tmp_path)

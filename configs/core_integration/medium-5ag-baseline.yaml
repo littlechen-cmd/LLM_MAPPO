@@ -1,6 +1,7 @@
-schema: phase2-mappo-baseline-v1
+schema: core-mappo-209d-v1
 method: MAPPO-FP-DG
-artifact_root: artifacts/phase2/mappo_fp_baseline_medium_5ag
+approval_status: provisional
+artifact_root: artifacts/core_integration/baseline
 environment:
   profile_id: medium-5ag-phase2-train
   environment_id: llm-mappo-medium-3ag-v1
@@ -21,7 +22,7 @@ environment:
   charge_threshold: 0.30
   charge_release_threshold: 0.80
   deadlock_steps: 180
-  observation_schema: direct-goal-observation-v1
+  observation_schema: direct-goal-observation-v2
   goal_interface: direct_goal
   reward_version: reward-v2
   reward_blocked_forward_penalty: 0.10

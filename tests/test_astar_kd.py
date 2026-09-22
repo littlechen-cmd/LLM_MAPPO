@@ -641,6 +641,7 @@ def test_runner_replays_300k_schedule_before_low_rate_450k_tail(tmp_path):
     )
     profile = replace(
         profile,
+        approval_status="approved",
         training={
             **profile.training,
             "num_env_workers": 1,
@@ -684,6 +685,7 @@ def test_logged_astar_lambda_uses_schedule_not_total_budget(tmp_path):
     )
     profile = replace(
         profile,
+        approval_status="approved",
         training={
             **profile.training,
             "num_env_workers": 1,
@@ -799,6 +801,7 @@ def test_train_smoke_persists_milestone_checkpoint_at_its_step(
     )
     profile = replace(
         profile,
+        approval_status="approved",
         training={
             **profile.training,
             "num_env_workers": 1,

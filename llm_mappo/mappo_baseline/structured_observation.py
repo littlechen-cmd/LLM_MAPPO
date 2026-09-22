@@ -11,6 +11,8 @@ import numpy as np
 _DIRECTIONS = ("UP", "DOWN", "LEFT", "RIGHT")
 _TARGET_KINDS = ("idle", "task", "delivery", "charging")
 _ACTION_DIMENSION = 5
+DIRECT_GOAL_OBSERVATION_V1 = "direct-goal-observation-v1"
+DIRECT_GOAL_OBSERVATION_V2 = "direct-goal-observation-v2"
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,14 @@ class StructuredObservationSchema:
 
     n_neighbours: int = 3
     local_radius: int = 2
+    observation_schema: str = DIRECT_GOAL_OBSERVATION_V1
+
+    def __post_init__(self) -> None:
+        if self.observation_schema not in {
+            DIRECT_GOAL_OBSERVATION_V1,
+            DIRECT_GOAL_OBSERVATION_V2,
+        }:
+            raise ValueError("Unknown MAPPO Actor observation schema.")
 
     @property
     def self_feature_names(self) -> tuple[str, ...]:
@@ -27,6 +37,8 @@ class StructuredObservationSchema:
             "self_carrying",
             "self_battery",
             *(f"self_phase_{kind}" for kind in _TARGET_KINDS),
+            *(("self_priority_weight",)
+              if self.observation_schema == DIRECT_GOAL_OBSERVATION_V2 else ()),
             *(f"self_previous_action_{index}" for index in range(_ACTION_DIMENSION)),
             "self_previous_blocked",
         )
@@ -119,7 +131,7 @@ def build_structured_observations(
         )
         rows.append(
             np.asarray(
-                _self_features(environment, agent, phase)
+                _self_features(environment, agent, phase, schema)
                 + _goal_features(agent, geometry_target, phase, width, height)
                 + _local_map(environment, agent, schema, width, height)
                 + _peer_features(environment, agent, schema, width, height),
@@ -142,11 +154,15 @@ def _goal_geometry_target(environment, agent, target, goal_interface, planner):
     return waypoints[1] if len(waypoints) > 1 else target
 
 
-def _self_features(environment, agent, phase: str) -> list[float]:
+def _self_features(environment, agent, phase: str, schema) -> list[float]:
     return (
         _one_hot(agent.dir.name, _DIRECTIONS)
         + [float(agent.carrying_shelf is not None), float(agent.battery)]
         + _one_hot(phase, _TARGET_KINDS)
+        + (
+            [_priority_weight(environment, agent.id)]
+            if schema.observation_schema == DIRECT_GOAL_OBSERVATION_V2 else []
+        )
         + _action_one_hot(environment.previous_action(agent.id))
         + [float(environment.previous_blocked(agent.id))]
     )

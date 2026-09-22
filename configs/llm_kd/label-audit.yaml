@@ -1,0 +1,45 @@
+schema_version: phase3-label-audit-config-v1
+diagnostic_config_sha256: 872d0889146246bfd8c90f1e9eb1325b24b1a9bb83430f3913193546dceffcc1
+prompt_version: llm-label-prompt-v3
+temporal_view_schema: temporal-semantic-view-v1
+models:
+  - provider_id: deepseek-official
+    requested_model: deepseek-v4-flash
+    base_url: https://api.deepseek.com
+    endpoint_path: /chat/completions
+    api_key_environment_variable: DEEPSEEK_API_KEY
+    temperature: 0.0
+    seed: null
+    timeout_seconds: 60.0
+    retry_limit: 1
+    max_completion_tokens: 800
+    max_prompt_characters: 60000
+    response_format: json_object
+    extra_body:
+      thinking:
+        type: disabled
+  - provider_id: gpt-terra-third-party
+    requested_model: gpt-5.6-terra
+    base_url: https://api.justwoker.icu/v1
+    endpoint_path: /chat/completions
+    api_key_environment_variable: GPT_TERRA_API_KEY
+    temperature: 0.0
+    seed: null
+    timeout_seconds: 60.0
+    retry_limit: 1
+    max_completion_tokens: 800
+    max_prompt_characters: 60000
+    response_format: json_object
+    extra_body: {}
+audit_subset:
+  schema_version: phase3-shared-label-audit-subset-v1
+  sample_count: 8
+  repeat_sample_count: 4
+  repeat_selection: first_four_by_sample_id
+cache_policy: read_write_by_prompt_view_provider_and_namespace
+concurrency: 1
+logical_completion_max: 24
+http_attempt_max: 48
+output_token_max: 19200
+prompt_character_max: 1440000
+output_directory: artifacts/llm_kd/label_audit/l1
