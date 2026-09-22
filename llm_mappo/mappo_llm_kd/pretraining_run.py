@@ -96,7 +96,7 @@ def load_pretraining_run_config(path: str | Path) -> PretrainingRunConfig:
     return config
 
 
-def run_semantic_pretraining(
+def run_semantic_pretraining(  # noqa: C901
     config: PretrainingRunConfig,
     *,
     device: str | torch.device,
