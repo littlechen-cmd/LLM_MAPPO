@@ -249,6 +249,7 @@ class Phase2Warehouse:
     task_completion_target: Optional[int] = None
     terminate_on_task_target: bool = True
     replenishment_mode: str = "dynamic_ingress"
+    delivery_contract: str = "legacy-v1"
     include_priority_features: bool = False
     render_mode: Optional[str] = None
     observation_schema: ObservationSchema = field(
@@ -346,6 +347,8 @@ class Phase2Warehouse:
             "terminate_on_task_target": self.terminate_on_task_target,
             "battery_cost_scale": self.battery_cost_scale,
             "replenishment_mode": self.replenishment_mode,
+            "delivery_contract": self.delivery_contract,
+            "assignment_battery_threshold": self.charge_threshold,
         }
         if self.priority_schedule is not None:
             make_options["priority_schedule"] = tuple(self.priority_schedule)
@@ -629,10 +632,11 @@ class Phase2Warehouse:
                 masks[index] = False
                 masks[index, Action.NOOP.value] = True
             elif self.oracle_interaction_mask:
-                masks[index, Action.TOGGLE_LOAD.value] = self._requires_pickup(
+                requires_toggle = self._requires_pickup(
                     agent.id
-                )
-                if self._requires_pickup(agent.id):
+                ) or self._requires_dropoff(agent.id)
+                masks[index, Action.TOGGLE_LOAD.value] = requires_toggle
+                if requires_toggle:
                     masks[index] = False
                     masks[index, Action.TOGGLE_LOAD.value] = True
         return masks
@@ -815,6 +819,9 @@ class Phase2Warehouse:
         if station is not None:
             return station, "charging"
         if agent.carrying_shelf is not None:
+            task = warehouse.task_queue.task_for_agent(agent_id)
+            if task is None and self.delivery_contract == "balanced-random-v1":
+                return warehouse._shelf_home[agent.carrying_shelf.id], "delivery"
             station = self._nearest(
                 (agent.x, agent.y), warehouse.picking_stations
             )
@@ -898,6 +905,18 @@ class Phase2Warehouse:
             return False
         shelf = warehouse.shelfs[task.shelf_id - 1]
         return (agent.x, agent.y) == (shelf.x, shelf.y)
+
+    def _requires_dropoff(self, agent_id: int) -> bool:
+        warehouse = self.env
+        agent = warehouse.agents[agent_id - 1]
+        if (
+            self.delivery_contract != "balanced-random-v1"
+            or agent.dead
+            or agent.carrying_shelf is None
+            or warehouse.task_queue.task_for_agent(agent_id) is not None
+        ):
+            return False
+        return (agent.x, agent.y) == warehouse._shelf_home[agent.carrying_shelf.id]
 
     @staticmethod
     def _nearest(point, choices):

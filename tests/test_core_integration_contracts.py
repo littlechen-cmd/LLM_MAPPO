@@ -16,22 +16,22 @@ CONFIG_ROOT = ROOT / "configs" / "core_integration"
 CONTRACTS = {
     "medium-5ag-baseline.yaml": (
         "MAPPO-FP-DG",
-        "mappo-fp-direct-goal-209d-checkpoint-v1",
+        "mappo-fp-direct-goal-209d-delivery-checkpoint-v2",
         "artifacts/core_integration/baseline",
     ),
     "medium-5ag-llm-kd.yaml": (
         "MAPPO-FP-DG-LLM-INIT",
-        "mappo-fp-llm-init-209d-checkpoint-v1",
+        "mappo-fp-llm-init-209d-delivery-checkpoint-v2",
         "artifacts/core_integration/llm_kd",
     ),
     "medium-5ag-astar-kd-no-validity.yaml": (
         "MAPPO-FP-ASTARKD-NO-VALIDITY",
-        "mappo-fp-astar-kd-209d-checkpoint-v1",
+        "mappo-fp-astar-kd-209d-delivery-checkpoint-v2",
         "artifacts/core_integration/astar_kd",
     ),
     "medium-5ag-astar-llm-kd-no-validity.yaml": (
         "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT",
-        "mappo-fp-astar-kd-llm-init-209d-checkpoint-v1",
+        "mappo-fp-astar-kd-llm-init-209d-delivery-checkpoint-v2",
         "artifacts/core_integration/astar_llm_kd",
     ),
 }
@@ -47,8 +47,8 @@ def test_four_configs_freeze_exact_identity_and_shared_contract():
     for name, (method, checkpoint_schema, artifact_root) in CONTRACTS.items():
         experiment = experiments[name]
         assert experiment.method == method
-        assert runner.checkpoint_schema_for_method(method) == checkpoint_schema
         assert runner.checkpoint_schema_for_experiment(experiment) == checkpoint_schema
+        assert runner.checkpoint_schema_for_method(method) != checkpoint_schema
         assert experiment.artifact_root == artifact_root
         assert experiment.approval_status == "provisional"
         assert experiment.environment == baseline.environment
@@ -100,7 +100,7 @@ def test_invalid_checkpoint_is_rejected_before_mutating_runtime_state(tmp_path):
         experiment, device="cpu", output_root=tmp_path, evaluation_only=True
     )
     payload = {
-        "schema": runner.checkpoint_schema_for_method(experiment.method),
+        "schema": runner.checkpoint_schema_for_experiment(experiment),
         "identity": dict(run.identity),
         "trainer": deepcopy(run.trainer.state_dict()),
     }

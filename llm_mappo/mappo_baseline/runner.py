@@ -50,7 +50,12 @@ class BaselineExperiment:
     approval_status: str = "approved"
 
 
-CORE_INTEGRATION_SCHEMA = "core-mappo-209d-v1"
+LEGACY_CORE_INTEGRATION_SCHEMA = "core-mappo-209d-v1"
+CORE_INTEGRATION_SCHEMA = "core-mappo-209d-delivery-v2"
+CORE_INTEGRATION_SCHEMAS = frozenset({
+    LEGACY_CORE_INTEGRATION_SCHEMA,
+    CORE_INTEGRATION_SCHEMA,
+})
 CORE_CHECKPOINT_SCHEMAS = {
     "MAPPO-FP-DG": "mappo-fp-direct-goal-209d-checkpoint-v1",
     "MAPPO-FP-DG-LLM-INIT": "mappo-fp-llm-init-209d-checkpoint-v1",
@@ -60,6 +65,10 @@ CORE_CHECKPOINT_SCHEMAS = {
     "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT": (
         "mappo-fp-astar-kd-llm-init-209d-checkpoint-v1"
     ),
+}
+DELIVERY_CHECKPOINT_SCHEMAS = {
+    method: schema.replace("209d-checkpoint-v1", "209d-delivery-checkpoint-v2")
+    for method, schema in CORE_CHECKPOINT_SCHEMAS.items()
 }
 
 
@@ -76,6 +85,11 @@ def checkpoint_schema_for_experiment(experiment: BaselineExperiment) -> str:
     """Resolve one experiment's strict checkpoint namespace."""
 
     if experiment.schema == CORE_INTEGRATION_SCHEMA:
+        try:
+            return DELIVERY_CHECKPOINT_SCHEMAS[experiment.method]
+        except KeyError as error:
+            raise ValueError("Core-integration MAPPO method is incompatible.") from error
+    if experiment.schema == LEGACY_CORE_INTEGRATION_SCHEMA:
         return checkpoint_schema_for_method(experiment.method)
     if experiment.schema == "mappo-collection-209d-v1":
         return "mappo-fp-collection-209d-checkpoint-v1"
@@ -93,7 +107,7 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     required = {
         "schema", "method", "artifact_root", "environment", "training", "evaluation"
     }
-    if values.get("schema") == CORE_INTEGRATION_SCHEMA:
+    if values.get("schema") in CORE_INTEGRATION_SCHEMAS:
         required.add("approval_status")
     if set(values) != required:
         raise ValueError("MAPPO baseline configuration has unexpected top-level keys.")
@@ -107,7 +121,7 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
             raise ValueError("Collection baseline must use MAPPO-FP-DG.")
         if environment["observation_schema"] != DIRECT_GOAL_OBSERVATION_V2:
             raise ValueError("Collection baseline requires native 209D v2.")
-    if values["schema"] == CORE_INTEGRATION_SCHEMA:
+    if values["schema"] in CORE_INTEGRATION_SCHEMAS:
         checkpoint_schema_for_method(str(values["method"]))
         if environment["observation_schema"] != DIRECT_GOAL_OBSERVATION_V2:
             raise ValueError("Core integration requires native 209D v2.")
@@ -123,10 +137,19 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
             )
 
             load_representation_initialization(training["representation_initialization"])
+    if values["schema"] == CORE_INTEGRATION_SCHEMA:
+        if environment.get("delivery_contract") != "balanced-random-v1":
+            raise ValueError("Delivery-v2 requires balanced-random-v1.")
+        if environment["priority_schedule"] != ["A", "B", "C"]:
+            raise ValueError("Delivery-v2 requires the A/B/C priority schedule.")
+        if environment.get("training_replenishment_mode") != "rware_delivery":
+            raise ValueError("Delivery-v2 training requires rware_delivery.")
+        if values["evaluation"].get("replenishment_mode") != "rware_delivery":
+            raise ValueError("Delivery-v2 evaluation requires rware_delivery.")
     if values["schema"] not in {
         "phase1-mappo-baseline-v1", "phase2-mappo-baseline-v1",
         "phase2-mappo-astar-kd-v1",
-        "mappo-collection-209d-v1", CORE_INTEGRATION_SCHEMA,
+        "mappo-collection-209d-v1", *CORE_INTEGRATION_SCHEMAS,
     }:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
     if values["method"] not in {
@@ -157,7 +180,7 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     )
 
 
-def _validate_environment(environment: Mapping[str, Any]) -> None:
+def _validate_environment(environment: Mapping[str, Any]) -> None:  # noqa: C901
     required = {
         "profile_id", "environment_id", "n_agents", "max_steps",
         "dynamic_ingress_interval", "batch_size_range", "queue_size",
@@ -182,8 +205,11 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:
         raise ValueError("Phase 1 requires exactly one charging station per AGV.")
     if len(environment["picking_stations"]) != agents // 2:
         raise ValueError("Phase 1 picking-station count must equal floor(AGV / 2).")
-    if environment["priority_schedule"] != ["A", "B", "C", "D"]:
-        raise ValueError("Phase 1 priority schedule must be A/B/C/D.")
+    if environment.get("delivery_contract", "legacy-v1") == "legacy-v1":
+        if environment["priority_schedule"] != ["A", "B", "C", "D"]:
+            raise ValueError("Legacy priority schedule must be A/B/C/D.")
+    elif environment["delivery_contract"] != "balanced-random-v1":
+        raise ValueError("MAPPO baseline delivery contract is invalid.")
     if int(environment["dynamic_ingress_interval"]) < 2:
         raise ValueError("MAPPO baseline dynamic ingress interval is invalid.")
     if len(environment["batch_size_range"]) != 2:

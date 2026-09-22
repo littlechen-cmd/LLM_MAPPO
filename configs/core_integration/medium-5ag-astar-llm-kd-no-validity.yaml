@@ -1,4 +1,4 @@
-schema: core-mappo-209d-v1
+schema: core-mappo-209d-delivery-v2
 method: MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT
 approval_status: provisional
 artifact_root: artifacts/core_integration/astar_llm_kd
@@ -15,7 +15,8 @@ environment: &medium5_environment
   terminate_on_task_target: false
   training_replenishment_mode: rware_delivery
   initial_priority_label: A
-  priority_schedule: [A, B, C, D]
+  priority_schedule: [A, B, C]
+  delivery_contract: balanced-random-v1
   charging_stations: [[0, 0], [19, 0], [0, 23], [19, 23], [9, 0]]
   picking_stations: [[9, 21], [10, 21]]
   battery_cost_scale: 1.10
@@ -72,7 +73,7 @@ training:
       dataset_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       config_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
 evaluation:
-  replenishment_mode: dynamic_ingress
+  replenishment_mode: rware_delivery
   seeds: [9400, 9401]
   deterministic_policy: argmax
   replay_frame_stride: 1
