@@ -981,6 +981,14 @@ class DynamicWarehouse(Warehouse):
             if locked_before[agent.id]:
                 agent.picking_lock_steps -= 1
                 if agent.picking_lock_steps == 0 and agent.carrying_shelf:
+                    if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+                        self.last_events.append(
+                            {
+                                "type": "picking_service_complete",
+                                "agent_id": agent.id,
+                            }
+                        )
+                        continue
                     shelf = agent.carrying_shelf
                     shelf.x, shelf.y = self._shelf_home[shelf.id]
                     agent.carrying_shelf = None

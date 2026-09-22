@@ -128,7 +128,12 @@ def test_completed_delivery_returns_shelf_home_then_receives_replacement_task():
         assert environment._target_for_agent(1) == (home, "delivery")
         assert warehouse.task_queue.task_for_agent(1) is None
 
-        agent.picking_lock_steps = 0
+        for _ in range(3):
+            environment.step([Action.NOOP])
+        assert agent.picking_lock_steps == 0
+        assert agent.carrying_shelf is shelf
+        assert warehouse.task_queue.task_for_agent(1) is None
+
         agent.x, agent.y = home
         shelf.x, shelf.y = home
         warehouse._recalc_grid()
