@@ -45,16 +45,17 @@ def main() -> None:
     except ValueError as error:
         parser.error(str(error))
     baseline = resolve_diagnostic_baseline_experiment(experiment, seed=arguments.seed)
-    run = BaselineRun(
-        baseline,
-        device=arguments.device,
-        output_root=arguments.output_root,
-        run_directory_name=f"seed_{arguments.seed:04d}",
-        resume=arguments.resume,
-        diagnostic_authorized=True,
-        diagnostic_reward_definition=experiment.reward_definition,
-        diagnostic_reward_definition_sha256=experiment.reward_definition_sha256,
-    )
+    run_arguments = {
+        "device": arguments.device,
+        "output_root": arguments.output_root,
+        "resume": arguments.resume,
+        "diagnostic_authorized": True,
+        "diagnostic_reward_definition": experiment.reward_definition,
+        "diagnostic_reward_definition_sha256": experiment.reward_definition_sha256,
+    }
+    if arguments.resume is None:
+        run_arguments["run_directory_name"] = f"seed_{arguments.seed:04d}"
+    run = BaselineRun(baseline, **run_arguments)
     print(json.dumps(run.train(), indent=2, sort_keys=True))
 
 
