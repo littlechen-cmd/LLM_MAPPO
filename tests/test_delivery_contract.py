@@ -1,8 +1,10 @@
 """Deterministic tests for the balanced-random delivery contract."""
 
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from llm_mappo.warehouse_environment import Phase2Warehouse
@@ -291,3 +293,53 @@ def test_all_core_configs_share_versioned_balanced_delivery_contract():
         assert checkpoint_schema_for_experiment(experiment).endswith(
             "209d-delivery-checkpoint-v2"
         )
+
+
+def test_same_step_completions_are_processed_in_task_id_order():
+    """Catch priority-label order leaking into simultaneous completion order."""
+
+    environment = _environment(
+        n_agents=4,
+        batch_size_range=(4, 4),
+        request_queue_size=4,
+    )
+    try:
+        environment.reset(seed=11)
+        warehouse = environment.env
+        tasks = sorted(warehouse.task_queue.active_tasks, key=lambda task: task.task_id)
+        first, second = tasks[:2]
+        warehouse.task_queue._tasks[first.task_id] = replace(first, label="C99")
+        warehouse.task_queue._tasks[second.task_id] = replace(second, label="A99")
+        delivered = (warehouse.task_queue._tasks[first.task_id],
+                     warehouse.task_queue._tasks[second.task_id])
+
+        for agent, position in zip(warehouse.agents, warehouse.charging_stations):
+            agent.x, agent.y = position
+        for task, goal in zip(delivered, warehouse.goals):
+            shelf = warehouse.shelfs[task.shelf_id - 1]
+            agent = warehouse.agents[task.assigned_agent_id - 1]
+            agent.x, agent.y = goal
+            agent.carrying_shelf = shelf
+            shelf.x, shelf.y = goal
+            warehouse.request_queue.remove(shelf)
+        replacements = [
+            shelf
+            for shelf in warehouse.shelfs
+            if shelf not in warehouse.request_queue
+            and shelf.id not in {task.shelf_id for task in delivered}
+        ][:2]
+        warehouse.request_queue.extend(replacements)
+        warehouse._recalc_grid()
+
+        warehouse._complete_delivered_tasks(
+            tuple(warehouse.task_queue.active_tasks), np.zeros(4)
+        )
+
+        completed_ids = [
+            event["task_id"]
+            for event in warehouse.last_events
+            if event["type"] == "task_completed"
+        ]
+        assert completed_ids == sorted(completed_ids)
+    finally:
+        environment.close()

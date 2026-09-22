@@ -790,6 +790,8 @@ class DynamicWarehouse(Warehouse):
 
     def _complete_delivered_tasks(self, active_before, rewards):
         delivered = []
+        if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+            active_before = sorted(active_before, key=lambda task: task.task_id)
         for task in active_before:
             shelf = self.shelfs[task.shelf_id - 1]
             if (shelf.x, shelf.y) not in self.goals or shelf in self.request_queue:
