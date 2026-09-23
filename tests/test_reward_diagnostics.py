@@ -106,6 +106,42 @@ def _diagnostic_config():
     }
 
 
+def _candidate_config(candidate):
+    values = deepcopy(_diagnostic_config())
+    if candidate == "c1":
+        values["artifact_root"] = (
+            "artifacts/reward_diagnostics/group2/"
+            "reward-v3-c1-energy-death-local-mean"
+        )
+        values["environment"]["reward_progress_coefficient"] = 0.1
+        values["environment"]["reward_energy_death_aggregation"] = "local-mean"
+        values["reward_definition"].update(
+            {
+                "version": "reward-v3-c1-energy-death-local-mean",
+                "energy_death_penalty": 20.0,
+                "energy_death_aggregation": "local-mean",
+            }
+        )
+    elif candidate == "c2":
+        values["artifact_root"] = (
+            "artifacts/reward_diagnostics/group2/"
+            "reward-v3-c2-progress-0p2"
+        )
+        values["environment"]["reward_progress_coefficient"] = 0.2
+        values["environment"]["reward_energy_death_aggregation"] = "team-broadcast"
+        values["reward_definition"].update(
+            {
+                "version": "reward-v3-c2-progress-0p2",
+                "progress_reward": 0.2,
+                "energy_death_penalty": 20.0,
+                "energy_death_aggregation": "team-broadcast",
+            }
+        )
+    else:
+        raise ValueError(candidate)
+    return values
+
+
 def _write_config(tmp_path, values):
     path = tmp_path / "reward-diagnostic.yaml"
     path.write_text(yaml.safe_dump(values, sort_keys=False), encoding="utf-8")
@@ -134,6 +170,35 @@ def test_diagnostic_loader_accepts_only_the_frozen_reward_v2_contract(tmp_path):
     assert experiment.environment["max_steps"] == 800
     assert experiment.evaluation["seeds"] == list(range(9400, 9410))
     assert len(experiment.reward_definition_sha256) == 64
+
+
+@pytest.mark.parametrize("candidate", ("c1", "c2"))
+def test_diagnostic_loader_accepts_only_owner_approved_single_factor_candidates(
+    tmp_path, candidate
+):
+    from llm_mappo.reward_diagnostics import load_reward_diagnostic_experiment
+
+    reference = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _diagnostic_config())
+    )
+    approved = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _candidate_config(candidate))
+    )
+
+    assert approved.reward_definition["version"].startswith("reward-v3-")
+    assert approved.reward_definition_sha256 != reference.reward_definition_sha256
+    assert approved.artifact_root != reference.artifact_root
+
+
+def test_diagnostic_loader_rejects_mixed_candidate_factors(tmp_path):
+    from llm_mappo.reward_diagnostics import load_reward_diagnostic_experiment
+
+    values = _candidate_config("c1")
+    values["environment"]["reward_progress_coefficient"] = 0.2
+    values["reward_definition"]["progress_reward"] = 0.2
+
+    with pytest.raises(ValueError, match="single-factor"):
+        load_reward_diagnostic_experiment(_write_config(tmp_path, values))
 
 
 @pytest.mark.parametrize(
@@ -363,7 +428,10 @@ def test_diagnostic_run_uses_one_stable_nonreusable_directory_per_seed(tmp_path)
         )
 
 
-def test_diagnostic_checkpoint_resume_requires_the_reward_hash_identity(tmp_path):
+@pytest.mark.parametrize("candidate", (None, "c1", "c2"))
+def test_diagnostic_checkpoint_resume_requires_the_reward_hash_identity(
+    tmp_path, candidate
+):
     """Catch a resumed diagnostic losing its reward-definition checkpoint identity."""
     from llm_mappo.mappo_baseline.runner import BaselineRun
     from llm_mappo.reward_diagnostics import (
@@ -372,7 +440,10 @@ def test_diagnostic_checkpoint_resume_requires_the_reward_hash_identity(tmp_path
     )
 
     diagnostic = load_reward_diagnostic_experiment(
-        _write_config(tmp_path, _diagnostic_config())
+        _write_config(
+            tmp_path,
+            _diagnostic_config() if candidate is None else _candidate_config(candidate),
+        )
     )
     experiment = make_local_smoke_experiment(diagnostic)
     run = BaselineRun(
@@ -420,3 +491,46 @@ def test_diagnostic_checkpoint_resume_requires_the_reward_hash_identity(tmp_path
         np.testing.assert_array_equal(resumed.pool.action_masks, expected_masks)
     finally:
         resumed.close()
+
+
+def test_diagnostic_checkpoint_rejects_cross_candidate_resume(tmp_path):
+    from llm_mappo.mappo_baseline.runner import BaselineRun
+    from llm_mappo.reward_diagnostics import (
+        load_reward_diagnostic_experiment,
+        make_local_smoke_experiment,
+    )
+
+    reference = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _diagnostic_config())
+    )
+    reference_smoke = make_local_smoke_experiment(reference)
+    run = BaselineRun(
+        reference_smoke,
+        device="cpu",
+        output_root=tmp_path,
+        diagnostic_authorized=True,
+        diagnostic_reward_definition=reference.reward_definition,
+        diagnostic_reward_definition_sha256=reference.reward_definition_sha256,
+    )
+    try:
+        run._checkpoint(run.directory / "checkpoint_latest.pt")
+        directory = run.directory
+    finally:
+        run.close()
+
+    candidate = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _candidate_config("c1"))
+    )
+    candidate_smoke = make_local_smoke_experiment(candidate)
+    with pytest.raises(ValueError, match="identity"):
+        mismatched = BaselineRun(
+            candidate_smoke,
+            device="cpu",
+            resume=directory,
+            diagnostic_authorized=True,
+            diagnostic_reward_definition=candidate.reward_definition,
+            diagnostic_reward_definition_sha256=(
+                candidate.reward_definition_sha256
+            ),
+        )
+        mismatched.close()

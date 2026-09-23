@@ -75,11 +75,20 @@ def _markdown_report(report: dict) -> str:
                 f"- Final checkpoint SHA-256: `{run['checkpoint_sha256']}`",
                 "- Episodes / updates: "
                 f"`{run['episode_count']} / {run['update_count']}`",
-                f"- Total environment steps: `{run['total_environment_steps']}`",
+                "- Training environment steps: "
+                f"`{run['training_environment_steps']}`",
+                "- Logged completed-episode steps: "
+                f"`{run['logged_completed_episode_steps']}`",
                 f"- Completed tasks: `{run['completed_tasks']}`",
                 "- Trend window: "
                 f"`{run['trend']['window_size']}` "
                 f"(reduced: `{run['trend']['reduced_window']}`)",
+                "- Fixed evaluation completed tasks: "
+                f"`{run['fixed_evaluation']['total_completed_tasks']}`",
+                "- Fixed evaluation zero-completion episodes: "
+                f"`{run['fixed_evaluation']['zero_completion_episode_count']}`",
+                "- Fixed evaluation deadlocked episodes: "
+                f"`{run['fixed_evaluation']['deadlocked_episode_count']}`",
                 "",
                 "### Event rates",
                 "",

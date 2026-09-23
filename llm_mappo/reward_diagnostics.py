@@ -104,6 +104,42 @@ _REWARD_V2_REFERENCE = {
     "priority_weights": {"A": 2.0, "B": 1.5, "C": 1.0},
 }
 
+_REWARD_V3_C1_ENERGY_DEATH_LOCAL_MEAN = {
+    **_REWARD_V2_REFERENCE,
+    "version": "reward-v3-c1-energy-death-local-mean",
+    "energy_death_penalty": 20.0,
+    "energy_death_aggregation": "local-mean",
+}
+
+_REWARD_V3_C2_PROGRESS_0P2 = {
+    **_REWARD_V2_REFERENCE,
+    "version": "reward-v3-c2-progress-0p2",
+    "progress_reward": 0.2,
+    "energy_death_penalty": 20.0,
+    "energy_death_aggregation": "team-broadcast",
+}
+
+_APPROVED_REWARD_CONTRACTS = {
+    "reward-v2-reference": (
+        _REWARD_V2_REFERENCE,
+        {},
+    ),
+    "reward-v3-c1-energy-death-local-mean": (
+        _REWARD_V3_C1_ENERGY_DEATH_LOCAL_MEAN,
+        {
+            "reward_progress_coefficient": 0.1,
+            "reward_energy_death_aggregation": "local-mean",
+        },
+    ),
+    "reward-v3-c2-progress-0p2": (
+        _REWARD_V3_C2_PROGRESS_0P2,
+        {
+            "reward_progress_coefficient": 0.2,
+            "reward_energy_death_aggregation": "team-broadcast",
+        },
+    ),
+}
+
 
 @dataclass(frozen=True)
 class RewardDiagnosticExperiment:
@@ -143,7 +179,7 @@ class RewardDiagnosticExperiment:
 
 
 def load_reward_diagnostic_experiment(path: str | Path) -> RewardDiagnosticExperiment:
-    """Load only the pre-registered provisional reward-v2 reference contract."""
+    """Load a pre-registered provisional reference or single-factor candidate."""
 
     source = Path(path)
     raw = source.read_bytes()
@@ -171,13 +207,11 @@ def load_reward_diagnostic_experiment(path: str | Path) -> RewardDiagnosticExper
     if values["approval_status"] != "provisional":
         raise ValueError("Reward diagnostics must remain provisional.")
     _require_diagnostic_artifact_root(values["artifact_root"])
-    _require_exact_mapping(values["environment"], _EXPECTED_ENVIRONMENT, "environment")
+    reward_definition = _validate_approved_reward_contract(values)
     _validate_training(values["training"])
-    _require_exact_mapping(values["evaluation"], _EXPECTED_EVALUATION, "evaluation")
     _require_exact_mapping(
-        values["reward_definition"], _REWARD_V2_REFERENCE, "reward definition"
+        values["evaluation"], _EXPECTED_EVALUATION, "evaluation"
     )
-    reward_definition = dict(values["reward_definition"])
     reward_sha256 = _canonical_sha256(reward_definition)
     baseline = BaselineExperiment(
         schema=REWARD_DIAGNOSTIC_SCHEMA,
@@ -194,6 +228,34 @@ def load_reward_diagnostic_experiment(path: str | Path) -> RewardDiagnosticExper
         reward_definition=reward_definition,
         reward_definition_sha256=reward_sha256,
     )
+
+
+def _validate_approved_reward_contract(values: Mapping[str, Any]) -> dict[str, Any]:
+    reward_definition = values["reward_definition"]
+    if not isinstance(reward_definition, dict):
+        raise ValueError("Reward diagnostic reward definition must be a mapping.")
+    version = reward_definition.get("version")
+    contract = _APPROVED_REWARD_CONTRACTS.get(version)
+    if contract is None:
+        raise ValueError("Reward diagnostic candidate is not owner-approved.")
+    expected_reward, environment_overrides = contract
+    try:
+        _require_exact_mapping(
+            reward_definition, expected_reward, "reward definition"
+        )
+        _require_exact_mapping(
+            values["environment"],
+            {**_EXPECTED_ENVIRONMENT, **environment_overrides},
+            "environment",
+        )
+    except ValueError as error:
+        if version != "reward-v2-reference":
+            raise ValueError(
+                "Reward diagnostic candidate violates its approved "
+                "single-factor contract."
+            ) from error
+        raise
+    return dict(reward_definition)
 
 
 def validate_diagnostic_invocation(

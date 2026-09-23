@@ -88,6 +88,9 @@ def test_completed_run_analysis_reports_rates_ledger_and_reduced_windows(tmp_pat
     (run_directory / "state.json").write_text(
         json.dumps({"status": "complete"}), encoding="utf-8"
     )
+    (run_directory / "summary.json").write_text(
+        json.dumps({"global_environment_steps": 64}), encoding="utf-8"
+    )
     (run_directory / "checkpoint_final.pt").write_bytes(b"checkpoint")
     _write_csv(
         run_directory / "episodes.csv",
@@ -156,10 +159,74 @@ def test_completed_run_analysis_reports_rates_ledger_and_reduced_windows(tmp_pat
     )
     _write_csv(
         run_directory / "updates.csv",
-        [{"raw_advantage_max_abs": 3.0, "raw_return_max_abs": 4.0}],
+        [
+            {
+                "raw_advantage_count": 10,
+                "raw_advantage_mean": 1.0,
+                "raw_advantage_std": 2.0,
+                "raw_advantage_min": -3.0,
+                "raw_advantage_max": 4.0,
+                "raw_advantage_p05": -2.0,
+                "raw_advantage_p50": 1.0,
+                "raw_advantage_p95": 3.0,
+                "raw_advantage_max_abs": 4.0,
+                "raw_return_count": 10,
+                "raw_return_mean": 2.0,
+                "raw_return_std": 1.0,
+                "raw_return_min": -1.0,
+                "raw_return_max": 5.0,
+                "raw_return_p05": 0.0,
+                "raw_return_p50": 2.0,
+                "raw_return_p95": 4.0,
+                "raw_return_max_abs": 5.0,
+            },
+            {
+                "raw_advantage_count": 30,
+                "raw_advantage_mean": 3.0,
+                "raw_advantage_std": 4.0,
+                "raw_advantage_min": -5.0,
+                "raw_advantage_max": 8.0,
+                "raw_advantage_p05": -4.0,
+                "raw_advantage_p50": 3.0,
+                "raw_advantage_p95": 7.0,
+                "raw_advantage_max_abs": 8.0,
+                "raw_return_count": 30,
+                "raw_return_mean": 4.0,
+                "raw_return_std": 3.0,
+                "raw_return_min": -2.0,
+                "raw_return_max": 9.0,
+                "raw_return_p05": 1.0,
+                "raw_return_p50": 4.0,
+                "raw_return_p95": 8.0,
+                "raw_return_max_abs": 9.0,
+            },
+        ],
     )
     (evaluation_directory / "evaluation.json").write_text(
-        json.dumps({"episodes": [{"seed": 9400}, {"seed": 9401}]}),
+        json.dumps(
+            {
+                "episodes": [
+                    {
+                        "seed": 9400,
+                        "completed_tasks": 1,
+                        "deadlocked": False,
+                        "energy_deaths": 0,
+                        "collisions": 2,
+                        "blocked_forwards": 3,
+                        "task_noop_count": 4,
+                    },
+                    {
+                        "seed": 9401,
+                        "completed_tasks": 0,
+                        "deadlocked": True,
+                        "energy_deaths": 1,
+                        "collisions": 0,
+                        "blocked_forwards": 1,
+                        "task_noop_count": 6,
+                    },
+                ]
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -172,8 +239,29 @@ def test_completed_run_analysis_reports_rates_ledger_and_reduced_windows(tmp_pat
     assert result["events"]["completed_tasks"]["per_completed_task"] == 1.0
     assert result["ledger"]["reward_step_cost"]["total"] == -2.3
     assert result["ledger"]["reward_step_cost"]["per_completed_task"] == -2.3 / 3.0
+    assert result["training_environment_steps"] == 64
+    assert result["logged_completed_episode_steps"] == 30.0
+    assert "total_environment_steps" not in result
+    assert result["raw_distributions"]["raw_advantage"]["sample_count"] == 40
+    assert result["raw_distributions"]["raw_advantage"]["pooled_mean"] == 2.5
+    assert result["raw_distributions"]["raw_advantage"]["observed_min"] == -5.0
+    assert result["raw_distributions"]["raw_advantage"]["observed_max"] == 8.0
+    assert (
+        result["raw_distributions"]["raw_advantage"]
+        ["update_weighted_p95_estimate"]
+        == 6.0
+    )
     assert result["checkpoint_sha256"] is not None
     assert result["evaluation_seeds"] == [9400, 9401]
+    assert result["fixed_evaluation"]["episode_count"] == 2
+    assert result["fixed_evaluation"]["total_completed_tasks"] == 1.0
+    assert result["fixed_evaluation"]["zero_completion_episode_count"] == 1
+    assert result["fixed_evaluation"]["deadlocked_episode_count"] == 1
+    assert result["fixed_evaluation"]["totals"]["energy_deaths"] == 1.0
+    assert result["fixed_evaluation"]["action_phase_totals"]["task_noop_count"] == 10.0
+    assert [
+        episode["seed"] for episode in result["fixed_evaluation"]["episodes"]
+    ] == [9400, 9401]
 
     output_directory = Path(tmp_path) / "report"
     completed = subprocess.run(

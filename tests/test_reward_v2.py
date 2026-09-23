@@ -244,6 +244,54 @@ def test_reward_v2_accepts_configured_block_and_collision_penalties():
     assert breakdown.collision == pytest.approx(-0.5)
 
 
+def test_reward_v3_c1_normalizes_one_energy_death_by_agent_count():
+    """One local death remains -20 for 1 AGV and becomes -4 for 5 AGVs."""
+    results = []
+    for n_agents in (1, 5):
+        raw_rewards = np.full(n_agents, -20.0)
+        breakdown = reward_v2_team_reward_breakdown(
+            raw_rewards=raw_rewards,
+            events=[{"type": "agent_dead", "agent_id": 1}],
+            task_weights={},
+            pickup_weights={},
+            progress_deltas=np.zeros(n_agents),
+            low_battery_penalties=np.zeros(n_agents),
+            legacy_blocked_forward_penalty=0.05,
+            energy_death_aggregation="local-mean",
+        )
+        results.append(breakdown.energy)
+
+    assert results == pytest.approx([-20.0, -4.0])
+
+
+def test_reward_v3_c2_only_doubles_the_progress_component():
+    common = {
+        "raw_rewards": np.zeros(5),
+        "events": [],
+        "task_weights": {},
+        "pickup_weights": {},
+        "progress_deltas": np.asarray([1.0, 1.0, -1.0, 0.0, 0.0]),
+        "low_battery_penalties": np.zeros(5),
+        "legacy_blocked_forward_penalty": 0.05,
+    }
+
+    reference = reward_v2_team_reward_breakdown(**common, progress_reward=0.1)
+    candidate = reward_v2_team_reward_breakdown(**common, progress_reward=0.2)
+
+    assert candidate.progress == pytest.approx(reference.progress * 2.0)
+    for field in (
+        "completion",
+        "pickup",
+        "blocked_forward",
+        "collision",
+        "charging",
+        "deadlock",
+        "energy",
+        "step_cost",
+    ):
+        assert getattr(candidate, field) == pytest.approx(getattr(reference, field))
+
+
 def test_reward_v2_applies_terminal_deadlock_penalty_once():
     environment = Phase2Warehouse(
         n_agents=1,

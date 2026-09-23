@@ -19,6 +19,8 @@ PROGRESS_REWARD = 0.1
 BLOCKED_FORWARD_PENALTY = 0.1
 COLLISION_PENALTY = 0.1
 STEP_COST = 0.005
+ENERGY_DEATH_PENALTY = 20.0
+ENERGY_DEATH_AGGREGATIONS = frozenset({"team-broadcast", "local-mean"})
 LEGACY_COMPLETION_REWARD = 5.0
 LEGACY_COLLISION_PENALTY = 2.0
 
@@ -147,6 +149,8 @@ def reward_v2_team_reward(
     blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
     collision_penalty: float = COLLISION_PENALTY,
     deadlock_penalty: float = 0.0,
+    progress_reward: float = PROGRESS_REWARD,
+    energy_death_aggregation: str = "team-broadcast",
 ) -> float:
     """Replace legacy shaping while preserving collision and energy rewards."""
     return reward_v2_team_reward_breakdown(
@@ -162,6 +166,8 @@ def reward_v2_team_reward(
         blocked_forward_penalty=blocked_forward_penalty,
         collision_penalty=collision_penalty,
         deadlock_penalty=deadlock_penalty,
+        progress_reward=progress_reward,
+        energy_death_aggregation=energy_death_aggregation,
     ).team_reward
 
 
@@ -179,6 +185,8 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
     blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
     collision_penalty: float = COLLISION_PENALTY,
     deadlock_penalty: float = 0.0,
+    progress_reward: float = PROGRESS_REWARD,
+    energy_death_aggregation: str = "team-broadcast",
 ) -> RewardV2Breakdown:
     """Compute Reward-v2 and retain each term in shared-reward units.
 
@@ -210,14 +218,18 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
         blocked_forward_penalty < 0.0
         or collision_penalty < 0.0
         or deadlock_penalty < 0.0
+        or progress_reward < 0.0
     ):
         raise ValueError("Reward-v2 event penalties must not be negative.")
+    if energy_death_aggregation not in ENERGY_DEATH_AGGREGATIONS:
+        raise ValueError("Reward-v2 energy-death aggregation is invalid.")
 
     agent_count = local.size
     completion = 0.0
     raw_completion = 0.0
     blocked_events = 0
     collision_events = 0
+    energy_death_events = 0
     for event in events:
         event_type = event.get("type")
         if event_type == "task_completed":
@@ -239,15 +251,17 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
             blocked_events += 1
         elif event_type == "collision":
             collision_events += 1
+        elif event_type == "agent_dead":
+            energy_death_events += 1
 
     for agent_id in pickup_weights:
         local[int(agent_id) - 1] += PICKUP_REWARD
-    local += PROGRESS_REWARD * progress
+    local += progress_reward * progress
     local += charging
     local += energy
 
     pickup = PICKUP_REWARD * len(pickup_weights) / agent_count
-    progress_component = PROGRESS_REWARD * float(np.mean(progress))
+    progress_component = progress_reward * float(np.mean(progress))
     blocked = -blocked_forward_penalty * blocked_events / agent_count
     collision = -collision_penalty * collision_events / agent_count
     charging_component = float(np.mean(charging))
@@ -258,6 +272,13 @@ def reward_v2_team_reward_breakdown(  # noqa: C901
         + legacy_blocked_forward_penalty * blocked_events
         + LEGACY_COLLISION_PENALTY * collision_events
     ) / agent_count
+    if energy_death_aggregation == "local-mean":
+        raw_energy += (
+            ENERGY_DEATH_PENALTY
+            * energy_death_events
+            * (agent_count - 1)
+            / agent_count
+        )
     energy_component = raw_energy + float(np.mean(energy))
     breakdown = RewardV2Breakdown(
         completion=completion,

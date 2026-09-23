@@ -17,6 +17,7 @@ from llm_mappo.reward_v2 import (
     BLOCKED_FORWARD_PENALTY,
     COLLISION_PENALTY,
     LEGACY_REWARD_V1,
+    PROGRESS_REWARD,
     REWARD_V2,
     SUPPORTED_REWARD_VERSIONS,
     RewardGoalSnapshot,
@@ -240,6 +241,8 @@ class Phase2Warehouse:
     reward_collision_penalty: float = COLLISION_PENALTY
     charge_event_reward: float = 0.0
     reward_deadlock_penalty: float = 0.0
+    reward_progress_coefficient: float = PROGRESS_REWARD
+    reward_energy_death_aggregation: str = "team-broadcast"
     include_waypoint_features: bool = True
     oracle_interaction_mask: bool = True
     priority_schedule: Optional[Sequence[str]] = None
@@ -305,8 +308,14 @@ class Phase2Warehouse:
             or self.reward_collision_penalty < 0.0
             or self.charge_event_reward < 0.0
             or self.reward_deadlock_penalty < 0.0
+            or self.reward_progress_coefficient < 0.0
         ):
             raise ValueError("Reward-v2 event magnitudes must not be negative.")
+        if self.reward_energy_death_aggregation not in {
+            "team-broadcast",
+            "local-mean",
+        }:
+            raise ValueError("Reward-v2 energy-death aggregation is invalid.")
         if self.battery_cost_scale <= 0.0:
             raise ValueError("battery_cost_scale must be positive.")
         if not self.charge_threshold < self.charge_release_threshold <= 1.0:
@@ -484,6 +493,8 @@ class Phase2Warehouse:
                 blocked_forward_penalty=self.reward_blocked_forward_penalty,
                 collision_penalty=self.reward_collision_penalty,
                 deadlock_penalty=self.reward_deadlock_penalty,
+                progress_reward=self.reward_progress_coefficient,
+                energy_death_aggregation=self.reward_energy_death_aggregation,
             )
             team_reward = reward_breakdown.team_reward
             reward_components = reward_breakdown.as_dict()

@@ -32,6 +32,17 @@ LEDGER_FIELDS = (
     "reward_energy",
     "reward_step_cost",
 )
+EVALUATION_TOTAL_FIELDS = (
+    "completed_tasks",
+    "energy_deaths",
+    "collisions",
+    "blocked_forwards",
+)
+ACTION_PHASE_FIELDS = tuple(
+    f"{phase}_{action}_count"
+    for phase in ("idle", "task", "delivery", "charging")
+    for action in ("noop", "forward", "left", "right", "toggle_load")
+)
 
 
 def analyze_completed_run(run_directory: str | Path) -> dict[str, Any]:
@@ -42,6 +53,7 @@ def analyze_completed_run(run_directory: str | Path) -> dict[str, Any]:
     if state.get("status") != "complete":
         raise ValueError(f"Diagnostic run is not complete: {directory}")
     manifest = _read_json(directory / "run_manifest.json")
+    summary = _read_json(directory / "summary.json")
     identity = manifest.get("identity")
     if not isinstance(identity, dict):
         raise ValueError(f"Diagnostic run has no identity: {directory}")
@@ -59,7 +71,10 @@ def analyze_completed_run(run_directory: str | Path) -> dict[str, Any]:
             _integer(row, "episode_index"),
         ),
     )
-    total_steps = sum(_number(row, "steps") for row in ordered_episodes)
+    logged_episode_steps = sum(
+        _number(row, "steps") for row in ordered_episodes
+    )
+    training_environment_steps = int(summary["global_environment_steps"])
     completed_tasks = sum(
         _number(row, "completed_tasks") for row in ordered_episodes
     )
@@ -68,17 +83,19 @@ def analyze_completed_run(run_directory: str | Path) -> dict[str, Any]:
         "identity": identity,
         "evaluation_seeds": list(manifest.get("evaluation", {}).get("seeds", [])),
         "evaluation_episode_seeds": _evaluation_episode_seeds(evaluation),
+        "fixed_evaluation": _fixed_evaluation_summary(evaluation),
         "checkpoint_path": str(checkpoint),
         "checkpoint_sha256": _file_sha256(checkpoint),
         "episode_count": len(ordered_episodes),
         "update_count": len(updates),
-        "total_environment_steps": total_steps,
+        "training_environment_steps": training_environment_steps,
+        "logged_completed_episode_steps": logged_episode_steps,
         "completed_tasks": completed_tasks,
         "events": _rate_summary(
-            ordered_episodes, EVENT_FIELDS, total_steps, completed_tasks
+            ordered_episodes, EVENT_FIELDS, logged_episode_steps, completed_tasks
         ),
         "ledger": _rate_summary(
-            ordered_episodes, LEDGER_FIELDS, total_steps, completed_tasks
+            ordered_episodes, LEDGER_FIELDS, logged_episode_steps, completed_tasks
         ),
         "trend": _episode_trend(ordered_episodes),
         "raw_distributions": _raw_distribution_summary(updates),
@@ -162,16 +179,47 @@ def _window_summary(rows: list[Mapping[str, str]]) -> dict[str, float | None]:
     }
 
 
-def _raw_distribution_summary(rows: list[Mapping[str, str]]) -> dict[str, float | None]:
-    summary: dict[str, float | None] = {}
+def _raw_distribution_summary(rows: list[Mapping[str, str]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
     for prefix in ("raw_advantage", "raw_return"):
-        for suffix in (
-            "count", "mean", "std", "min", "max", "p05", "p50", "p95", "max_abs"
-        ):
-            field = f"{prefix}_{suffix}"
-            values = [_optional_number(row, field) for row in rows]
-            values = [value for value in values if value is not None]
-            summary[field] = _mean(values) if values else None
+        groups = []
+        for row in rows:
+            count = _optional_number(row, f"{prefix}_count")
+            mean = _optional_number(row, f"{prefix}_mean")
+            std = _optional_number(row, f"{prefix}_std")
+            if count is None or mean is None or std is None or count <= 0.0:
+                continue
+            groups.append((row, count, mean, std))
+        if not groups:
+            summary[prefix] = None
+            continue
+        count = sum(group[1] for group in groups)
+        pooled_mean = sum(group[1] * group[2] for group in groups) / count
+        pooled_variance = sum(
+            group_count
+            * (group_std ** 2 + (group_mean - pooled_mean) ** 2)
+            for _, group_count, group_mean, group_std in groups
+        ) / count
+        distribution = {
+            "sample_count": int(count),
+            "pooled_mean": pooled_mean,
+            "pooled_std": pooled_variance ** 0.5,
+            "observed_min": min(
+                _number(row, f"{prefix}_min") for row, *_ in groups
+            ),
+            "observed_max": max(
+                _number(row, f"{prefix}_max") for row, *_ in groups
+            ),
+            "observed_max_abs": max(
+                _number(row, f"{prefix}_max_abs") for row, *_ in groups
+            ),
+        }
+        for quantile in ("p05", "p50", "p95"):
+            distribution[f"update_weighted_{quantile}_estimate"] = sum(
+                group_count * _number(row, f"{prefix}_{quantile}")
+                for row, group_count, _, _ in groups
+            ) / count
+        summary[prefix] = distribution
     return summary
 
 
@@ -197,6 +245,40 @@ def _evaluation_episode_seeds(evaluation: Mapping[str, Any]) -> list[int]:
         for episode in episodes
         if isinstance(episode, dict) and "seed" in episode
     )
+
+
+def _fixed_evaluation_summary(evaluation: Mapping[str, Any]) -> dict[str, Any]:
+    episodes = evaluation.get("episodes", [])
+    if not isinstance(episodes, list):
+        episodes = []
+    ordered = sorted(
+        (dict(episode) for episode in episodes if isinstance(episode, dict)),
+        key=lambda episode: int(episode.get("seed", -1)),
+    )
+    totals = {
+        field: sum(float(episode.get(field, 0.0)) for episode in ordered)
+        for field in EVALUATION_TOTAL_FIELDS
+    }
+    return {
+        "episode_count": len(ordered),
+        "total_completed_tasks": totals["completed_tasks"],
+        "mean_completed_tasks": _divide_or_null(
+            totals["completed_tasks"], float(len(ordered))
+        ),
+        "zero_completion_episode_count": sum(
+            float(episode.get("completed_tasks", 0.0)) == 0.0
+            for episode in ordered
+        ),
+        "deadlocked_episode_count": sum(
+            bool(episode.get("deadlocked", False)) for episode in ordered
+        ),
+        "totals": totals,
+        "action_phase_totals": {
+            field: sum(float(episode.get(field, 0.0)) for episode in ordered)
+            for field in ACTION_PHASE_FIELDS
+        },
+        "episodes": ordered,
+    }
 
 
 def _read_json(path: Path) -> dict[str, Any]:
