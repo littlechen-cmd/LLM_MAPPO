@@ -174,6 +174,24 @@ def _candidate_config(candidate):
     return values
 
 
+def _worker_count_candidate_config(reward):
+    if reward == "reward-v2":
+        values = deepcopy(_diagnostic_config())
+        values["artifact_root"] = (
+            "artifacts/reward_diagnostics/group2/reward-v2-workers6"
+        )
+    elif reward == "c1":
+        values = _candidate_config("c1")
+        values["artifact_root"] = (
+            "artifacts/reward_diagnostics/group2/"
+            "reward-v3-c1-energy-death-local-mean-workers6"
+        )
+    else:
+        raise ValueError(reward)
+    values["training"]["num_env_workers"] = 6
+    return values
+
+
 def _write_config(tmp_path, values):
     path = tmp_path / "reward-diagnostic.yaml"
     path.write_text(yaml.safe_dump(values, sort_keys=False), encoding="utf-8")
@@ -220,6 +238,46 @@ def test_diagnostic_loader_accepts_only_owner_approved_single_factor_candidates(
     assert approved.reward_definition["version"].startswith("reward-v3-")
     assert approved.reward_definition_sha256 != reference.reward_definition_sha256
     assert approved.artifact_root != reference.artifact_root
+
+
+@pytest.mark.parametrize("reward", ("reward-v2", "c1"))
+def test_loader_accepts_only_the_approved_workers6_training_probe(tmp_path, reward):
+    """Catch worker-count probes changing reward or any second training field."""
+    from llm_mappo.reward_diagnostics import load_reward_diagnostic_experiment
+
+    source_values = (
+        _diagnostic_config() if reward == "reward-v2" else _candidate_config("c1")
+    )
+    source = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, source_values)
+    )
+    probe = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _worker_count_candidate_config(reward))
+    )
+
+    differing_training_fields = {
+        key for key in source.training if source.training[key] != probe.training[key]
+    }
+    assert differing_training_fields == {"num_env_workers"}
+    assert probe.training["num_env_workers"] == 6
+    assert probe.reward_definition == source.reward_definition
+    assert probe.reward_definition_sha256 == source.reward_definition_sha256
+    assert probe.baseline.config_sha256 != source.baseline.config_sha256
+    assert probe.artifact_root != source.artifact_root
+
+
+def test_workers6_probe_rejects_an_unapproved_reward_artifact_pair(tmp_path):
+    """Catch the six-worker exception becoming a general contract bypass."""
+    from llm_mappo.reward_diagnostics import load_reward_diagnostic_experiment
+
+    values = _worker_count_candidate_config("reward-v2")
+    values["artifact_root"] = (
+        "artifacts/reward_diagnostics/group2/"
+        "reward-v3-c1-energy-death-local-mean-workers6"
+    )
+
+    with pytest.raises(ValueError, match="training probe"):
+        load_reward_diagnostic_experiment(_write_config(tmp_path, values))
 
 
 def test_diagnostic_loader_rejects_mixed_candidate_factors(tmp_path):

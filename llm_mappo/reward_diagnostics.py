@@ -172,6 +172,20 @@ _APPROVED_REWARD_CONTRACTS = {
     ),
 }
 
+_APPROVED_TRAINING_PROBES = {
+    "artifacts/reward_diagnostics/group2/reward-v2-workers6": (
+        "reward-v2-reference",
+        {"num_env_workers": 6},
+    ),
+    (
+        "artifacts/reward_diagnostics/group2/"
+        "reward-v3-c1-energy-death-local-mean-workers6"
+    ): (
+        "reward-v3-c1-energy-death-local-mean",
+        {"num_env_workers": 6},
+    ),
+}
+
 
 @dataclass(frozen=True)
 class RewardDiagnosticExperiment:
@@ -240,7 +254,11 @@ def load_reward_diagnostic_experiment(path: str | Path) -> RewardDiagnosticExper
         raise ValueError("Reward diagnostics must remain provisional.")
     _require_diagnostic_artifact_root(values["artifact_root"])
     reward_definition = _validate_approved_reward_contract(values)
-    _validate_training(values["training"])
+    _validate_training(
+        values["training"],
+        artifact_root=values["artifact_root"],
+        reward_version=reward_definition["version"],
+    )
     _require_exact_mapping(
         values["evaluation"], _EXPECTED_EVALUATION, "evaluation"
     )
@@ -363,10 +381,21 @@ def make_local_smoke_experiment(
     )
 
 
-def _validate_training(values: Any) -> None:
+def _validate_training(
+    values: Any, *, artifact_root: Any, reward_version: Any
+) -> None:
     if not isinstance(values, dict):
         raise ValueError("Reward diagnostic training must be a mapping.")
-    expected = {"seed": 7, **_EXPECTED_TRAINING}
+    probe = _APPROVED_TRAINING_PROBES.get(str(artifact_root))
+    training_overrides = {}
+    if probe is not None:
+        expected_reward_version, training_overrides = probe
+        if reward_version != expected_reward_version:
+            raise ValueError(
+                "Reward diagnostic training probe has an unapproved "
+                "reward/artifact pairing."
+            )
+    expected = {"seed": 7, **_EXPECTED_TRAINING, **training_overrides}
     _require_exact_mapping(values, expected, "training")
 
 
