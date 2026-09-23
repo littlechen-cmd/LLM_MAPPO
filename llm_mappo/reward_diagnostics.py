@@ -119,6 +119,22 @@ _REWARD_V3_C2_PROGRESS_0P2 = {
     "energy_death_aggregation": "team-broadcast",
 }
 
+_REWARD_V3_C3_COLLISION_1P0 = {
+    **_REWARD_V2_REFERENCE,
+    "version": "reward-v3-c3-collision-1p0",
+    "collision_penalty": 1.0,
+    "energy_death_penalty": 20.0,
+    "energy_death_aggregation": "team-broadcast",
+}
+
+_REWARD_V3_C4_BLOCKED_FORWARD_0P5 = {
+    **_REWARD_V2_REFERENCE,
+    "version": "reward-v3-c4-blocked-forward-0p5",
+    "blocked_forward_penalty": 0.5,
+    "energy_death_penalty": 20.0,
+    "energy_death_aggregation": "team-broadcast",
+}
+
 _APPROVED_REWARD_CONTRACTS = {
     "reward-v2-reference": (
         _REWARD_V2_REFERENCE,
@@ -136,6 +152,22 @@ _APPROVED_REWARD_CONTRACTS = {
         {
             "reward_progress_coefficient": 0.2,
             "reward_energy_death_aggregation": "team-broadcast",
+        },
+    ),
+    "reward-v3-c3-collision-1p0": (
+        _REWARD_V3_C3_COLLISION_1P0,
+        {
+            "reward_progress_coefficient": 0.1,
+            "reward_energy_death_aggregation": "team-broadcast",
+            "reward_collision_penalty": 1.0,
+        },
+    ),
+    "reward-v3-c4-blocked-forward-0p5": (
+        _REWARD_V3_C4_BLOCKED_FORWARD_0P5,
+        {
+            "reward_progress_coefficient": 0.1,
+            "reward_energy_death_aggregation": "team-broadcast",
+            "reward_blocked_forward_penalty": 0.5,
         },
     ),
 }

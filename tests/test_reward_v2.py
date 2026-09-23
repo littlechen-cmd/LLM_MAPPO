@@ -292,6 +292,38 @@ def test_reward_v3_c2_only_doubles_the_progress_component():
         assert getattr(candidate, field) == pytest.approx(getattr(reference, field))
 
 
+def test_reward_v3_c3_only_increases_collision_penalty_to_one():
+    breakdown = reward_v2_team_reward_breakdown(
+        raw_rewards=np.asarray([-2.0, 0.0, 0.0, 0.0, 0.0]),
+        events=[{"type": "collision", "agent_id": 1}],
+        task_weights={},
+        pickup_weights={},
+        progress_deltas=np.zeros(5),
+        low_battery_penalties=np.zeros(5),
+        legacy_blocked_forward_penalty=0.05,
+        collision_penalty=1.0,
+    )
+
+    assert breakdown.collision == pytest.approx(-0.2)
+    assert breakdown.energy == pytest.approx(0.0)
+
+
+def test_reward_v3_c4_only_increases_blocked_penalty_to_point_five():
+    breakdown = reward_v2_team_reward_breakdown(
+        raw_rewards=np.asarray([-0.05, 0.0, 0.0, 0.0, 0.0]),
+        events=[{"type": "blocked_forward", "agent_id": 1}],
+        task_weights={},
+        pickup_weights={},
+        progress_deltas=np.zeros(5),
+        low_battery_penalties=np.zeros(5),
+        legacy_blocked_forward_penalty=0.05,
+        blocked_forward_penalty=0.5,
+    )
+
+    assert breakdown.blocked_forward == pytest.approx(-0.1)
+    assert breakdown.energy == pytest.approx(0.0)
+
+
 def test_reward_v2_applies_terminal_deadlock_penalty_once():
     environment = Phase2Warehouse(
         n_agents=1,

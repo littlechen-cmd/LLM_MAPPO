@@ -137,6 +137,38 @@ def _candidate_config(candidate):
                 "energy_death_aggregation": "team-broadcast",
             }
         )
+    elif candidate == "c3":
+        values["artifact_root"] = (
+            "artifacts/reward_diagnostics/group2/"
+            "reward-v3-c3-collision-1p0"
+        )
+        values["environment"]["reward_progress_coefficient"] = 0.1
+        values["environment"]["reward_energy_death_aggregation"] = "team-broadcast"
+        values["environment"]["reward_collision_penalty"] = 1.0
+        values["reward_definition"].update(
+            {
+                "version": "reward-v3-c3-collision-1p0",
+                "collision_penalty": 1.0,
+                "energy_death_penalty": 20.0,
+                "energy_death_aggregation": "team-broadcast",
+            }
+        )
+    elif candidate == "c4":
+        values["artifact_root"] = (
+            "artifacts/reward_diagnostics/group2/"
+            "reward-v3-c4-blocked-forward-0p5"
+        )
+        values["environment"]["reward_progress_coefficient"] = 0.1
+        values["environment"]["reward_energy_death_aggregation"] = "team-broadcast"
+        values["environment"]["reward_blocked_forward_penalty"] = 0.5
+        values["reward_definition"].update(
+            {
+                "version": "reward-v3-c4-blocked-forward-0p5",
+                "blocked_forward_penalty": 0.5,
+                "energy_death_penalty": 20.0,
+                "energy_death_aggregation": "team-broadcast",
+            }
+        )
     else:
         raise ValueError(candidate)
     return values
@@ -172,7 +204,7 @@ def test_diagnostic_loader_accepts_only_the_frozen_reward_v2_contract(tmp_path):
     assert len(experiment.reward_definition_sha256) == 64
 
 
-@pytest.mark.parametrize("candidate", ("c1", "c2"))
+@pytest.mark.parametrize("candidate", ("c1", "c2", "c3", "c4"))
 def test_diagnostic_loader_accepts_only_owner_approved_single_factor_candidates(
     tmp_path, candidate
 ):
@@ -428,7 +460,7 @@ def test_diagnostic_run_uses_one_stable_nonreusable_directory_per_seed(tmp_path)
         )
 
 
-@pytest.mark.parametrize("candidate", (None, "c1", "c2"))
+@pytest.mark.parametrize("candidate", (None, "c1", "c2", "c3", "c4"))
 def test_diagnostic_checkpoint_resume_requires_the_reward_hash_identity(
     tmp_path, candidate
 ):
