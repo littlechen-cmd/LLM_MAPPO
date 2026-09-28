@@ -19,6 +19,10 @@ import torch
 import yaml
 
 from llm_mappo.mappo_baseline.fp_state import FPStateSchema
+from llm_mappo.formal_training import (
+    DIAGNOSTIC_SEEDS, DURABILITY_SEEDS, EVALUATION_SEEDS, METHODS,
+    SCENES, SCHEMA, TRAIN_SEEDS, validate_provisional_environment,
+)
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.structured_observation import (
     DIRECT_GOAL_OBSERVATION_V1,
@@ -98,6 +102,8 @@ def _run_directory_name(
 def checkpoint_schema_for_experiment(experiment: BaselineExperiment) -> str:
     """Resolve one experiment's strict checkpoint namespace."""
 
+    if experiment.schema == SCHEMA:
+        return f"{experiment.method.lower()}-{experiment.environment['scene_id']}-v1"
     if experiment.schema == REWARD_DIAGNOSTIC_SCHEMA:
         return "mappo-fp-209d-delivery-reward-diagnostic-checkpoint-v1"
     if experiment.schema == CORE_INTEGRATION_SCHEMA:
@@ -127,15 +133,44 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     required = {
         "schema", "method", "artifact_root", "environment", "training", "evaluation"
     }
-    if values.get("schema") in CORE_INTEGRATION_SCHEMAS:
+    if values.get("schema") in CORE_INTEGRATION_SCHEMAS | {SCHEMA}:
         required.add("approval_status")
     if set(values) != required:
         raise ValueError("MAPPO baseline configuration has unexpected top-level keys.")
-    environment = dict(values["environment"])
+    provisional = values["schema"] == SCHEMA
+    environment = (
+        validate_provisional_environment(values["environment"])
+        if provisional else dict(values["environment"])
+    )
     training = dict(values["training"])
-    _validate_environment(environment)
-    _validate_training(training)
-    _validate_evaluation(dict(values["evaluation"]))
+    evaluation = dict(values["evaluation"])
+    if provisional:
+        if (tuple(evaluation.get("seed_bases", ())) != tuple(range(200, 210))
+                or evaluation.get("episodes_per_base") != 20
+                or "seeds" in evaluation):
+            raise ValueError("Three-scene evaluation seed derivation differs.")
+        evaluation["seeds"] = list(EVALUATION_SEEDS)
+    _validate_environment(environment, provisional=provisional)
+    _validate_training(training, provisional=provisional)
+    _validate_evaluation(evaluation, provisional=provisional)
+    if provisional:
+        if values["approval_status"] != "provisional":
+            raise ValueError("Three-scene configuration is not approved for training.")
+        if values["method"] not in METHODS:
+            raise ValueError("Three-scene MAPPO method is incompatible.")
+        if int(training["seed"]) not in TRAIN_SEEDS:
+            raise ValueError("Three-scene training seed is not registered.")
+        if tuple(training.get("paired_training_seeds", ())) != TRAIN_SEEDS:
+            raise ValueError("Three-scene paired training seed list differs.")
+        if ("representation_initialization" in training) != str(
+            values["method"]
+        ).endswith("LLM-INIT"):
+            raise ValueError("LLM method and initialization must agree.")
+        if "representation_initialization" in training:
+            if training["representation_initialization"] is not None:
+                raise ValueError(
+                    "Provisional LLM representation must remain pending approval."
+                )
     if values["schema"] == "mappo-collection-209d-v1":
         if values["method"] != "MAPPO-FP-DG":
             raise ValueError("Collection baseline must use MAPPO-FP-DG.")
@@ -169,7 +204,7 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     if values["schema"] not in {
         "phase1-mappo-baseline-v1", "phase2-mappo-baseline-v1",
         "phase2-mappo-astar-kd-v1",
-        "mappo-collection-209d-v1", *CORE_INTEGRATION_SCHEMAS,
+        "mappo-collection-209d-v1", *CORE_INTEGRATION_SCHEMAS, SCHEMA,
     }:
         raise ValueError("MAPPO baseline schema or method is incompatible.")
     if values["method"] not in {
@@ -194,13 +229,15 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
         artifact_root=str(values["artifact_root"]),
         environment=environment,
         training=training,
-        evaluation=dict(values["evaluation"]),
+        evaluation=evaluation,
         config_sha256=sha256(raw).hexdigest(),
         approval_status=str(values.get("approval_status", "approved")),
     )
 
 
-def _validate_environment(environment: Mapping[str, Any]) -> None:  # noqa: C901
+def _validate_environment(
+    environment: Mapping[str, Any], *, provisional: bool = False
+) -> None:  # noqa: C901
     required = {
         "profile_id", "environment_id", "n_agents", "max_steps",
         "dynamic_ingress_interval", "batch_size_range", "queue_size",
@@ -221,9 +258,11 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:  # noqa: C901
     if environment["goal_interface"] not in {"direct_goal", "waypoint"}:
         raise ValueError("MAPPO baseline goal_interface is incompatible.")
     agents = int(environment["n_agents"])
-    if agents < 1 or len(environment["charging_stations"]) != agents:
+    if agents < 1 or (
+        not provisional and len(environment["charging_stations"]) != agents
+    ):
         raise ValueError("Phase 1 requires exactly one charging station per AGV.")
-    if len(environment["picking_stations"]) != agents // 2:
+    if not provisional and len(environment["picking_stations"]) != agents // 2:
         raise ValueError("Phase 1 picking-station count must equal floor(AGV / 2).")
     if environment.get("delivery_contract", "legacy-v1") == "legacy-v1":
         if environment["priority_schedule"] != ["A", "B", "C", "D"]:
@@ -240,7 +279,9 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:  # noqa: C901
         raise ValueError("MAPPO baseline training replenishment mode is invalid.")
 
 
-def _validate_training(training: Mapping[str, Any]) -> None:
+def _validate_training(
+    training: Mapping[str, Any], *, provisional: bool = False
+) -> None:
     required = {
         "seed", "environment_steps", "num_env_workers", "learner_torch_threads",
         "worker_numerical_threads", "rollout_length", "ppo_epochs",
@@ -252,7 +293,7 @@ def _validate_training(training: Mapping[str, Any]) -> None:
     missing = sorted(required - set(training))
     if missing:
         raise ValueError(f"MAPPO baseline training is missing: {', '.join(missing)}.")
-    if int(training["num_env_workers"]) != 6:
+    if int(training["num_env_workers"]) != (16 if provisional else 6):
         raise ValueError("Phase 1 local baseline requires six environment workers.")
     if int(training["learner_torch_threads"]) != 4:
         raise ValueError("Phase 1 local baseline requires four learner threads.")
@@ -260,6 +301,12 @@ def _validate_training(training: Mapping[str, Any]) -> None:
         raise ValueError("Phase 1 local baseline requires one worker numerical thread.")
     if int(training["hidden_dimension"]) != 64:
         raise ValueError("Phase 1 MAPPO GRU hidden dimension must be 64.")
+    if provisional and training["environment_steps"] is None:
+        if training.get("optimization_schedule_steps") is not None:
+            raise ValueError("Provisional schedule cannot precede budget approval.")
+        if training.get("milestone_checkpoint_steps", []) != []:
+            raise ValueError("Provisional milestones cannot precede approval.")
+        return
     if int(training["environment_steps"]) < 1:
         raise ValueError("MAPPO baseline environment-step budget is invalid.")
     budget = int(training["environment_steps"])
@@ -295,7 +342,21 @@ def _validate_milestone_checkpoints(milestones: Any, budget: int) -> None:
         raise ValueError("MAPPO milestone checkpoint step is outside the budget.")
 
 
-def _validate_evaluation(evaluation: Mapping[str, Any]) -> None:
+def _validate_evaluation(
+    evaluation: Mapping[str, Any], *, provisional: bool = False
+) -> None:
+    if provisional:
+        if evaluation.get("replenishment_mode") != "rware_delivery":
+            raise ValueError("Three-scene evaluation requires rware_delivery.")
+        if tuple(evaluation.get("seeds", ())) != EVALUATION_SEEDS:
+            raise ValueError("Three-scene evaluation instance list differs.")
+        if tuple(evaluation.get("durability_seeds", ())) != DURABILITY_SEEDS:
+            raise ValueError("Three-scene durability seed list differs.")
+        if evaluation.get("deterministic_policy") != "argmax":
+            raise ValueError("Three-scene evaluation must be deterministic.")
+        if evaluation.get("environment_overrides", {}) != {}:
+            raise ValueError("Three-scene training and evaluation load must match.")
+        return
     if list(evaluation.get("seeds", ())) != [9400, 9401]:
         raise ValueError("Phase 1 evaluation seeds must be 9400 and 9401.")
     if evaluation.get("deterministic_policy") != "argmax":
@@ -431,7 +492,18 @@ class BaselineRun:
         diagnostic_schema = experiment.schema == REWARD_DIAGNOSTIC_SCHEMA
         if diagnostic_schema and not diagnostic_authorized:
             raise ValueError("Reward diagnostic runs require diagnostic authorization.")
-        if not diagnostic_schema and diagnostic_authorized:
+        provisional_diagnostic = (
+            experiment.schema == SCHEMA and diagnostic_authorized
+            and experiment.method == "MAPPO-FP-DG"
+            and experiment.training["seed"] == 7
+            and experiment.training["environment_steps"] is not None
+            and 1 <= int(experiment.training["environment_steps"]) <= 50_000
+            and tuple(experiment.evaluation["seeds"]) == DIAGNOSTIC_SEEDS
+            and experiment.artifact_root.startswith(
+                "artifacts/formal_environment_training/diagnostics/"
+            )
+        )
+        if not diagnostic_schema and diagnostic_authorized and not provisional_diagnostic:
             raise ValueError("Diagnostic authorization requires a diagnostic schema.")
         if diagnostic_schema and (
             not isinstance(diagnostic_reward_definition, Mapping)
@@ -440,7 +512,7 @@ class BaselineRun:
         ):
             raise ValueError("Reward diagnostic identity is incomplete.")
         if not evaluation_only and experiment.approval_status == "provisional" and not (
-            diagnostic_schema and diagnostic_authorized
+            (diagnostic_schema and diagnostic_authorized) or provisional_diagnostic
         ):
             raise ValueError("provisional configuration cannot start real training.")
         if evaluation_only and resume is not None:
@@ -466,7 +538,8 @@ class BaselineRun:
         torch.set_num_threads(int(experiment.training["learner_torch_threads"]))
         self.schema = FPStateSchema(
             int(experiment.environment["n_agents"]),
-            n_shelves=144,
+            n_shelves=SCENES[experiment.environment["scene_id"]]["n_shelves"]
+            if experiment.schema == SCHEMA else 144,
             n_chargers=len(experiment.environment["charging_stations"]),
             n_picking_stations=len(experiment.environment["picking_stations"]),
         )
@@ -500,6 +573,15 @@ class BaselineRun:
             "reward_version": experiment.environment["reward_version"],
             "profile_id": experiment.environment["profile_id"],
         }
+        if experiment.schema == SCHEMA:
+            self.identity.update({
+                "scene_id": experiment.environment["scene_id"],
+                "environment_id": experiment.environment["environment_id"],
+                "layout_sha256": experiment.environment.get("layout_sha256"),
+                "n_agents": int(experiment.environment["n_agents"]),
+                "charging_stations": experiment.environment["charging_stations"],
+                "picking_stations": experiment.environment["picking_stations"],
+            })
         if diagnostic_schema:
             self.identity["reward_definition_sha256"] = (
                 diagnostic_reward_definition_sha256
@@ -625,6 +707,7 @@ class BaselineRun:
         if not evaluation_only:
             worker_values = {
                 **experiment.environment,
+                "experiment_schema": experiment.schema,
                 "worker_numerical_threads": experiment.training[
                     "worker_numerical_threads"
                 ],
@@ -938,7 +1021,8 @@ class BaselineRun:
         replay_root.mkdir(parents=True, exist_ok=True)
         fixed_seed = int(self.experiment.evaluation["seeds"][0])
         fixed_path = replay_root / f"fixed_seed_{fixed_seed}.gif"
-        self._evaluation_episode(fixed_seed, replay_path=fixed_path)
+        if self.experiment.evaluation.get("render_replay", True):
+            self._evaluation_episode(fixed_seed, replay_path=fixed_path)
         result = {
             "schema": "mappo-fp-dg-evaluation-v1",
             "policy": "deterministic_argmax",
@@ -949,12 +1033,16 @@ class BaselineRun:
                 row["completed_tasks"] for row in results
             ])),
             "episode_diagnostics": _episode_window(results),
-            "fixed_replay": str(fixed_path.relative_to(self.directory)),
+            "fixed_replay": (
+                str(fixed_path.relative_to(self.directory))
+                if self.experiment.evaluation.get("render_replay", True) else None
+            ),
             "metrics_plot": "evaluation/evaluation_metrics.png",
         }
         output = self.directory / "evaluation"
         output.mkdir(exist_ok=True)
-        _write_evaluation_plot(output / "evaluation_metrics.png", results)
+        if self.experiment.schema != SCHEMA:
+            _write_evaluation_plot(output / "evaluation_metrics.png", results)
         _write_json(output / "evaluation.json", result)
         return result
 
@@ -1019,6 +1107,11 @@ class BaselineRun:
             "reward_version",
             "reward_definition_sha256",
         )
+        if self.experiment.schema == SCHEMA:
+            compatibility_fields += (
+                "scene_id", "environment_id", "layout_sha256", "n_agents",
+                "charging_stations", "picking_stations",
+            )
         mismatched = [
             field for field in compatibility_fields
             if source_identity.get(field) != self.identity.get(field)
@@ -1115,7 +1208,7 @@ class BaselineRun:
         if not isinstance(overrides, Mapping):
             raise ValueError("Evaluation environment_overrides must be a mapping.")
         values = {**self.experiment.environment, **overrides}
-        _validate_environment(values)
+        _validate_environment(values, provisional=self.experiment.schema == SCHEMA)
         return values
 
     def _checkpoint(self, path: Path) -> None:

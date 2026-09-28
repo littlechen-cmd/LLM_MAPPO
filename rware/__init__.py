@@ -4,6 +4,56 @@ from gymnasium import register
 
 from rware.warehouse import RewardType, ObservationType
 
+from llm_mappo.formal_layout import load_formal_layout
+
+
+_formal_layout, _formal_picking, _formal_charging = load_formal_layout()
+
+register(
+    id="llm-mappo-tiny-3ag-v1",
+    entry_point="llm_mappo.environment:DynamicWarehouse",
+    kwargs={
+        "column_height": 8,
+        "shelf_rows": 1,
+        "shelf_columns": 3,
+        "n_agents": 3,
+        "msg_bits": 0,
+        "sensor_range": 4,
+        "request_queue_size": 3,
+        "max_inactivity_steps": None,
+        "max_steps": 800,
+        "reward_type": RewardType.INDIVIDUAL,
+        "batch_interval": 40,
+        "batch_size_range": (3, 3),
+        "picking_lock_steps": 3,
+        "charging_stations": ((0, 0), (9, 0), (9, 10)),
+        "picking_stations": ((4, 10), (5, 10)),
+    },
+)
+
+register(
+    id="llm-mappo-formal-8ag-v1",
+    entry_point="llm_mappo.environment:DynamicWarehouse",
+    kwargs={
+        "layout": _formal_layout,
+        "column_height": 8,
+        "shelf_rows": 1,
+        "shelf_columns": 3,
+        "n_agents": 8,
+        "msg_bits": 0,
+        "sensor_range": 4,
+        "request_queue_size": 8,
+        "max_inactivity_steps": None,
+        "max_steps": 1200,
+        "reward_type": RewardType.INDIVIDUAL,
+        "batch_interval": 150,
+        "batch_size_range": (8, 8),
+        "picking_lock_steps": 3,
+        "charging_stations": _formal_charging,
+        "picking_stations": _formal_picking,
+    },
+)
+
 
 register(
     id="llm-mappo-medium-3ag-v1",

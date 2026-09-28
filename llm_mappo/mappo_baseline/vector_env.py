@@ -16,6 +16,7 @@ from llm_mappo.mappo_baseline.fp_state import (
     build_active_masks,
     build_fp_state,
 )
+from llm_mappo.formal_training import SCENES, SCHEMA
 from llm_mappo.mappo_baseline.structured_observation import (
     DIRECT_GOAL_OBSERVATION_V1,
     DIRECT_GOAL_OBSERVATION_V2,
@@ -166,7 +167,8 @@ def _worker(  # noqa: C901
             use_semantic_validity = variant == "full"
         schema = FPStateSchema(
             int(values["n_agents"]),
-            n_shelves=144,
+            n_shelves=SCENES[values["scene_id"]]["n_shelves"]
+            if values.get("experiment_schema") == SCHEMA else 144,
             n_chargers=len(environment.env.charging_stations),
             n_picking_stations=len(environment.env.picking_stations),
         )
