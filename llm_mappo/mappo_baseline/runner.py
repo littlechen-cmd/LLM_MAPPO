@@ -31,6 +31,11 @@ from llm_mappo.mappo_baseline.vector_env import (
     MAPPOVectorEnvironment,
     new_baseline_environment,
 )
+from llm_mappo.medium5_contract import (
+    CORE_MEDIUM5_C1_SCHEMA,
+    reward_definition_sha256,
+    validate_medium5_c1,
+)
 from llm_mappo.warehouse_environment import (
     EPISODE_ACTION_NAMES,
     EPISODE_DIAGNOSTIC_FIELDS,
@@ -48,6 +53,7 @@ class BaselineExperiment:
     evaluation: Mapping[str, Any]
     config_sha256: str
     approval_status: str = "approved"
+    reward_definition_sha256: str | None = None
 
 
 LEGACY_CORE_INTEGRATION_SCHEMA = "core-mappo-209d-v1"
@@ -56,6 +62,7 @@ REWARD_DIAGNOSTIC_SCHEMA = "reward-diagnostic-mappo-209d-delivery-v1"
 CORE_INTEGRATION_SCHEMAS = frozenset({
     LEGACY_CORE_INTEGRATION_SCHEMA,
     CORE_INTEGRATION_SCHEMA,
+    CORE_MEDIUM5_C1_SCHEMA,
 })
 CORE_CHECKPOINT_SCHEMAS = {
     "MAPPO-FP-DG": "mappo-fp-direct-goal-209d-checkpoint-v1",
@@ -69,6 +76,10 @@ CORE_CHECKPOINT_SCHEMAS = {
 }
 DELIVERY_CHECKPOINT_SCHEMAS = {
     method: schema.replace("209d-checkpoint-v1", "209d-delivery-checkpoint-v2")
+    for method, schema in CORE_CHECKPOINT_SCHEMAS.items()
+}
+MEDIUM5_C1_CHECKPOINT_SCHEMAS = {
+    method: schema.replace("209d-checkpoint-v1", "209d-delivery-c1-checkpoint-v3")
     for method, schema in CORE_CHECKPOINT_SCHEMAS.items()
 }
 
@@ -95,11 +106,18 @@ def _run_directory_name(
     return name.name
 
 
-def checkpoint_schema_for_experiment(experiment: BaselineExperiment) -> str:
+def checkpoint_schema_for_experiment(  # noqa: C901
+    experiment: BaselineExperiment,
+) -> str:
     """Resolve one experiment's strict checkpoint namespace."""
 
     if experiment.schema == REWARD_DIAGNOSTIC_SCHEMA:
         return "mappo-fp-209d-delivery-reward-diagnostic-checkpoint-v1"
+    if experiment.schema == CORE_MEDIUM5_C1_SCHEMA:
+        try:
+            return MEDIUM5_C1_CHECKPOINT_SCHEMAS[experiment.method]
+        except KeyError as error:
+            raise ValueError("Medium-5AG C1 method is incompatible.") from error
     if experiment.schema == CORE_INTEGRATION_SCHEMA:
         try:
             return DELIVERY_CHECKPOINT_SCHEMAS[experiment.method]
@@ -129,13 +147,20 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     }
     if values.get("schema") in CORE_INTEGRATION_SCHEMAS:
         required.add("approval_status")
+    if values.get("schema") == CORE_MEDIUM5_C1_SCHEMA:
+        required.add("reward_definition")
     if set(values) != required:
         raise ValueError("MAPPO baseline configuration has unexpected top-level keys.")
     environment = dict(values["environment"])
     training = dict(values["training"])
+    if (
+        values["schema"] != CORE_MEDIUM5_C1_SCHEMA
+        and environment.get("completion_metric_contract") == "task-target-v1"
+    ):
+        raise ValueError("New completion metric contract requires the C1 schema.")
     _validate_environment(environment)
-    _validate_training(training)
-    _validate_evaluation(dict(values["evaluation"]))
+    _validate_training(training, schema=values["schema"])
+    _validate_evaluation(dict(values["evaluation"]), schema=values["schema"])
     if values["schema"] == "mappo-collection-209d-v1":
         if values["method"] != "MAPPO-FP-DG":
             raise ValueError("Collection baseline must use MAPPO-FP-DG.")
@@ -156,8 +181,23 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
                 load_representation_initialization,
             )
 
-            load_representation_initialization(training["representation_initialization"])
-    if values["schema"] == CORE_INTEGRATION_SCHEMA:
+            initialization = load_representation_initialization(
+                training["representation_initialization"]
+            )
+            if (
+                values["schema"] == CORE_MEDIUM5_C1_SCHEMA
+                and values["approval_status"] == "approved"
+            ):
+                hashes = (
+                    initialization.artifact_sha256,
+                    initialization.identity["dataset_sha256"],
+                    initialization.identity["config_sha256"],
+                )
+                if "0" * 64 in hashes:
+                    raise ValueError(
+                        "Approved C1 LLM initialization cannot use placeholder hashes."
+                    )
+    if values["schema"] in {CORE_INTEGRATION_SCHEMA, CORE_MEDIUM5_C1_SCHEMA}:
         if environment.get("delivery_contract") != "balanced-random-v1":
             raise ValueError("Delivery-v2 requires balanced-random-v1.")
         if environment["priority_schedule"] != ["A", "B", "C"]:
@@ -166,6 +206,8 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
             raise ValueError("Delivery-v2 training requires rware_delivery.")
         if values["evaluation"].get("replenishment_mode") != "rware_delivery":
             raise ValueError("Delivery-v2 evaluation requires rware_delivery.")
+    if values["schema"] == CORE_MEDIUM5_C1_SCHEMA:
+        validate_medium5_c1(values)
     if values["schema"] not in {
         "phase1-mappo-baseline-v1", "phase2-mappo-baseline-v1",
         "phase2-mappo-astar-kd-v1",
@@ -197,6 +239,10 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
         evaluation=dict(values["evaluation"]),
         config_sha256=sha256(raw).hexdigest(),
         approval_status=str(values.get("approval_status", "approved")),
+        reward_definition_sha256=(
+            reward_definition_sha256()
+            if values["schema"] == CORE_MEDIUM5_C1_SCHEMA else None
+        ),
     )
 
 
@@ -240,7 +286,9 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:  # noqa: C901
         raise ValueError("MAPPO baseline training replenishment mode is invalid.")
 
 
-def _validate_training(training: Mapping[str, Any]) -> None:
+def _validate_training(
+    training: Mapping[str, Any], *, schema: str | None = None
+) -> None:
     required = {
         "seed", "environment_steps", "num_env_workers", "learner_torch_threads",
         "worker_numerical_threads", "rollout_length", "ppo_epochs",
@@ -252,8 +300,9 @@ def _validate_training(training: Mapping[str, Any]) -> None:
     missing = sorted(required - set(training))
     if missing:
         raise ValueError(f"MAPPO baseline training is missing: {', '.join(missing)}.")
-    if int(training["num_env_workers"]) != 6:
-        raise ValueError("Phase 1 local baseline requires six environment workers.")
+    expected_workers = 16 if schema == CORE_MEDIUM5_C1_SCHEMA else 6
+    if int(training["num_env_workers"]) != expected_workers:
+        raise ValueError("MAPPO environment worker count differs from its contract.")
     if int(training["learner_torch_threads"]) != 4:
         raise ValueError("Phase 1 local baseline requires four learner threads.")
     if int(training["worker_numerical_threads"]) != 1:
@@ -295,9 +344,15 @@ def _validate_milestone_checkpoints(milestones: Any, budget: int) -> None:
         raise ValueError("MAPPO milestone checkpoint step is outside the budget.")
 
 
-def _validate_evaluation(evaluation: Mapping[str, Any]) -> None:
-    if list(evaluation.get("seeds", ())) != [9400, 9401]:
-        raise ValueError("Phase 1 evaluation seeds must be 9400 and 9401.")
+def _validate_evaluation(
+    evaluation: Mapping[str, Any], *, schema: str | None = None
+) -> None:
+    expected_seeds = (
+        list(range(9400, 9410))
+        if schema == CORE_MEDIUM5_C1_SCHEMA else [9400, 9401]
+    )
+    if list(evaluation.get("seeds", ())) != expected_seeds:
+        raise ValueError("MAPPO evaluation seeds differ from their contract.")
     if evaluation.get("deterministic_policy") != "argmax":
         raise ValueError("Phase 1 evaluation must use deterministic argmax.")
     if int(evaluation.get("replay_frame_duration_ms", 0)) < 500:
@@ -503,6 +558,10 @@ class BaselineRun:
         if diagnostic_schema:
             self.identity["reward_definition_sha256"] = (
                 diagnostic_reward_definition_sha256
+            )
+        elif experiment.schema == CORE_MEDIUM5_C1_SCHEMA:
+            self.identity["reward_definition_sha256"] = (
+                experiment.reward_definition_sha256
             )
         if experiment.schema == "mappo-collection-209d-v1":
             environment_contract = dict(experiment.environment)
@@ -940,7 +999,11 @@ class BaselineRun:
         fixed_path = replay_root / f"fixed_seed_{fixed_seed}.gif"
         self._evaluation_episode(fixed_seed, replay_path=fixed_path)
         result = {
-            "schema": "mappo-fp-dg-evaluation-v1",
+            "schema": (
+                "mappo-fp-dg-evaluation-c1-v2"
+                if self.experiment.schema == CORE_MEDIUM5_C1_SCHEMA
+                else "mappo-fp-dg-evaluation-v1"
+            ),
             "policy": "deterministic_argmax",
             "checkpoint": checkpoint_reference,
             "episodes": results,

@@ -24,8 +24,8 @@ def test_baseline_contract_is_teacher_free_and_cpu_executable():
         "direct-goal-observation-v2"
     )
     assert experiment.environment["reward_version"] == "reward-v2"
-    assert experiment.training["environment_steps"] == 450_000
-    assert experiment.training["num_env_workers"] == 6
+    assert experiment.training["environment_steps"] == 600_000
+    assert experiment.training["num_env_workers"] == 16
     assert experiment.training["rollout_length"] == 64
     assert experiment.training["ppo_epochs"] == 5
     assert experiment.training["num_minibatches"] == 1

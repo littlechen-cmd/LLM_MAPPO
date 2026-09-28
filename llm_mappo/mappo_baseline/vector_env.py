@@ -74,6 +74,9 @@ def new_baseline_environment(
             or values.get("training_replenishment_mode", "dynamic_ingress")
         ),
         delivery_contract=str(values.get("delivery_contract", "legacy-v1")),
+        completion_metric_contract=str(
+            values.get("completion_metric_contract", "legacy-v1")
+        ),
         charging_stations=tuple(tuple(item) for item in values["charging_stations"]),
         picking_stations=tuple(tuple(item) for item in values["picking_stations"]),
         observation_schema=ObservationSchema.DIRECT_GOAL_V1,

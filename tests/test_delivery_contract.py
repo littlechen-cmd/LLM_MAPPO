@@ -281,8 +281,11 @@ def test_all_core_configs_share_versioned_balanced_delivery_contract():
     assert len(configs) == 4
     for config in configs:
         experiment = load_baseline_experiment(config)
-        assert experiment.schema == "core-mappo-209d-delivery-v2"
-        assert experiment.approval_status == "provisional"
+        assert experiment.schema == "core-mappo-209d-delivery-c1-v3"
+        expected_status = (
+            "provisional" if experiment.method.endswith("LLM-INIT") else "approved"
+        )
+        assert experiment.approval_status == expected_status
         assert experiment.environment["priority_schedule"] == ["A", "B", "C"]
         assert experiment.environment["delivery_contract"] == BALANCED_RANDOM
         assert (
@@ -291,7 +294,7 @@ def test_all_core_configs_share_versioned_balanced_delivery_contract():
         )
         assert experiment.evaluation["replenishment_mode"] == "rware_delivery"
         assert checkpoint_schema_for_experiment(experiment).endswith(
-            "209d-delivery-checkpoint-v2"
+            "209d-delivery-c1-checkpoint-v3"
         )
 
 

@@ -257,6 +257,7 @@ class Phase2Warehouse:
     terminate_on_task_target: bool = True
     replenishment_mode: str = "dynamic_ingress"
     delivery_contract: str = "legacy-v1"
+    completion_metric_contract: str = "legacy-v1"
     include_priority_features: bool = False
     render_mode: Optional[str] = None
     observation_schema: ObservationSchema = field(
@@ -340,6 +341,8 @@ class Phase2Warehouse:
             raise ValueError("terminate_on_task_target must be a boolean.")
         if self.replenishment_mode not in {"dynamic_ingress", "rware_delivery"}:
             raise ValueError("replenishment_mode is not supported.")
+        if self.completion_metric_contract not in {"legacy-v1", "task-target-v1"}:
+            raise ValueError("completion_metric_contract is not supported.")
         if (
             self.observation_schema != ObservationSchema.LEGACY_WAYPOINT_V1
             and self.include_priority_features
@@ -1200,7 +1203,10 @@ class Phase2Warehouse:
         self._metrics.created_tasks = len(info["tasks"])
         self._metrics.task_completion_target = (
             int(info["task_completion_target"])
-            if self._dynamic_ingress_enabled()
+            if (
+                self._dynamic_ingress_enabled()
+                or self.completion_metric_contract == "task-target-v1"
+            )
             else 0
         )
         self._metrics.collisions = int(info["collisions"])

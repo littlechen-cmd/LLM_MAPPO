@@ -331,8 +331,8 @@ def test_core_training_profiles_disable_task_target_termination_only_in_training
         ] is True
 
 
-def test_core_training_horizon_is_shorter_than_its_evaluation_horizon():
-    """Catch a 500-step training cutoff leaking into independent evaluation."""
+def test_core_training_and_evaluation_horizons_are_both_800():
+    """Catch the C1 training horizon drifting from the frozen evaluation."""
 
     root = Path("configs/core_integration")
     names = (
@@ -346,7 +346,7 @@ def test_core_training_horizon_is_shorter_than_its_evaluation_horizon():
             **profile.environment,
             **profile.evaluation["environment_overrides"],
         }
-        assert profile.environment["max_steps"] == 500
+        assert profile.environment["max_steps"] == 800
         assert evaluation_values["max_steps"] == 800
 
 
@@ -619,9 +619,9 @@ def test_post_schedule_astar_lambda_is_validated():
             "post_schedule_astar_lambda": bad,
         }
         with pytest.raises(ValueError, match="lambda"):
-            _validate_training(training)
+            _validate_training(training, schema=profile.schema)
     training = {**profile.training, "post_schedule_astar_lambda": 0.0}
-    _validate_training(training)
+    _validate_training(training, schema=profile.schema)
 
 
 def test_astar_kd_training_profile_disables_the_kd_tail():
@@ -730,12 +730,12 @@ def test_milestone_checkpoint_steps_are_validated_against_the_budget():
     )
     training = {**profile.training, "milestone_checkpoint_steps": [0]}
     with pytest.raises(ValueError, match="milestone"):
-        _validate_training(training)
-    training = {**profile.training, "milestone_checkpoint_steps": [450_001]}
+        _validate_training(training, schema=profile.schema)
+    training = {**profile.training, "milestone_checkpoint_steps": [600_001]}
     with pytest.raises(ValueError, match="milestone"):
-        _validate_training(training)
-    training = {**profile.training, "milestone_checkpoint_steps": [300_000]}
-    _validate_training(training)
+        _validate_training(training, schema=profile.schema)
+    training = {**profile.training, "milestone_checkpoint_steps": [300_000, 600_000]}
+    _validate_training(training, schema=profile.schema)
 
 
 def test_milestone_checkpoint_is_written_once_when_crossed(tmp_path, monkeypatch):
@@ -913,19 +913,19 @@ def test_astar_training_profile_uses_target_18_only_for_training():
     assert profile.environment["task_target"] == 18
     assert profile.evaluation["environment_overrides"]["task_target"] == 25
     assert profile.training["seed"] == 7
-    assert profile.evaluation["seeds"] == [9400, 9401]
+    assert profile.evaluation["seeds"] == list(range(9400, 9410))
 
 
-def test_all_core_profiles_describe_the_formal_450k_training_budget():
-    """Keep the formal budget separate from the proven optimization schedule."""
+def test_all_core_profiles_share_the_c1_600k_training_budget():
+    """Catch one method using a different optimization or budget horizon."""
     root = Path("configs/core_integration")
 
     for path in root.glob("*.yaml"):
         profile = load_baseline_experiment(path)
-        assert profile.training["environment_steps"] == 450_000, path.name
-        assert profile.training.get("optimization_schedule_steps") == 300_000, (
+        assert profile.training["environment_steps"] == 600_000, path.name
+        assert profile.training.get("optimization_schedule_steps") == 600_000, (
             path.name
         )
-        assert profile.training.get("post_schedule_learning_rate") == 1e-5, (
+        assert profile.training.get("post_schedule_learning_rate") == 0.0, (
             path.name
         )

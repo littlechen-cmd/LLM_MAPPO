@@ -16,23 +16,23 @@ CONFIG_ROOT = ROOT / "configs" / "core_integration"
 CONTRACTS = {
     "medium-5ag-baseline.yaml": (
         "MAPPO-FP-DG",
-        "mappo-fp-direct-goal-209d-delivery-checkpoint-v2",
-        "artifacts/core_integration/baseline",
+        "mappo-fp-direct-goal-209d-delivery-c1-checkpoint-v3",
+        "artifacts/core_integration/medium5_c1_v3/baseline",
     ),
     "medium-5ag-llm-kd.yaml": (
         "MAPPO-FP-DG-LLM-INIT",
-        "mappo-fp-llm-init-209d-delivery-checkpoint-v2",
-        "artifacts/core_integration/llm_kd",
+        "mappo-fp-llm-init-209d-delivery-c1-checkpoint-v3",
+        "artifacts/core_integration/medium5_c1_v3/llm_kd",
     ),
     "medium-5ag-astar-kd-no-validity.yaml": (
         "MAPPO-FP-ASTARKD-NO-VALIDITY",
-        "mappo-fp-astar-kd-209d-delivery-checkpoint-v2",
-        "artifacts/core_integration/astar_kd",
+        "mappo-fp-astar-kd-209d-delivery-c1-checkpoint-v3",
+        "artifacts/core_integration/medium5_c1_v3/astar_kd",
     ),
     "medium-5ag-astar-llm-kd-no-validity.yaml": (
         "MAPPO-FP-ASTARKD-NO-VALIDITY-LLM-INIT",
-        "mappo-fp-astar-kd-llm-init-209d-delivery-checkpoint-v2",
-        "artifacts/core_integration/astar_llm_kd",
+        "mappo-fp-astar-kd-llm-init-209d-delivery-c1-checkpoint-v3",
+        "artifacts/core_integration/medium5_c1_v3/astar_llm_kd",
     ),
 }
 
@@ -50,7 +50,8 @@ def test_four_configs_freeze_exact_identity_and_shared_contract():
         assert runner.checkpoint_schema_for_experiment(experiment) == checkpoint_schema
         assert runner.checkpoint_schema_for_method(method) != checkpoint_schema
         assert experiment.artifact_root == artifact_root
-        assert experiment.approval_status == "provisional"
+        expected_status = "provisional" if method.endswith("LLM-INIT") else "approved"
+        assert experiment.approval_status == expected_status
         assert experiment.environment == baseline.environment
         comparable_training = dict(experiment.training)
         comparable_training.pop("representation_initialization", None)
@@ -62,7 +63,10 @@ def test_four_configs_freeze_exact_identity_and_shared_contract():
         )
 
 
-@pytest.mark.parametrize("name", CONTRACTS)
+@pytest.mark.parametrize("name", [
+    name for name, (method, _, _) in CONTRACTS.items()
+    if method.endswith("LLM-INIT")
+])
 def test_provisional_config_refuses_training_before_creating_artifacts(
     name, tmp_path
 ):
