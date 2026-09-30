@@ -2,7 +2,9 @@
 
 from dataclasses import replace
 from collections import deque
+import csv
 from hashlib import sha256
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
@@ -155,6 +157,23 @@ def test_continuous_evaluation_uses_actual_steps_as_denominator() -> None:
     assert window["completed_tasks_per_1000_actual_steps"] == 5.0
     assert window["total_energy_deaths"] == 1.0
     assert "mean_task_completion_rate" not in window
+
+
+def test_continuous_summary_accepts_csv_deadlock_flags() -> None:
+    rows = list(csv.DictReader(StringIO(
+        "steps,completed_tasks,deadlocked,energy_deaths\n"
+        "800,4,False,0\n"
+        "200,1,True,1\n"
+    )))
+    window = _continuous_episode_window(rows)
+    assert window["total_deadlocked"] == 1.0
+    assert window["total_energy_deaths"] == 1.0
+    assert window["completed_tasks_per_1000_actual_steps"] == 5.0
+    native = _continuous_episode_window([
+        {"steps": 800, "completed_tasks": 4, "deadlocked": False},
+        {"steps": 200, "completed_tasks": 1, "deadlocked": True},
+    ])
+    assert native["total_deadlocked"] == 1.0
 
 
 @pytest.mark.parametrize("field,value", [

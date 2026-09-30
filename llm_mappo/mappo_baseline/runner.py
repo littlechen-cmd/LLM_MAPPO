@@ -1630,7 +1630,12 @@ def _continuous_episode_window(rows) -> dict[str, Any]:
     }
     for field in fields:
         if all(row.get(field) not in (None, "") for row in rows):
-            summary[f"total_{field}"] = sum(float(row[field]) for row in rows)
+            values = (
+                {"True": 1.0, "False": 0.0}.get(row[field], row[field])
+                if field == "deadlocked" else row[field]
+                for row in rows
+            )
+            summary[f"total_{field}"] = sum(float(value) for value in values)
     return summary
 
 
