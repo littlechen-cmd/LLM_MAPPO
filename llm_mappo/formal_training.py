@@ -84,6 +84,28 @@ COMMON_TRAINING = {
     "hidden_dimension": 64,
 }
 
+SCENE_TRAINING_BUDGETS = {
+    "tiny-3ag": 450_000,
+    "medium-5ag": 900_000,
+    "formal-8ag": 1_800_000,
+}
+
+
+def validate_scene_training_budget(scene_id: str, training: Mapping[str, Any]) -> None:
+    """Keep all four methods on the owner's selected scene budget and schedule."""
+
+    budget = SCENE_TRAINING_BUDGETS[scene_id]
+    expected = {
+        "environment_steps": budget,
+        "optimization_schedule_steps": budget,
+        "post_schedule_learning_rate": 0.0,
+        "checkpoint_interval_steps": 25_000,
+        "milestone_checkpoint_steps": [budget // 2, budget],
+    }
+    for field, value in expected.items():
+        if training.get(field) != value:
+            raise ValueError(f"Three-scene {field} differs from selected budget.")
+
 
 def validate_provisional_environment(  # noqa: C901
     values: Mapping[str, Any]

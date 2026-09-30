@@ -52,9 +52,11 @@ training:
   - 57
   - 67
   - 77
-  environment_steps: null
-  optimization_schedule_steps: null
-  milestone_checkpoint_steps: []
+  environment_steps: 450000
+  optimization_schedule_steps: 450000
+  milestone_checkpoint_steps:
+  - 225000
+  - 450000
   num_env_workers: 16
   learner_torch_threads: 4
   worker_numerical_threads: 1
@@ -73,6 +75,7 @@ training:
   hidden_dimension: 64
   checkpoint_interval_steps: 25000
   representation_initialization: null
+  post_schedule_learning_rate: 0.0
 evaluation:
   replenishment_mode: rware_delivery
   seed_bases:

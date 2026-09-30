@@ -22,6 +22,7 @@ from llm_mappo.mappo_baseline.fp_state import FPStateSchema
 from llm_mappo.formal_training import (
     COMMON_TRAINING, DIAGNOSTIC_SEEDS, DURABILITY_SEEDS, EVALUATION_SEEDS, METHODS,
     SCENES, SCHEMA, TRAIN_SEEDS, validate_provisional_environment,
+    validate_scene_training_budget,
 )
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.structured_observation import (
@@ -150,6 +151,7 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
                 or "seeds" in evaluation):
             raise ValueError("Three-scene evaluation seed derivation differs.")
         evaluation["seeds"] = list(EVALUATION_SEEDS)
+        validate_scene_training_budget(environment["scene_id"], training)
     _validate_environment(environment, provisional=provisional)
     _validate_training(training, provisional=provisional)
     _validate_evaluation(evaluation, provisional=provisional)

@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from llm_mappo.formal_training import (
-    EVALUATION_SEEDS, SCENES, make_diagnostic_experiment,
+    EVALUATION_SEEDS, SCENES, SCENE_TRAINING_BUDGETS, make_diagnostic_experiment,
 )
 from llm_mappo.formal_layout import FORMAL_MAP_SHA256, FORMAL_MAP_PATH
 from llm_mappo.mappo_baseline.fp_state import FPStateSchema, build_fp_state
@@ -34,12 +34,34 @@ def test_formal_map_and_all_twelve_provisional_configs() -> None:
     contracts = [load_baseline_experiment(path) for path in paths]
     assert {item.environment["scene_id"] for item in contracts} == set(SCENES)
     assert all(item.approval_status == "provisional" for item in contracts)
-    assert all(item.training["environment_steps"] is None for item in contracts)
+    for item in contracts:
+        budget = SCENE_TRAINING_BUDGETS[item.environment["scene_id"]]
+        assert item.training["environment_steps"] == budget
+        assert item.training["optimization_schedule_steps"] == budget
+        assert item.training["milestone_checkpoint_steps"] == [budget // 2, budget]
+        assert item.training["post_schedule_learning_rate"] == 0.0
     assert all(item.training["num_env_workers"] == 16 for item in contracts)
     assert all(item.training["rollout_length"] == 64 for item in contracts)
     assert all(tuple(item.evaluation["seeds"]) == EVALUATION_SEEDS
                for item in contracts)
     assert len(set(EVALUATION_SEEDS)) == 200
+
+
+@pytest.mark.parametrize("field,value", [
+    ("environment_steps", 600_000),
+    ("optimization_schedule_steps", 300_000),
+    ("milestone_checkpoint_steps", [300_000, 450_000]),
+    ("post_schedule_learning_rate", 0.00001),
+    ("checkpoint_interval_steps", 50_000),
+])
+def test_scene_budget_and_schedule_cannot_drift(tmp_path, field, value) -> None:
+    source = CONFIG_ROOT / "tiny-3ag-baseline.yaml"
+    data = yaml.safe_load(source.read_text(encoding="utf-8"))
+    data["training"][field] = value
+    path = tmp_path / "altered.yaml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with pytest.raises(ValueError, match=field):
+        load_baseline_experiment(path)
 
 
 @pytest.mark.parametrize("scene_id", tuple(SCENES))

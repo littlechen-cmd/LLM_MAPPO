@@ -94,9 +94,12 @@
   确认，并只接受三个临时场景、seed `7`、不超过 50k 步，以及隔离的输出目录
   `artifacts/formal_environment_training/diagnostics/<scene>/seed_0007/`。
   正式训练入口仍须拒绝临时配置。
-- 负责人看过短测证据及 baseline 优化结果后，再决定各场景最终 `environment_steps`、
-  学习率日程、checkpoint 里程碑和 reward 版本。任何字段变化都须产生新的配置身份；
-  适用的变化须在四种方法之间保持匹配。
+- 负责人于 2026-09-30 明确采用 tiny/medium/formal 的 `environment_steps` 为
+  `450000/900000/1800000`；四组共享同场景预算。优化日程终点与预算相同，学习率
+  沿 baseline 线性降至 0；每 25k 保存 checkpoint，并保留预算 50%/100% 里程碑。
+  中途 checkpoint 可在越过名义里程碑后保存，身份必须记录实际累计步数。
+  短测继续提供接口、学习信号和速度证据，reward 及其余运行准入条件仍待核验。
+  任何字段变化都须产生新的配置身份；适用的变化须在四种方法之间保持匹配。
 - Group 2 交接给出的优先候选是 medium-5AG 的 C1 energy-death local-mean reward、
   600k 累计环境步、16 个 worker、rollout 64、5 个 PPO epoch 和 1 个 minibatch；
   学习率在 600k 线性衰减至 0，checkpoint 间隔为 25k，保留 300k/600k 里程碑。
@@ -142,5 +145,6 @@
 
 ## 待后续批准的决定
 
-短任务的实施边界已明确。最终长训练预算、学习率日程、reward 版本及 baseline 优化引起
-的必要参数修订，均在短测证据关卡后由负责人单独批准，不由实施者自行推断。
+短任务的实施边界已明确。负责人已确定 450k/900k/1.8M 预算；学习率和 checkpoint
+日程按上文同步。reward 版本、教师产物及 baseline 优化引起的必要参数修订，仍按
+原准入条件由负责人批准。

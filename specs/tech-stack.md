@@ -18,7 +18,8 @@
   观测；并发 learner 数由资源预检决定，不以旧合同的固定四进程数作为新实验保证；
 - 新三场景的临时配置为 `num_env_workers=16`、`rollout_length=64`，每次完整更新采集
   1,024 个累计环境 transition。`environment_steps` 始终是所有 worker 的累计预算，
-  一次 vector step 使全局计数增加 16；各场景最终长训练步数须经短测后由研究所有者批准；
+  一次 vector step 使全局计数增加 16；研究所有者已确定 tiny/medium/formal 的
+  450k/900k/1.8M 预算，短测继续验证接口、学习信号和资源需求；
 - 环境 worker 不初始化 CUDA context，并限制 `OMP_NUM_THREADS/MKL_NUM_THREADS/
   OPENBLAS_NUM_THREADS=1`；RTX 4090 只由 learner 的 Actor、Critic、optimizer 和 PPO update 使用；
 - 目标 GPU 必须通过共享服务器预检与项目 GPU lease；不得抢占、终止或隐藏其他用户进程。
@@ -87,11 +88,11 @@ commit 必须标明适用实验版本，不能覆盖历史 checkpoint 的含义�
 
 ## 正式实验技术合同
 
-| 场景 | AGV/充电站/拣选站 | 训练与主评估 `max_steps` | 活跃任务 |
-| --- | --- | ---: | ---: |
-| RWARE tiny | 3/3/2 | 800 | 3 |
-| medium | 5/5/2 | 800 | 5 |
-| formal 50×28 | 8/8/10 | 1200 | 8 |
+| 场景 | AGV/充电站/拣选站 | 训练与主评估 `max_steps` | 活跃任务 | 累计训练步数 |
+| --- | --- | ---: | ---: | ---: |
+| RWARE tiny | 3/3/2 | 800 | 3 | 450,000 |
+| medium | 5/5/2 | 800 | 5 | 900,000 |
+| formal 50×28 | 8/8/10 | 1200 | 8 | 1,800,000 |
 
 - 核心四组为 `baseline`、`A* KD`、`LLM KD`、`A* KD + LLM KD`，每组在三个场景
   各训练 8 个配对 seed `7/17/27/37/47/57/67/77`，正式主矩阵共 96 次训练；
@@ -100,9 +101,10 @@ commit 必须标明适用实验版本，不能覆盖历史 checkpoint 的含义�
 - formal-8AGV 另设 5,000 步、`400–409` 共 10 个实例的耐久评估，全部四组与 8 个
   训练 seed 复用实例表；12/16 台同图压力评估需另行批准充电容量与 Actor-only 入口；
 - 未见拓扑、QMIX 和旧路线消融不在本轮四组主矩阵内，需要时另订探索性协议；
-- `rollout_length=64`、16 worker 和继承 baseline 的 PPO 值是短测起点；最终各场景
-  `environment_steps`、reward、学习率日程、checkpoint 里程碑须经研究所有者批准，
-  才能把 `approval_status` 改为 `approved`。
+- `rollout_length=64`、16 worker 和继承 baseline 的 PPO 值保持本轮起点；预算已由
+  研究所有者确定，学习率衰减终点与各场景预算相同，每 25k 保存 checkpoint，保留
+  50%/100% 里程碑。reward、教师产物及完整运行合同通过准入后，才能把
+  `approval_status` 改为 `approved`。
 
 ## 角色与权限
 
