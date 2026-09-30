@@ -7,16 +7,13 @@ import json
 from pathlib import Path
 
 
-FORMAL_MAP_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "docs" / "formal_environment" / "environment.json"
-)
+FORMAL_MAP_PATH = Path(__file__).resolve().parent / "data" / "formal_environment.json"
 FORMAL_MAP_SHA256 = (
     "2a03a4abfe281de6865f39399d870f5ba9931d2520a6829bdb01788d50ca22fc"
 )
 
 
-def load_formal_layout() -> tuple[str, tuple[tuple[int, int], ...],
+def load_formal_layout() -> tuple[str, tuple[tuple[int, int], ...],  # noqa: C901
                                   tuple[tuple[int, int], ...]]:
     """Return RWARE layout and stations, rejecting an altered map."""
 

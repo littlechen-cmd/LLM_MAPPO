@@ -20,7 +20,7 @@ import yaml
 
 from llm_mappo.mappo_baseline.fp_state import FPStateSchema
 from llm_mappo.formal_training import (
-    DIAGNOSTIC_SEEDS, DURABILITY_SEEDS, EVALUATION_SEEDS, METHODS,
+    COMMON_TRAINING, DIAGNOSTIC_SEEDS, DURABILITY_SEEDS, EVALUATION_SEEDS, METHODS,
     SCENES, SCHEMA, TRAIN_SEEDS, validate_provisional_environment,
 )
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
@@ -162,6 +162,9 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
             raise ValueError("Three-scene training seed is not registered.")
         if tuple(training.get("paired_training_seeds", ())) != TRAIN_SEEDS:
             raise ValueError("Three-scene paired training seed list differs.")
+        for field, expected in COMMON_TRAINING.items():
+            if training.get(field) != expected:
+                raise ValueError(f"Three-scene {field} differs across methods.")
         if ("representation_initialization" in training) != str(
             values["method"]
         ).endswith("LLM-INIT"):
@@ -235,7 +238,7 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     )
 
 
-def _validate_environment(
+def _validate_environment(  # noqa: C901
     environment: Mapping[str, Any], *, provisional: bool = False
 ) -> None:  # noqa: C901
     required = {
@@ -279,7 +282,7 @@ def _validate_environment(
         raise ValueError("MAPPO baseline training replenishment mode is invalid.")
 
 
-def _validate_training(
+def _validate_training(  # noqa: C901
     training: Mapping[str, Any], *, provisional: bool = False
 ) -> None:
     required = {
@@ -342,7 +345,7 @@ def _validate_milestone_checkpoints(milestones: Any, budget: int) -> None:
         raise ValueError("MAPPO milestone checkpoint step is outside the budget.")
 
 
-def _validate_evaluation(
+def _validate_evaluation(  # noqa: C901
     evaluation: Mapping[str, Any], *, provisional: bool = False
 ) -> None:
     if provisional:
@@ -356,6 +359,8 @@ def _validate_evaluation(
             raise ValueError("Three-scene evaluation must be deterministic.")
         if evaluation.get("environment_overrides", {}) != {}:
             raise ValueError("Three-scene training and evaluation load must match.")
+        if evaluation.get("render_replay") is not False:
+            raise ValueError("Three-scene main evaluation disables automatic replay.")
         return
     if list(evaluation.get("seeds", ())) != [9400, 9401]:
         raise ValueError("Phase 1 evaluation seeds must be 9400 and 9401.")
@@ -503,7 +508,10 @@ class BaselineRun:
                 "artifacts/formal_environment_training/diagnostics/"
             )
         )
-        if not diagnostic_schema and diagnostic_authorized and not provisional_diagnostic:
+        if (
+            not diagnostic_schema and diagnostic_authorized
+            and not provisional_diagnostic
+        ):
             raise ValueError("Diagnostic authorization requires a diagnostic schema.")
         if diagnostic_schema and (
             not isinstance(diagnostic_reward_definition, Mapping)
@@ -1014,6 +1022,37 @@ class BaselineRun:
         self.trainer.actor.eval()
         for seed in self.experiment.evaluation["seeds"]:
             results.append(self._evaluation_episode(int(seed)))
+        if self.experiment.schema == SCHEMA:
+            legacy_fields = {
+                "success", "task_completion_rate", "task_completion_target"
+            }
+            filtered = [
+                {key: value for key, value in row.items() if key not in legacy_fields}
+                for row in results
+            ]
+            total_steps = sum(int(row["steps"]) for row in filtered)
+            total_completed = sum(int(row["completed_tasks"]) for row in filtered)
+            result = {
+                "schema": "mappo-continuous-delivery-evaluation-v1",
+                "policy": "deterministic_argmax",
+                "checkpoint": checkpoint_reference,
+                "episodes": filtered,
+                "total_completed_tasks": total_completed,
+                "total_episode_steps": total_steps,
+                "completed_tasks_per_1000_actual_steps": (
+                    1000.0 * total_completed / total_steps if total_steps else 0.0
+                ),
+                "mean_completed_tasks": float(np.mean([
+                    row["completed_tasks"] for row in filtered
+                ])),
+                "episode_diagnostics": _continuous_episode_window(results),
+                "fixed_replay": None,
+                "metrics_plot": None,
+            }
+            output = self.directory / "evaluation"
+            output.mkdir(exist_ok=True)
+            _write_json(output / "evaluation.json", result)
+            return result
         mean_completion = float(np.mean([
             row["task_completion_rate"] for row in results
         ]))
@@ -1037,7 +1076,10 @@ class BaselineRun:
                 str(fixed_path.relative_to(self.directory))
                 if self.experiment.evaluation.get("render_replay", True) else None
             ),
-            "metrics_plot": "evaluation/evaluation_metrics.png",
+            "metrics_plot": (
+                None if self.experiment.schema == SCHEMA
+                else "evaluation/evaluation_metrics.png"
+            ),
         }
         output = self.directory / "evaluation"
         output.mkdir(exist_ok=True)
@@ -1110,7 +1152,8 @@ class BaselineRun:
         if self.experiment.schema == SCHEMA:
             compatibility_fields += (
                 "scene_id", "environment_id", "layout_sha256", "n_agents",
-                "charging_stations", "picking_stations",
+                "charging_stations", "picking_stations", "config_sha256",
+                "seed", "profile_id",
             )
         mismatched = [
             field for field in compatibility_fields
@@ -1357,6 +1400,8 @@ class BaselineRun:
             "training_episode_window": _episode_window(
                 window,
                 primary_metric="steps_per_task" if continuous_throughput else None,
+            ) if self.experiment.schema != SCHEMA else (
+                _continuous_episode_window(window)
             ),
             "evaluation": evaluation,
             "total_elapsed_seconds": self._elapsed(),
@@ -1557,6 +1602,33 @@ def _episode_window(rows, *, primary_metric: str | None = None) -> dict[str, Any
         summary["active_motion_steps_per_task"] = (
             total_active_motion / total_completed if total_completed else None
         )
+    return summary
+
+
+def _continuous_episode_window(rows) -> dict[str, Any]:
+    """Summarize fixed-duration replenishment without target-rate semantics."""
+
+    if not rows:
+        return {"window_size": 0}
+    total_steps = sum(float(row["steps"]) for row in rows)
+    total_completed = sum(float(row["completed_tasks"]) for row in rows)
+    fields = (
+        "energy_deaths", "agent_deaths", "collisions", "blocked_forwards",
+        "deadlocked", "charged_events", "charger_arrivals", "picked_tasks",
+    )
+    summary = {
+        "window_size": len(rows),
+        "total_episode_steps": total_steps,
+        "total_completed_tasks": total_completed,
+        "mean_completed_tasks": total_completed / len(rows),
+        "completed_tasks_per_1000_actual_steps": (
+            1000.0 * total_completed / total_steps if total_steps else 0.0
+        ),
+        "primary_metric": "completed_tasks_per_1000_actual_steps",
+    }
+    for field in fields:
+        if all(row.get(field) not in (None, "") for row in rows):
+            summary[f"total_{field}"] = sum(float(row[field]) for row in rows)
     return summary
 
 

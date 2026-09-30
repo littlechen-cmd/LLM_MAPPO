@@ -49,8 +49,9 @@
 
 - [ ] 针对布局、环境、配置加载器和 checkpoint 身份的聚焦 pytest 测试。
 - [ ] 与变更接口有关的现有运动、任务、充电、seed 和 baseline runner 回归测试。
-- [ ] 在项目 Python 3.10 环境运行 `python -m pytest`，以及
-  `python -m flake8 rware llm_mappo eval train scripts figures/core`。
+- [ ] 在项目 Python 3.10 环境运行 `python -m pytest`；当前工作树的静态检查目标为
+  `python -m flake8 rware llm_mappo scripts`。若后续工作树实际包含 `eval`、`train` 或
+  `figures/core`，再把这些目录加入同一次静态检查；不得对不存在的目录报告代码错误。
 - [ ] 对三个场景分别执行 baseline、A* KD、LLM KD、联合 KD 的短 CPU 生命周期检查；
   在交接材料中记录准确命令、seed 和结果。
 

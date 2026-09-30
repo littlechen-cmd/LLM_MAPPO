@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from hashlib import sha256
+import json
 from typing import Any, Mapping
 
 from llm_mappo.formal_layout import FORMAL_MAP_SHA256, load_formal_layout
@@ -50,8 +52,42 @@ SCENES = {
     },
 }
 
+COMMON_ENVIRONMENT = {
+    "battery_cost_scale": 1.10,
+    "charge_threshold": 0.30,
+    "charge_release_threshold": 0.80,
+    "deadlock_steps": 180,
+    "observation_schema": "direct-goal-observation-v2",
+    "goal_interface": "direct_goal",
+    "reward_version": "reward-v2",
+    "reward_energy_death_aggregation": "local-mean",
+    "reward_blocked_forward_penalty": 0.10,
+    "reward_collision_penalty": 0.10,
+    "charge_event_reward": 0.0,
+    "reward_deadlock_penalty": 5.0,
+    "oracle_interaction_mask": True,
+}
+COMMON_TRAINING = {
+    "num_env_workers": 16,
+    "rollout_length": 64,
+    "ppo_epochs": 5,
+    "num_minibatches": 1,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_param": 0.20,
+    "actor_learning_rate": 0.0003,
+    "critic_learning_rate": 0.0003,
+    "entropy_coefficient": 0.01,
+    "value_loss_coefficient": 0.50,
+    "max_gradient_norm": 0.50,
+    "huber_delta": 10.0,
+    "hidden_dimension": 64,
+}
 
-def validate_provisional_environment(values: Mapping[str, Any]) -> dict[str, Any]:
+
+def validate_provisional_environment(  # noqa: C901
+    values: Mapping[str, Any]
+) -> dict[str, Any]:
     """Check exact scene identity, then supply inert legacy constructor fields."""
 
     forbidden = {
@@ -83,6 +119,11 @@ def validate_provisional_environment(values: Mapping[str, Any]) -> dict[str, Any
         raise ValueError("Provisional scene requires rware_delivery.")
     if values.get("priority_schedule") != ["A", "B", "C"]:
         raise ValueError("Provisional priority order differs.")
+    if values.get("initial_priority_label") != "A":
+        raise ValueError("Provisional initial priority differs.")
+    for field, expected in COMMON_ENVIRONMENT.items():
+        if values.get(field) != expected:
+            raise ValueError(f"Provisional scene {field} differs across methods.")
     expanded = dict(values)
     expanded.update({
         "dynamic_ingress_interval": scene["max_steps"] + 1,
@@ -103,7 +144,7 @@ def make_diagnostic_experiment(experiment, *, environment_steps: int):
             or not 1 <= environment_steps <= 50_000):
         raise ValueError("Only seed-7 baseline diagnostics up to 50k are allowed.")
     scene = experiment.environment["scene_id"]
-    return replace(
+    derived = replace(
         experiment,
         artifact_root=(
             "artifacts/formal_environment_training/diagnostics/"
@@ -121,3 +162,14 @@ def make_diagnostic_experiment(experiment, *, environment_steps: int):
             "render_replay": False,
         },
     )
+    identity = {
+        "source_config_sha256": experiment.config_sha256,
+        "schema": derived.schema,
+        "method": derived.method,
+        "artifact_root": derived.artifact_root,
+        "environment": derived.environment,
+        "training": derived.training,
+        "evaluation": derived.evaluation,
+    }
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+    return replace(derived, config_sha256=sha256(encoded.encode("utf-8")).hexdigest())

@@ -5,7 +5,12 @@ from setuptools import setup, find_packages
 HERE = pathlib.Path(__file__).parent
 
 # The text of the README file
-README = (HERE / "README.md").read_text(encoding="utf-8")
+readme_path = HERE / "README.md"
+README = (
+    readme_path.read_text(encoding="utf-8")
+    if readme_path.exists()
+    else "Dynamic warehouse environment and LLM-augmented MAPPO research code."
+)
 
 setup(
     name="llm-mappo",
@@ -15,7 +20,10 @@ setup(
     long_description_content_type="text/markdown",
     author="LLM-MAPPO contributors",
     packages=find_packages(exclude=["contrib", "docs", "tests"]),
-    package_data={"rware.layouts.o3": ["*.txt"]},
+    package_data={
+        "rware.layouts.o3": ["*.txt"],
+        "llm_mappo": ["data/formal_environment.json"],
+    },
     classifiers=[
         # Indicate who your project is intended for
         "Intended Audience :: Developers",
