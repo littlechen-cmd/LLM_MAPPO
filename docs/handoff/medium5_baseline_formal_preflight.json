@@ -1,0 +1,227 @@
+{
+  "审查任务": "baseline-medium-5ag 正式训练前最后审查；不创建规格文档、不运行长训练",
+  "审查日期": "2026-10-05",
+  "审查结论": "配置与CPU训练链路通过；GPU启动前由启动器检查CUDA环境；本轮不证明性能收敛",
+  "协议": {
+    "每模型累计环境步": 900000,
+    "训练seed": [
+      7,
+      17,
+      27,
+      37,
+      47,
+      57,
+      67,
+      77
+    ],
+    "评估实例每模型": 200,
+    "预留环境seed公式": "1000*base+index，base=200..209，index=0..19",
+    "baseline总训练步": 7200000,
+    "baseline总评估episode": 1600,
+    "统计独立重复单位": "8个训练seed；1600个episode不是1600个独立训练重复"
+  },
+  "来源": {
+    "v1配置": "D:\\codeProject\\llm-a-mappo\\.worktrees\\core-integration\\configs\\training_v1\\medium-5ag-baseline.yaml",
+    "v1配置sha256": "62e19ecc653eaa14e532dcdfb5af8d1fbee2fb14f91da61fc6027a6e520414d6",
+    "旧600k及9400至9409结果用途": "诊断；不计入新协议主评估"
+  },
+  "代码": {
+    "短测时commit": "4fa41da9de34b07e63c97093e480bfd459356c6a",
+    "正式运行commit": "启动器记录实际已提交HEAD和依赖版本，拒绝未提交训练代码或配置启动",
+    "与v1标准化换行后完全相同模块": [
+      "reward_v2.py",
+      "mappo_baseline/trainer.py",
+      "mappo_baseline/networks.py",
+      "mappo_baseline/storage.py"
+    ]
+  },
+  "环境": {
+    "地图尺寸": [
+      20,
+      24
+    ],
+    "AGV充电站拣选站货架": [
+      5,
+      5,
+      2,
+      144
+    ],
+    "max_steps训练评估一致": 800,
+    "初始活跃任务": 5,
+    "补货": "rware_delivery每交付1单补1单，balanced-random-v1 A/B/C",
+    "终止": "800步上限或原有死锁/终止；不以task_target终止",
+    "deadlock_steps": 180,
+    "battery_cost_scale": 1.1,
+    "charge_threshold": 0.3,
+    "charge_release_threshold": 0.8,
+    "Actor维度": 209,
+    "Critic维度": 689,
+    "旧v1差异": "旧FP692D；正式FP删去3个空充电站槽位。正式训练从头开始，不恢复旧600k checkpoint。"
+  },
+  "PPO": {
+    "num_env_workers": 16,
+    "rollout_length": 64,
+    "ppo_epochs": 5,
+    "num_minibatches": 1,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_param": 0.2,
+    "actor_learning_rate": 0.0003,
+    "critic_learning_rate": 0.0003,
+    "entropy_coefficient": 0.01,
+    "value_loss_coefficient": 0.5,
+    "max_gradient_norm": 0.5,
+    "huber_delta": 10.0,
+    "hidden_dimension": 64,
+    "learner_torch_threads": 4,
+    "worker_numerical_threads": 1
+  },
+  "优化日程": {
+    "学习率": "从3e-4线性降至900k时0",
+    "完整update环境transition": 1024,
+    "完整update智能体样本": 5120,
+    "updates": 879,
+    "最后rollout_length": 58,
+    "checkpoint间隔": 25000,
+    "milestones": [
+      450000,
+      900000
+    ],
+    "主checkpoint": "checkpoint_final.pt；不用预留评估挑选checkpoint",
+    "里程碑保存语义": "450000为触发阈值，按完整rollout结束保存（此配置通常450560）；checkpoint内保留实际环境步，最终900000精确。"
+  },
+  "奖励": {
+    "C1定义": {
+      "version": "reward-v3-c1-energy-death-local-mean",
+      "completion_reward": 5.0,
+      "pickup_reward": 0.5,
+      "progress_reward": 0.1,
+      "blocked_forward_penalty": 0.1,
+      "collision_penalty": 0.1,
+      "step_cost": 0.005,
+      "charge_event_reward": 0.0,
+      "deadlock_penalty": 5.0,
+      "priority_weights": {
+        "A": 2.0,
+        "B": 1.5,
+        "C": 1.0
+      },
+      "energy_death_penalty": 20.0,
+      "energy_death_aggregation": "local-mean"
+    },
+    "C1定义sha256": "3b570b7d25f2fc264c113027def4291872db95825fce1c6d23f1eec389c688a6",
+    "交付团队A_B_C奖励": [
+      10,
+      7.5,
+      5
+    ],
+    "单个局部事件团队贡献": {
+      "pickup": 0.1,
+      "progress正负": 0.02,
+      "blocked": -0.02,
+      "collision": -0.02,
+      "energy_death": -4.0
+    },
+    "团队每步": -0.005,
+    "团队死锁": -5.0,
+    "说明": "交付及每步/死锁项不除以5；局部项取均值，低电事件另按现有代码计罚，充电额外奖励为0。"
+  },
+  "正式配置": [
+    {
+      "seed": 7,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0007.yaml",
+      "sha256": "a4175ee19f57d6c5ee839b2c614867ffa2a72d2aa3d3857b47c359d27d99a42a"
+    },
+    {
+      "seed": 17,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0017.yaml",
+      "sha256": "3f09f556a0cb690cb515aa24d5d3560d5bfa718906e473a6357433ae2b4fb9bc"
+    },
+    {
+      "seed": 27,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0027.yaml",
+      "sha256": "df9ff32a3eb6147a9cdbda258d5e546dc4d5d9b0efebe58c8cf1195c5dc1ba00"
+    },
+    {
+      "seed": 37,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0037.yaml",
+      "sha256": "2d835b2c1aeba709658f4a0f655da8d131f52934ac0e223a1cc45fc805794f1e"
+    },
+    {
+      "seed": 47,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0047.yaml",
+      "sha256": "84867a57653d722e6ee56ef34b43c894f1d77726d8e8be10e78c78f66cbb7cfb"
+    },
+    {
+      "seed": 57,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0057.yaml",
+      "sha256": "70cdd2d7e49b45788398b2577bd1a219b0bb8ecc8a2669a915d21c293f0fecd5"
+    },
+    {
+      "seed": 67,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0067.yaml",
+      "sha256": "07ad3da3c0dc5085f5958bf2ef485fce1964c7554c08a3400be2d5f1ffa45709"
+    },
+    {
+      "seed": 77,
+      "path": "configs/training_v1/medium-5ag-formal/seed_0077.yaml",
+      "sha256": "43c7f16497d39cf7108f3d3f7a68cd83457ece956f82e6b1ebc348f04b33c37a"
+    }
+  ],
+  "验证": {
+    "测试": [
+      {
+        "命令": "python -m pytest tests/test_formal_training_contract.py tests/test_formal_training_preparation.py tests/test_mappo_fp_runner.py -q",
+        "通过": 46,
+        "秒": 52.96
+      },
+      {
+        "命令": "python -m pytest tests/test_reward_v2.py -q",
+        "通过": 22,
+        "秒": 0.86
+      },
+      {
+        "命令": "python -m pytest tests/test_medium5_formal_launch.py -q",
+        "通过": 20,
+        "秒": 3.68
+      }
+    ],
+    "CPU短测": {
+      "path": "artifacts/formal_environment_training/diagnostics/medium-5ag/seed_0007/seed_0007_20261005T153312Z",
+      "环境步": 4096,
+      "workers": 16,
+      "rollout": 64,
+      "updates": 4,
+      "状态": "complete",
+      "checkpoint_sha256": "350390c73522a713e17887478b81242d842dc36577f1f9adbfdb0b2e7c67f417",
+      "checkpoint及loss梯度有限": true,
+      "Actor_Critic_ValueNorm载入逐项一致": true,
+      "planner及教师查询数": 0,
+      "评估seed": [
+        9300,
+        9301,
+        9302
+      ],
+      "交付": 0,
+      "死锁episode": 3,
+      "边界": "短测使用独立4096步学习率日程，只验证训练和保存链路，不证明900k收敛。"
+    },
+    "预留评估": "本次未运行200个预留实例的策略评估，仅核验生成合同",
+    "GPU": "本机torch2.10.0+cpu，GPU执行未在本机验证",
+    "测试总通过数": 88,
+    "flake8": "scripts/run_medium5_formal_baseline.py 检查通过"
+  },
+  "论文使用": {
+    "统计": "先求每个训练seed的200实例均值，再跨8seed报告mean/sample SD/95% CI；四方法共用实例集",
+    "保留": "全部seed与失败、死锁、能量死亡；每episode实际步长/交付数；配置SHA、Git commit、checkpoint、依赖版本",
+    "吞吐": "报告每episode交付数及每1000实际环境步吞吐，附死锁率与实际时长；800为上限",
+    "禁止声称": "本次短测或旧600k结果证明lifelong MAPF、充电恢复成功或显著方法改进"
+  },
+  "启动": {
+    "工作树": "D:\\codeProject\\llm-a-mappo\\.worktrees\\formal-environment-training-spec",
+    "审查": "python -m scripts.run_medium5_formal_baseline --device cpu",
+    "正式": "CUDA_VISIBLE_DEVICES=0 /home/lzx/.conda/envs/llm-a-mappo-py310/bin/python -m scripts.run_medium5_formal_baseline --device cuda --run",
+    "方式": "8seed串行，每seed16worker；训练完成后自动200实例评估；不依赖LLM数据/表示",
+    "已有seed运行": "拒绝重复启动complete/running/failed已有产物；使用--seeds指定剩余seed，不隐藏失败；恢复中断由通用runner按原checkpoint身份处理。"
+  }
+}
