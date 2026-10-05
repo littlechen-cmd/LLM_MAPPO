@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from hashlib import sha256
 import json
+from pathlib import Path
 from typing import Any, Mapping
 
 from llm_mappo.formal_layout import FORMAL_MAP_SHA256, load_formal_layout
@@ -17,6 +18,11 @@ EVALUATION_SEEDS = tuple(
 )
 DURABILITY_SEEDS = tuple(range(400, 410))
 DIAGNOSTIC_SEEDS = (9300, 9301, 9302)
+DURABILITY_COUNTER_FIELDS = (
+    "completed_tasks", "created_tasks", "picked_tasks", "energy_deaths",
+    "charger_arrivals", "charged_events", "task_recoveries", "collisions",
+    "blocked_forwards",
+)
 METHODS = (
     "MAPPO-FP-DG",
     "MAPPO-FP-ASTARKD-NO-VALIDITY",
@@ -89,6 +95,96 @@ SCENE_TRAINING_BUDGETS = {
     "medium-5ag": 900_000,
     "formal-8ag": 1_800_000,
 }
+
+
+def authenticate_scene_representation(values: Mapping[str, Any]) -> dict[str, Any]:
+    """Authenticate actual representation bytes without advancing training RNG."""
+
+    import torch
+
+    from llm_mappo.mappo_baseline.networks import MAPPOActor
+    from llm_mappo.mappo_llm_kd.initialization import (
+        initialize_final_actor, load_representation_initialization,
+    )
+
+    initialization = load_representation_initialization(values)
+    artifact = Path(initialization.artifact_path)
+    try:
+        payload = torch.load(artifact, map_location="cpu", weights_only=True)
+    except Exception as error:
+        raise ValueError("Representation artifact could not be safely read.") from error
+    artifact_identity = payload.get("identity") if isinstance(payload, Mapping) else None
+    if json.dumps(artifact_identity) != json.dumps(initialization.identity):
+        raise ValueError("Representation identity does not match expected identity.")
+    canonical = {**values, "identity": artifact_identity}
+    initialization = load_representation_initialization(canonical)
+    with torch.random.fork_rng(devices=[]):
+        actor = MAPPOActor(209, 5, 64)
+        initialize_final_actor(actor, initialization)
+    return canonical
+
+
+def validate_approved_scene_artifacts(method: str, training: dict[str, Any]) -> None:
+    """Allow training only with implemented teacher and real LLM representation."""
+
+    if "ASTARKD" in method:
+        from llm_mappo.mappo_astar_kd.teacher import TEACHER_VERSION
+
+        if (training.get("astar_teacher_approval") != "approved"
+                or training.get("astar_teacher_version") != TEACHER_VERSION):
+            raise ValueError("Approved scene A* teacher identity is incompatible.")
+    if method.endswith("LLM-INIT"):
+        if training.get("representation_initialization") is None:
+            raise ValueError(
+                "Approved LLM scene requires a real representation artifact."
+            )
+        training["representation_initialization"] = authenticate_scene_representation(
+            training["representation_initialization"]
+        )
+
+
+def make_durability_experiment(experiment):
+    """Derive the formal durability evaluation without changing source identity."""
+
+    if (experiment.schema != SCHEMA
+            or experiment.environment["scene_id"] != "formal-8ag"):
+        raise ValueError("Durability protocol requires the formal-8ag scene.")
+    return replace(experiment, evaluation={
+        **experiment.evaluation,
+        "seeds": list(DURABILITY_SEEDS),
+        "durability_max_steps": 5000,
+        "environment_overrides": {"max_steps": 5000},
+    })
+
+
+def build_durability_windows(snapshots: list[Mapping[str, Any]]) -> list[dict]:
+    """Difference boundary snapshots; unobserved windows are missing, not zero."""
+
+    windows = []
+    actual_end = int(snapshots[-1]["steps"])
+    by_step = {int(snapshot["steps"]): snapshot for snapshot in snapshots}
+    for start in range(0, 5000, 1000):
+        end = min(start + 1000, actual_end)
+        actual_steps = max(0, end - start)
+        row = {
+            "start_step": start, "planned_end_step": start + 1000,
+            "actual_end_step": end if actual_steps else None,
+            "actual_steps": actual_steps,
+            "status": (
+                "complete" if actual_steps == 1000
+                else "partial" if actual_steps else "not_run"
+            ),
+        }
+        for field in DURABILITY_COUNTER_FIELDS:
+            row[field] = (
+                int(by_step[end].get(field, 0)) - int(by_step[start].get(field, 0))
+                if actual_steps else None
+            )
+        row["completed_tasks_per_1000_actual_steps"] = (
+            1000.0 * row["completed_tasks"] / actual_steps if actual_steps else None
+        )
+        windows.append(row)
+    return windows
 
 
 def validate_scene_training_budget(scene_id: str, training: Mapping[str, Any]) -> None:

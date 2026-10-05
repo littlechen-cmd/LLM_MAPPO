@@ -22,7 +22,8 @@ from llm_mappo.mappo_baseline.fp_state import FPStateSchema
 from llm_mappo.formal_training import (
     COMMON_TRAINING, DIAGNOSTIC_SEEDS, DURABILITY_SEEDS, EVALUATION_SEEDS, METHODS,
     SCENES, SCHEMA, TRAIN_SEEDS, validate_provisional_environment,
-    validate_scene_training_budget,
+    validate_scene_training_budget, validate_approved_scene_artifacts,
+    build_durability_windows,
 )
 from llm_mappo.mappo_baseline.storage import MAPPORolloutStorage
 from llm_mappo.mappo_baseline.structured_observation import (
@@ -156,8 +157,8 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     _validate_training(training, provisional=provisional)
     _validate_evaluation(evaluation, provisional=provisional)
     if provisional:
-        if values["approval_status"] != "provisional":
-            raise ValueError("Three-scene configuration is not approved for training.")
+        if values["approval_status"] not in {"provisional", "approved"}:
+            raise ValueError("Three-scene approval status is invalid.")
         if values["method"] not in METHODS:
             raise ValueError("Three-scene MAPPO method is incompatible.")
         if int(training["seed"]) not in TRAIN_SEEDS:
@@ -171,7 +172,9 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
             values["method"]
         ).endswith("LLM-INIT"):
             raise ValueError("LLM method and initialization must agree.")
-        if "representation_initialization" in training:
+        if values["approval_status"] == "approved":
+            validate_approved_scene_artifacts(str(values["method"]), training)
+        elif "representation_initialization" in training:
             if training["representation_initialization"] is not None:
                 raise ValueError(
                     "Provisional LLM representation must remain pending approval."
@@ -1185,6 +1188,13 @@ class BaselineRun:
         frames = []
         try:
             environment.reset(seed=seed)
+            durability = (
+                self.experiment.schema == SCHEMA
+                and self.experiment.environment["scene_id"] == "formal-8ag"
+                and values["max_steps"] == 5000
+                and self.experiment.evaluation.get("durability_max_steps") == 5000
+            )
+            durability_snapshots = [environment.metrics.as_dict()] if durability else []
             actor_hidden = np.zeros(
                 (1, environment.n_agents, self.trainer.config.hidden_dim),
                 dtype=np.float32,
@@ -1210,6 +1220,15 @@ class BaselineRun:
                     deterministic=True,
                 )
                 transition = environment.step(actions[0])
+                finished = (
+                    transition.terminated or transition.truncated
+                    or transition.metrics.deadlocked
+                )
+                if durability and (
+                    transition.metrics.steps % 1000 == 0 or finished
+                    or step + 1 == int(values["max_steps"])
+                ):
+                    durability_snapshots.append(transition.metrics.as_dict())
                 continuation = 0.0 if (
                     transition.terminated
                     or transition.truncated
@@ -1242,7 +1261,26 @@ class BaselineRun:
                     loop=0,
                     optimize=False,
                 )
-            return {"seed": seed, **transition.metrics.as_dict()}
+            result = {"seed": seed, **transition.metrics.as_dict()}
+            if durability:
+                result.update({
+                    "durability_windows": build_durability_windows(durability_snapshots),
+                    "ran_full_horizon": transition.metrics.steps == 5000,
+                    "termination": {
+                        "reason": (
+                            "deadlock" if transition.metrics.deadlocked
+                            else "terminated" if transition.terminated
+                            else "horizon" if transition.metrics.steps == 5000
+                            else "truncated" if transition.truncated else "stopped"
+                        ),
+                        "terminated": bool(transition.terminated),
+                        "truncated": bool(transition.truncated),
+                        "deadlocked": bool(transition.metrics.deadlocked),
+                    },
+                    "teacher_query_count": environment.planner_query_counter.count,
+                    "llm_teacher_request_count": 0,
+                })
+            return result
         finally:
             environment.close()
 

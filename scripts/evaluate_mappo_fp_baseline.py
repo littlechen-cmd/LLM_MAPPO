@@ -6,6 +6,7 @@ import argparse
 import json
 
 from llm_mappo.mappo_baseline.runner import BaselineRun, load_baseline_experiment
+from llm_mappo.formal_training import make_durability_experiment
 
 
 def _arguments():
@@ -14,12 +15,15 @@ def _arguments():
     parser.add_argument("--config", required=True)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--output-root", required=True)
+    parser.add_argument("--protocol", choices=("main", "durability"), default="main")
     return parser.parse_args()
 
 
 def main() -> None:
     arguments = _arguments()
     experiment = load_baseline_experiment(arguments.config)
+    if arguments.protocol == "durability":
+        experiment = make_durability_experiment(experiment)
     run = BaselineRun(
         experiment,
         device=arguments.device,

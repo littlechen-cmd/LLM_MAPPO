@@ -1,0 +1,310 @@
+{
+  "schema": "formal-training-handoff-evidence-v1",
+  "recorded_date": "2026-10-01",
+  "diagnostics": [
+    {
+      "scene": "tiny-3ag",
+      "source_directory": "D:\\codeProject\\llm-a-mappo\\.worktrees\\formal-environment-training-spec\\artifacts\\formal_environment_training\\diagnostics\\tiny-3ag\\seed_0007\\seed_0007_20260930T153544Z",
+      "global_environment_steps": 50000,
+      "updates": 49,
+      "source_state": {
+        "message": "could not convert string to float: 'False'",
+        "reason": "ValueError",
+        "status": "failed",
+        "worker_failure_directory": "worker_failures"
+      },
+      "training_episode_window": {
+        "completed_tasks_per_1000_actual_steps": 0.546875,
+        "mean_completed_tasks": 0.4375,
+        "primary_metric": "completed_tasks_per_1000_actual_steps",
+        "total_agent_deaths": 29.0,
+        "total_blocked_forwards": 3685.0,
+        "total_charged_events": 767.0,
+        "total_charger_arrivals": 20.0,
+        "total_collisions": 456.0,
+        "total_completed_tasks": 21.0,
+        "total_deadlocked": 0.0,
+        "total_energy_deaths": 29.0,
+        "total_episode_steps": 38400.0,
+        "total_picked_tasks": 76.0,
+        "window_size": 48
+      },
+      "evaluation_totals": {
+        "steps": 541.0,
+        "completed_tasks": 0.0,
+        "picked_tasks": 1.0,
+        "energy_deaths": 0.0,
+        "deadlocked": 3.0,
+        "charged_events": 0.0,
+        "charger_arrivals": 0.0,
+        "task_recoveries": 0.0
+      },
+      "evaluation_seeds": [
+        9300,
+        9301,
+        9302
+      ],
+      "finite_update_metrics": {
+        "policy_loss": {
+          "first": -0.0005931109054170492,
+          "last": -2.6887734705383082e-08,
+          "min": -0.0005931109054170492,
+          "max": 5.623002853099024e-05
+        },
+        "value_loss": {
+          "first": 0.5272351384162903,
+          "last": 1.2168630361557007,
+          "min": 0.004719200264662504,
+          "max": 2.5200281620025633
+        },
+        "entropy": {
+          "first": 1.3848735094070435,
+          "last": 1.3340275287628174,
+          "min": 1.3159619092941284,
+          "max": 1.3848735094070435
+        },
+        "total_loss": {
+          "first": 0.2491757184267044,
+          "last": 0.5950912237167358,
+          "min": -0.011266021057963371,
+          "max": 1.246268630027771
+        },
+        "approx_kl": {
+          "first": 7.37327192837256e-05,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.00010303555500286165
+        },
+        "actor_learning_rate": {
+          "first": 0.00029385599999999995,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.00029385599999999995
+        },
+        "critic_learning_rate": {
+          "first": 0.00029385599999999995,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.00029385599999999995
+        },
+        "learning_rate": {
+          "first": 0.00029385599999999995,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.00029385599999999995
+        },
+        "astar_loss": {
+          "first": 0.0,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        }
+      },
+      "hashes": {
+        "run_manifest.json": "f25e4f9946db3c5247da35cde9b883134e456dc6bfb71c37ab78c4d2fa00cf76",
+        "updates.csv": "c747c983a5c85a2286bd004cb97580a4d2ee8deaab50eba49d679c28dcc7f13e",
+        "checkpoint_final.pt": "e55abfdc4e1ee5937d1059bd6c51a51e9cdd869f91221d2bf9d4f8314a2a0f75",
+        "evaluation/evaluation.json": "f3f5f5cd430dd6961371b899fee8542bfb670452712d7e0be796ad396cdf2abf"
+      },
+      "total_elapsed_seconds": null,
+      "training_update_elapsed_seconds": 186.0080711999999
+    },
+    {
+      "scene": "formal-8ag",
+      "source_directory": "D:\\codeProject\\llm-a-mappo\\.worktrees\\formal-environment-training-spec\\artifacts\\formal_environment_training\\diagnostics\\formal-8ag\\seed_0007\\seed_0007_20260930T154950Z",
+      "global_environment_steps": 4096,
+      "updates": 4,
+      "source_state": {
+        "status": "complete"
+      },
+      "training_episode_window": {
+        "window_size": 0
+      },
+      "evaluation_totals": {
+        "steps": 540.0,
+        "completed_tasks": 0.0,
+        "picked_tasks": 0.0,
+        "energy_deaths": 0.0,
+        "deadlocked": 3.0,
+        "charged_events": 0.0,
+        "charger_arrivals": 0.0,
+        "task_recoveries": 0.0
+      },
+      "evaluation_seeds": [
+        9300,
+        9301,
+        9302
+      ],
+      "finite_update_metrics": {
+        "policy_loss": {
+          "first": -0.00014421846717596054,
+          "last": 2.3283064365386963e-08,
+          "min": -0.00014421846717596054,
+          "max": 2.3283064365386963e-08
+        },
+        "value_loss": {
+          "first": 0.3047425925731659,
+          "last": 0.18218860030174255,
+          "min": 0.18218860030174255,
+          "max": 0.3047425925731659
+        },
+        "entropy": {
+          "first": 1.3861016035079956,
+          "last": 1.3858513832092285,
+          "min": 1.3858513832092285,
+          "max": 1.3861016035079956
+        },
+        "total_loss": {
+          "first": 0.1383660614490509,
+          "last": 0.07723581045866013,
+          "min": 0.07723581045866013,
+          "max": 0.1383660614490509
+        },
+        "approx_kl": {
+          "first": 2.579308347776532e-05,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 2.579308347776532e-05
+        },
+        "actor_learning_rate": {
+          "first": 0.000225,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.000225
+        },
+        "critic_learning_rate": {
+          "first": 0.000225,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.000225
+        },
+        "learning_rate": {
+          "first": 0.000225,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.000225
+        },
+        "astar_loss": {
+          "first": 0.0,
+          "last": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        }
+      },
+      "hashes": {
+        "run_manifest.json": "de040d6e9b7f7226f6334b65894be7f95c75003cbf8659fa9481ca2f8ce2f551",
+        "updates.csv": "511d277413444fef29734ece37b98f060441bf464fd0b0184149d475734f3dfc",
+        "checkpoint_final.pt": "849b10b1008dd618c9792c1a8793f6958922c83eccbf8dd195644bf1f9149364",
+        "evaluation/evaluation.json": "46305150922a5fb80ff7c315ae1e7bc5f8d5e519f1df45e4b40fddb925986f55"
+      },
+      "total_elapsed_seconds": 43.45013800000015,
+      "training_update_elapsed_seconds": null
+    }
+  ],
+  "existing_medium_baseline": {
+    "source_directory": "D:\\codeProject\\llm-a-mappo\\.worktrees\\core-integration\\artifacts\\reward_diagnostics\\group2\\medium5_c1_v3\\baseline\\seed_0007_20260928T133735Z",
+    "global_environment_steps": 600000,
+    "updates": 586,
+    "identity": {
+      "actor_observation_dimension": 209,
+      "actor_observation_schema": "structured-direct_goal-v2",
+      "code_commit": "2e579fd621a0b134068adb2cfcf79510e7672f44",
+      "config_sha256": "4dae2673b7835107fc415bc63868a926a6c16b17b06f2ca26f69c4dc6a38db61",
+      "fp_state_dimension": 689,
+      "global_step_unit": "cumulative_joint_environment_transition",
+      "method": "MAPPO-FP-DG",
+      "observation_schema": "direct-goal-observation-v2",
+      "profile_id": "medium-5ag-phase2-train",
+      "reward_definition_sha256": "3b570b7d25f2fc264c113027def4291872db95825fce1c6d23f1eec389c688a6",
+      "reward_version": "reward-v2",
+      "schema": "core-mappo-209d-delivery-c1-v3",
+      "seed": 7
+    },
+    "evaluation_seeds": [
+      9400,
+      9401,
+      9402,
+      9403,
+      9404,
+      9405,
+      9406,
+      9407,
+      9408,
+      9409
+    ],
+    "evaluation_totals": {
+      "steps": 7456.0,
+      "completed_tasks": 43.0,
+      "picked_tasks": 50.0,
+      "energy_deaths": 42.0,
+      "deadlocked": 4.0,
+      "charged_events": 0.0,
+      "charger_arrivals": 0.0,
+      "task_recoveries": 0.0
+    },
+    "checkpoint_sha256": "13918769bec21dc300b77b824ffae51c0f3963a8244e75799e98b2ae83c7730c"
+  },
+  "existing_llm_dataset": {
+    "directory": "D:\\codeProject\\llm-a-mappo\\.worktrees\\core-integration\\artifacts\\llm_kd\\dataset\\medium-5ag\\main-c6d2df435f63",
+    "label_directory": "D:\\codeProject\\llm-a-mappo\\.worktrees\\core-integration\\artifacts\\llm_kd\\dataset\\medium-5ag\\main-c6d2df435f63\\labels\\c8a3974b7c99\\deepseek-official-flash",
+    "label_config": "D:\\codeProject\\llm-a-mappo\\.worktrees\\core-integration\\configs\\llm_kd\\medium-5ag-dataset-labeling.yaml",
+    "label_config_sha256": "c8a3974b7c99fbb9ad3a64fe63c422f8eb6fef09fc0c527275e07f154a3379a1",
+    "manifest_sha256": "30827fe634f734b78c9ceb271f4e95a4c48f27d31ad4467a974732a7caddd9f1",
+    "windows_sha256": "b0fe30c9c87013923b8a19531802a75d97190fcc2a3bc66bd0d208225db7be05",
+    "episode_count": 120,
+    "episode_split_counts": {
+      "test": 18,
+      "train": 84,
+      "validation": 18
+    },
+    "trajectory_count": 600,
+    "window_counts": {
+      "test": 900,
+      "train": 4200,
+      "validation": 900
+    },
+    "source_actor_sha256": "c6d2df435f63094acd579d344dfb65488d20636102ef84fb9736e5c606ac0ffb",
+    "source_checkpoint_sha256": "13918769bec21dc300b77b824ffae51c0f3963a8244e75799e98b2ae83c7730c",
+    "collection_code_at_launch": "not_recorded_at_launch",
+    "dataset_state": {
+      "status": "completed"
+    },
+    "label_state": {
+      "status": "halted",
+      "stage": "pilot",
+      "reason": "response_validation_failed_after_retry"
+    },
+    "prelabel_validation": {
+      "checks_do_not_imply_label_quality": true,
+      "dataset_manifest_sha256": "30827fe634f734b78c9ceb271f4e95a4c48f27d31ad4467a974732a7caddd9f1",
+      "episode_isolation": true,
+      "maximum_prompt_characters": 36738,
+      "minimum_endpoint_spacing": 8,
+      "partition_counts": {
+        "test": 900,
+        "train": 4200,
+        "validation": 900
+      },
+      "raw_npz_window_alignment": true,
+      "semantic_view_uniqueness": true,
+      "status": "passed",
+      "window_count": 6000,
+      "windows_sha256": "b0fe30c9c87013923b8a19531802a75d97190fcc2a3bc66bd0d208225db7be05"
+    },
+    "label_config_file_sha256": "b445414ab0cda88eec941cab06e8865eb03e23919cb64d658cd688f91d7a5445"
+  },
+  "medium_short_test": "??????????????????",
+  "regression_before_approved_entry_change": {
+    "passed": 522,
+    "skipped": 2,
+    "skip_reason": "CUDA unavailable",
+    "elapsed_seconds": 299.71
+  },
+  "last_dependency_check_date": "2026-10-05",
+  "regression_after_approved_entry_change": {
+    "passed": 529,
+    "skipped": 2,
+    "elapsed_seconds": 206.49,
+    "note": "工程师完整回归；其后耐久分段补丁有40项聚焦回归，本次交接再次复核"
+  }
+}
