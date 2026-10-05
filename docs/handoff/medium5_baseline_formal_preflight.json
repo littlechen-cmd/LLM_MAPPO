@@ -223,5 +223,21 @@
     "正式": "CUDA_VISIBLE_DEVICES=0 /home/lzx/.conda/envs/llm-a-mappo-py310/bin/python -m scripts.run_medium5_formal_baseline --device cuda --run",
     "方式": "8seed串行，每seed16worker；训练完成后自动200实例评估；不依赖LLM数据/表示",
     "已有seed运行": "拒绝重复启动complete/running/failed已有产物；使用--seeds指定剩余seed，不隐藏失败；恢复中断由通用runner按原checkpoint身份处理。"
+  },
+  "服务器入口修复": {
+    "用户报错": "ROS /opt/ros/humble/local/lib/python3.10/dist-packages/scripts/__init__.py 被导入，随后缺少catkin_pkg",
+    "根因": "项目scripts目录缺少__init__.py，作为namespace候选被后续搜索路径上的ROS正规同名包遮蔽。",
+    "修复": "新增scripts/__init__.py，使项目根目录中的scripts成为显式包；训练代码和配置未变更。",
+    "回归": "以外部ROS同名包和缺失catkin_pkg构造真实子进程，三个python -m入口先失败、修复后通过。",
+    "测试": {
+      "入口及启动器": 23,
+      "全量pytest通过": 556,
+      "全量pytest跳过": 2,
+      "跳过原因": "本机无CUDA：test_llm_kd_embeddings.py与test_llm_kd_fresh_probe.py",
+      "全量pytest耗时秒": 258.9,
+      "flake8": "新增入口和回归文件通过"
+    },
+    "同步": "从c988157生成增量Git bundle；服务器原独立目录通过fetch和fast-forward更新。",
+    "服务器验收": "由用户在原服务器checkout执行CPU dry-run；本地验证包含模拟ROS路径污染，尚未在实际服务器执行修复后验收。"
   }
 }

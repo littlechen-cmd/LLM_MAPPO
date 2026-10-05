@@ -4,3 +4,5 @@ configs/training_v1/medium-5ag-formal/*.yaml text eol=lf
 scripts/run_medium5_formal_baseline.py text eol=lf
 tests/test_medium5_formal_launch.py text eol=lf
 docs/handoff/medium5_baseline_formal_preflight.json text eol=lf
+scripts/__init__.py text eol=lf
+tests/test_script_entrypoint_imports.py text eol=lf
