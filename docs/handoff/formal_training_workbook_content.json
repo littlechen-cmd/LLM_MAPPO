@@ -3983,7 +3983,7 @@
         [
           "新短测证据快照",
           "docs/handoff/formal_training_short_test_evidence.json",
-          "3d27c7bf276d709dd72dbf7cfdcbdb0cbfa281949a644d81d9cf730f17c29623",
+          "be41ce04dec8e70a31f2acedec1083f1134b1efb6797fd1aaa9fe4d11d3d0f02",
           "两个短测、baseline来源与dataset；不含API密钥或原始响应"
         ],
         [
