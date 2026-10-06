@@ -24,6 +24,8 @@ from .pretraining import (
     OBSERVATION_DIM,
     SEMANTIC_DIMENSIONS,
     SEMANTIC_ONTOLOGY_V1,
+    SEMANTIC_ONTOLOGY_V2,
+    SEMANTIC_CONTRACT_V2,
     PretrainingBatch,
     SemanticPretrainingModel,
     masked_semantic_loss,
@@ -378,9 +380,16 @@ def _validate_label_artifact(dataset: Path, labels: Path) -> None:
         labels_bytes = labels_path.read_bytes()
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError("Pretraining label artifact cannot be read.") from error
+    rule_artifact = (
+        isinstance(manifest, dict)
+        and manifest.get("schema") == "deterministic-semantic-rule-labels-v1"
+        and manifest.get("teacher_type") == "deterministic-observable-rule-v1"
+        and manifest.get("semantic_contract_version") == SEMANTIC_CONTRACT_V2
+    )
     if (
         not isinstance(manifest, dict)
-        or manifest.get("schema") != "llm-dataset-label-run-v1"
+        or (manifest.get("schema") != "llm-dataset-label-run-v1"
+            and not rule_artifact)
         or manifest.get("dataset_manifest_sha256")
         != sha256((dataset / "manifest.json").read_bytes()).hexdigest()
         or manifest.get("labels_sha256") != sha256(labels_bytes).hexdigest()
@@ -390,6 +399,25 @@ def _validate_label_artifact(dataset: Path, labels: Path) -> None:
         or state.get("status") != "completed"
     ):
         raise ValueError("Pretraining labels are not a completed bound artifact.")
+    dataset_manifest = json.loads((dataset / "manifest.json").read_text("utf-8"))
+    contract = dataset_manifest.get("semantic_contract_version")
+    label_contract = manifest.get("semantic_contract_version")
+    if contract is not None or label_contract is not None:
+        if (contract != SEMANTIC_CONTRACT_V2 or label_contract != contract
+                or manifest.get("pretraining_eligible") is not True):
+            raise ValueError("Pretraining semantic contract is incompatible.")
+        records = [
+            json.loads(line) for line in labels_bytes.decode("utf-8").splitlines()
+        ]
+        for record in records:
+            if record.get("status") != "ok":
+                continue
+            if record.get("receipt", {}).get(
+                "semantic_contract_version"
+            ) != contract:
+                raise ValueError(
+                    "Pretraining label receipt contract is missing or mixed."
+                )
 
 
 def _load_scores(  # noqa: C901
@@ -454,16 +482,22 @@ def _identity(config: PretrainingRunConfig, dataset: Path, labels: Path) -> dict
         content = path.read_bytes()
         digest.update(len(content).to_bytes(8, "big"))
         digest.update(content)
+    manifest = json.loads((labels / "manifest.json").read_text("utf-8"))
+    contract = manifest.get("semantic_contract_version")
+    if contract is not None and contract != SEMANTIC_CONTRACT_V2:
+        raise ValueError("Pretraining label semantic contract is incompatible.")
     identity = {
         "observation_schema": "direct-goal-observation-v2",
         "observation_dim": OBSERVATION_DIM,
-        "ontology_schema": SEMANTIC_ONTOLOGY_V1,
+        "ontology_schema": SEMANTIC_ONTOLOGY_V2 if contract else SEMANTIC_ONTOLOGY_V1,
         "semantic_dimensions": SEMANTIC_DIMENSIONS,
         "actor_architecture": ACTOR_ARCHITECTURE_V1,
         "hidden_dim": HIDDEN_DIM,
         "dataset_sha256": digest.hexdigest(),
         "config_sha256": config.config_sha256,
     }
+    if contract:
+        identity["semantic_contract_version"] = contract
     validate_pretraining_identity(identity)
     return identity
 

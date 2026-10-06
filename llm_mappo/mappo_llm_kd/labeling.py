@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+from threading import RLock
 from typing import Iterable, Mapping
 
 from .prompt import build_label_prompt
@@ -93,14 +94,29 @@ def _parse_evidence(
 
 
 class AtomicLabelStore:
-    """Small audit JSONL store rewritten atomically after every attempt."""
+    """Durable append-only JSONL store with linear total write cost."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
+        self._cached_records: list[dict[str, object]] | None = None
+        self._cached_stat: tuple[int, int] | None = None
+        self._success_index: dict[str, dict[str, object]] = {}
+        self._lock = RLock()
 
     def records(self) -> list[dict[str, object]]:
+        with self._lock:
+            return self._records_unlocked()
+
+    def _records_unlocked(self) -> list[dict[str, object]]:
         if not self.path.exists():
+            self._cached_records = []
+            self._cached_stat = None
+            self._success_index = {}
             return []
+        stat = self.path.stat()
+        marker = (stat.st_size, stat.st_mtime_ns)
+        if marker == self._cached_stat and self._cached_records is not None:
+            return list(self._cached_records)
         records = []
         for line_number, line in enumerate(
             self.path.read_text(encoding="utf-8").splitlines(), 1
@@ -116,33 +132,65 @@ class AtomicLabelStore:
             if not isinstance(record, dict):
                 raise ValueError(f"Invalid label store record at line {line_number}.")
             records.append(record)
-        return records
+        self._cached_records = records
+        self._cached_stat = marker
+        self._success_index = {
+            str(item["cache_key"]): item for item in records
+            if item.get("status") == "ok" and isinstance(item.get("cache_key"), str)
+        }
+        return list(records)
 
     def successful(
         self, cache_key: str, available_evidence_paths: Iterable[str]
     ) -> dict[str, object] | None:
         """Return only one complete, current, public cached success record."""
 
-        for record in reversed(self.records()):
-            if record.get("cache_key") == cache_key and record.get("status") == "ok":
+        with self._lock:
+            self._refresh_if_changed()
+            record = self._success_index.get(cache_key)
+            if record is not None:
                 _validate_cached_success_record(record, available_evidence_paths)
-                return record
-        return None
+            return record
 
     def append(self, record: Mapping[str, object]) -> None:
-        records = self.records()
-        records.append(dict(record))
+        with self._lock:
+            self._append_unlocked(record)
+
+    def _append_unlocked(self, record: Mapping[str, object]) -> None:
+        self._refresh_if_changed()
+        records = self._cached_records
+        assert records is not None
+        public_record = dict(record)
+        if contains_credential(public_record):
+            raise ValueError("Label record contains credential material.")
+        encoded = (
+            json.dumps(public_record, ensure_ascii=False, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        with temporary.open("w", encoding="utf-8", newline="\n") as stream:
-            for item in records:
-                stream.write(
-                    json.dumps(item, ensure_ascii=False, separators=(",", ":"))
-                    + "\n"
-                )
+        with self.path.open("ab") as stream:
+            stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
-        temporary.replace(self.path)
+        records.append(public_record)
+        if public_record.get("status") == "ok" and isinstance(
+            public_record.get("cache_key"), str
+        ):
+            self._success_index[public_record["cache_key"]] = public_record
+        stat = self.path.stat()
+        self._cached_records = records
+        self._cached_stat = (stat.st_size, stat.st_mtime_ns)
+
+    def _refresh_if_changed(self) -> None:
+        if not self.path.exists():
+            if self._cached_records is None or self._cached_stat is not None:
+                self._records_unlocked()
+            return
+        stat = self.path.stat()
+        if self._cached_records is None or self._cached_stat != (
+            stat.st_size, stat.st_mtime_ns
+        ):
+            self._records_unlocked()
 
 
 def label_view(

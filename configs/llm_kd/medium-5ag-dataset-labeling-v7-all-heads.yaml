@@ -1,0 +1,71 @@
+schema_version: medium-5ag-dataset-labeling-v5
+prompt_version: llm-label-prompt-v7-observable-coordination-v2
+semantic_contract_version: observable-coordination-four-score-v2
+authorization_sha256: 8ff5f6588036c9aa6c899c1a86f0ef1eecb047ca4ee1d4ba37393be56382b648
+quality_policy_version: medium-5ag-semantic-coverage-quality-v2
+quality_policy_authorization_sha256: ffa8c16be9349c7e3096fef6ce6c528db2c8fbe7a9412774c767d295c01da9a3
+temporal_view_schema: temporal-semantic-view-v1
+sampling_salt: medium-5ag-llm-dataset-v1
+pilot_sampling_salt: medium-5ag-llm-label-pilot-v3
+models:
+  primary:
+    provider_id: deepseek-official-flash
+    requested_model: deepseek-flash
+    base_url: https://api.deepseek.com
+    endpoint_path: /chat/completions
+    api_key_environment_variable: DEEPSEEK_API_KEY
+    temperature: 0.0
+    seed: null
+    timeout_seconds: 180.0
+    retry_limit: 1
+    max_completion_tokens: 800
+    max_prompt_characters: 60000
+    response_format: json_object
+    extra_body:
+      thinking:
+        type: disabled
+  comparison:
+    provider_id: deepseek-official-pro
+    requested_model: deepseek-v4-pro
+    base_url: https://api.deepseek.com
+    endpoint_path: /chat/completions
+    api_key_environment_variable: DEEPSEEK_API_KEY
+    temperature: 0.0
+    seed: null
+    timeout_seconds: 180.0
+    retry_limit: 1
+    max_completion_tokens: 800
+    max_prompt_characters: 60000
+    response_format: json_object
+    extra_body:
+      thinking:
+        type: disabled
+peak_uncached_usd_per_million_tokens:
+  primary:
+    input: 0.3
+    output: 1.2
+  comparison:
+    input: 1.32
+    output: 3.96
+pricing_source: https://api-docs.deepseek.com/quick_start/pricing/
+limits:
+  main_labels: 6000
+  train_labels: 4200
+  validation_labels: 900
+  test_labels: 900
+  pilot_labels: 120
+  blind_review_labels: 60
+  repeat_labels: 40
+  comparison_labels: 40
+  primary_http_attempts: 7000
+  repeat_http_attempts: 200
+  comparison_http_attempts: 128
+  input_tokens: 100000000
+  output_tokens: 5000000
+  conservative_usd: 50.0
+evidence_recipe_version: observable-all-head-citations-v2
+evidence_recipe_code_sha256: 5e459c74ce8af29aed3f62f40263059106aaae79e9646d3995ff7b153fb92543
+revision_prior_identity_sha256: 6612a5d5b41fdb9b57ede5a83798e1e8661e6f4c8298849d54c856fc7c04180b
+revision_prior_attempts_sha256: 17f407fa92928a8ab32229d7da9cc256a33b57953196827b532bea7557b887ba
+evidence_recipe_dependency_sha256: ab3042b968adb5a9aa61c7fb8475f3619f33d7bfaf46199050c2617722e82f9a
+revision_prior_config_path: configs/llm_kd/medium-5ag-dataset-labeling-v7-citations.yaml

@@ -9,7 +9,7 @@ import os
 import re
 from time import perf_counter
 from typing import Callable, Mapping
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib import request
 from urllib.parse import urlsplit
 
@@ -33,9 +33,14 @@ _SENSITIVE_KEYS = {
 class ProviderCallError(RuntimeError):
     """Redacted provider failure safe for receipts and logs."""
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, outcome_unknown: bool = False,
+                 confirmed_not_sent: bool = False,
+                 failure_metadata: dict[str, object] | None = None):
         super().__init__(code)
         self.code = code
+        self.outcome_unknown = outcome_unknown
+        self.confirmed_not_sent = confirmed_not_sent
+        self.failure_metadata = failure_metadata or {}
 
 
 @dataclass(frozen=True)
@@ -149,12 +154,30 @@ class OpenAICompatibleProvider:
             )
             content, returned_model, response_id, usage = _decode_completion(decoded)
         except Exception as error:
+            presend_denial = _is_presend_socket_denial(error)
+            reason = error.reason if isinstance(error, URLError) else error
+            failure_metadata = {
+                "exception_type": type(error).__name__,
+                "reason_type": type(reason).__name__,
+            }
+            for name in ("errno", "winerror"):
+                value = getattr(reason, name, None)
+                if type(value) is int:
+                    failure_metadata[name] = value
+            if isinstance(error, HTTPError):
+                failure_metadata["http_status"] = error.code
             code = (
-                f"provider_http_{error.code}"
-                if isinstance(error, HTTPError)
+                "provider_presend_socket_denied" if presend_denial
+                else f"provider_http_{error.code}" if isinstance(error, HTTPError)
                 else "provider_request_failed"
             )
-            raise ProviderCallError(code) from None
+            raise ProviderCallError(
+                code,
+                outcome_unknown=not presend_denial
+                and not isinstance(error, HTTPError),
+                confirmed_not_sent=presend_denial,
+                failure_metadata=failure_metadata,
+            ) from None
         latency = perf_counter() - started
         response_hash = sha256(
             json.dumps(decoded, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -162,6 +185,7 @@ class OpenAICompatibleProvider:
         receipt = {
             **self.config.public_identity(),
             "returned_model": returned_model,
+            "system_fingerprint": _fingerprint(decoded),
             "response_id": response_id,
             "prompt_version": prompt.prompt_version,
             "semantic_view_schema": "temporal-semantic-view-v1",
@@ -228,6 +252,22 @@ def _decode_completion(
             if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                 usage[key] = value
     return content, returned_model, response_id, usage
+
+
+def _fingerprint(decoded: Mapping[str, object]) -> str | None:
+    value = decoded.get("system_fingerprint")
+    return value if isinstance(value, str) and value else None
+
+
+def _is_presend_socket_denial(error: Exception) -> bool:
+    """Only the Windows sandbox connect denial proves no request was sent."""
+
+    reason = error.reason if isinstance(error, URLError) else error
+    return (
+        isinstance(reason, PermissionError)
+        and getattr(reason, "winerror", None) == 10013
+        and getattr(reason, "errno", None) == 13
+    )
 
 
 def _urlopen_transport(

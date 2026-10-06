@@ -20,6 +20,8 @@ PRETRAINING_RUN_V1 = "semantic-pretraining-run-v1"
 PRETRAINING_CHECKPOINT_V1 = "semantic-pretraining-checkpoint-v1"
 PRETRAINING_EXPORT_V1 = "actor-representation-export-v1"
 SEMANTIC_ONTOLOGY_V1 = "agent-centric-four-score-ontology-v1"
+SEMANTIC_ONTOLOGY_V2 = "agent-centric-observable-coordination-four-score-v2"
+SEMANTIC_CONTRACT_V2 = "observable-coordination-four-score-v2"
 ACTOR_ARCHITECTURE_V1 = "mappo-actor-encoder-gru-v1"
 
 OBSERVATION_DIM = 209
@@ -213,16 +215,22 @@ def validate_pretraining_identity(identity: Mapping[str, object]) -> None:
 
     if not isinstance(identity, Mapping):
         raise ValueError("Pretraining identity must be a mapping.")
-    if tuple(identity.keys()) != REQUIRED_PRETRAINING_IDENTITY_FIELDS:
+    versioned = "semantic_contract_version" in identity
+    fields = REQUIRED_PRETRAINING_IDENTITY_FIELDS + (
+        ("semantic_contract_version",) if versioned else ()
+    )
+    if tuple(identity.keys()) != fields:
         raise ValueError("Pretraining identity fields and order must be exact.")
     expected = {
         "observation_schema": DIRECT_GOAL_OBSERVATION_V2,
         "observation_dim": OBSERVATION_DIM,
-        "ontology_schema": SEMANTIC_ONTOLOGY_V1,
+        "ontology_schema": SEMANTIC_ONTOLOGY_V2 if versioned else SEMANTIC_ONTOLOGY_V1,
         "semantic_dimensions": SEMANTIC_DIMENSIONS,
         "actor_architecture": ACTOR_ARCHITECTURE_V1,
         "hidden_dim": HIDDEN_DIM,
     }
+    if versioned:
+        expected["semantic_contract_version"] = SEMANTIC_CONTRACT_V2
     for name, value in expected.items():
         supplied = identity[name]
         if name == "semantic_dimensions":
