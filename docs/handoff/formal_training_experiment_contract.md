@@ -35,3 +35,14 @@ formal另做5000步/10实例耐久评估，1000步分段且不把早终止重启
 同时保留provisional诊断拒绝长训练的门。baseline/A*48配置可启动；LLM48配置需先
 完成现有pilot响应验证问题、全量标签及8份真实表示。这是产物依赖，不是待定数值。
 本阶段不替负责人运行长任务、发布、推送或合并；保留后续优化的版本化修订空间。
+
+## 2026-10-06 medium A* KD 执行修订
+
+负责人批准 medium A* KD 在总计 900k 环境步内采用前 600k 蒸馏、后 300k 纯 PPO 尾段；
+`astar_schedule_steps=600000` 独立于 `optimization_schedule_steps=900000`，
+学习率与本次 baseline 全程相同，熵系数仍为 0.01。尾段蒸馏损失及共享梯度为零；
+训练期间仍生成教师诊断，不将其表述为停止所有教师查询。评估期教师及 planner 查询均为零。
+启动入口与按 seed 配置以 `medium5_formal_astar_kd_execution.md` 和
+`configs/training_v1/medium-5ag-formal-astar-kd/` 为准。先运行 seed 7，经负责人/架构师
+审查后才开放其余 7 个 seed；不以胜过 baseline 为准入条件，不根据预留评估调参或替换 seed。
+其他场景及尚未启动的联合组在启动前须单独核对蒸馏日程，旧 XLSX 不作为本次新日程的执行入口。

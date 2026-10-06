@@ -80,6 +80,7 @@ training:
   checkpoint_interval_steps: 25000
   astar_teacher_approval: pending
   post_schedule_learning_rate: 0.0
+  astar_schedule_steps: 600000
   post_schedule_astar_lambda: 0.0
 evaluation:
   replenishment_mode: rware_delivery

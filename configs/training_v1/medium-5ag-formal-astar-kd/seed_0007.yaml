@@ -1,0 +1,116 @@
+schema: three-scene-mappo-provisional-v1
+method: MAPPO-FP-ASTARKD-NO-VALIDITY
+approval_status: approved
+artifact_root: artifacts/formal_environment_training/medium-5ag/astar-kd
+environment:
+  scene_id: medium-5ag
+  profile_id: medium-5ag-formal-training-v1
+  environment_id: llm-mappo-medium-3ag-v1
+  n_agents: 5
+  initial_active_tasks: 5
+  max_steps: 800
+  training_replenishment_mode: rware_delivery
+  initial_priority_label: A
+  priority_schedule:
+  - A
+  - B
+  - C
+  delivery_contract: balanced-random-v1
+  charging_stations:
+  - - 0
+    - 0
+  - - 19
+    - 0
+  - - 0
+    - 23
+  - - 19
+    - 23
+  - - 9
+    - 0
+  picking_stations:
+  - - 9
+    - 21
+  - - 10
+    - 21
+  battery_cost_scale: 1.1
+  charge_threshold: 0.3
+  charge_release_threshold: 0.8
+  deadlock_steps: 180
+  observation_schema: direct-goal-observation-v2
+  goal_interface: direct_goal
+  reward_version: reward-v2
+  reward_energy_death_aggregation: local-mean
+  reward_blocked_forward_penalty: 0.1
+  reward_collision_penalty: 0.1
+  charge_event_reward: 0.0
+  reward_deadlock_penalty: 5.0
+  oracle_interaction_mask: true
+training:
+  seed: 7
+  paired_training_seeds:
+  - 7
+  - 17
+  - 27
+  - 37
+  - 47
+  - 57
+  - 67
+  - 77
+  environment_steps: 900000
+  optimization_schedule_steps: 900000
+  milestone_checkpoint_steps:
+  - 450000
+  - 900000
+  num_env_workers: 16
+  learner_torch_threads: 4
+  worker_numerical_threads: 1
+  rollout_length: 64
+  ppo_epochs: 5
+  num_minibatches: 1
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_param: 0.2
+  actor_learning_rate: 0.0003
+  critic_learning_rate: 0.0003
+  entropy_coefficient: 0.01
+  value_loss_coefficient: 0.5
+  max_gradient_norm: 0.5
+  huber_delta: 10.0
+  hidden_dimension: 64
+  checkpoint_interval_steps: 25000
+  post_schedule_learning_rate: 0.0
+  astar_teacher_approval: approved
+  astar_teacher_version: astar-geometric-cost-v2
+  astar_schedule_steps: 600000
+  post_schedule_astar_lambda: 0.0
+evaluation:
+  replenishment_mode: rware_delivery
+  seed_bases:
+  - 200
+  - 201
+  - 202
+  - 203
+  - 204
+  - 205
+  - 206
+  - 207
+  - 208
+  - 209
+  episodes_per_base: 20
+  durability_seeds:
+  - 400
+  - 401
+  - 402
+  - 403
+  - 404
+  - 405
+  - 406
+  - 407
+  - 408
+  - 409
+  durability_max_steps: null
+  deterministic_policy: argmax
+  render_replay: false
+  replay_frame_stride: 1
+  replay_frame_duration_ms: 600
+  environment_overrides: {}

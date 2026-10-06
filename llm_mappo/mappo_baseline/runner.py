@@ -312,6 +312,8 @@ def _validate_training(  # noqa: C901
     if provisional and training["environment_steps"] is None:
         if training.get("optimization_schedule_steps") is not None:
             raise ValueError("Provisional schedule cannot precede budget approval.")
+        if "astar_schedule_steps" in training:
+            raise ValueError("A*KD schedule horizon requires an approved budget.")
         if training.get("milestone_checkpoint_steps", []) != []:
             raise ValueError("Provisional milestones cannot precede approval.")
         return
@@ -321,6 +323,15 @@ def _validate_training(  # noqa: C901
     schedule_steps = int(training.get("optimization_schedule_steps", budget))
     if schedule_steps < 1 or schedule_steps > budget:
         raise ValueError("MAPPO optimization schedule horizon is invalid.")
+    if "astar_schedule_steps" in training:
+        astar_steps = training["astar_schedule_steps"]
+        if (
+            not isinstance(astar_steps, int)
+            or isinstance(astar_steps, bool)
+            or astar_steps < 1
+            or astar_steps > budget
+        ):
+            raise ValueError("A*KD schedule horizon must be an integer within budget.")
     post_schedule_lr = float(training.get("post_schedule_learning_rate", 0.0))
     maximum_lr = min(
         float(training["actor_learning_rate"]),
@@ -658,6 +669,11 @@ class BaselineRun:
         self.optimization_schedule_steps = int(
             experiment.training.get("optimization_schedule_steps", budget)
         )
+        self.astar_schedule_steps = int(
+            experiment.training.get(
+                "astar_schedule_steps", self.optimization_schedule_steps
+            )
+        )
         self.post_schedule_learning_rate = float(
             experiment.training.get("post_schedule_learning_rate", 0.0)
         )
@@ -690,7 +706,7 @@ class BaselineRun:
             self.trainer = AStarKDTrainer(
                 config,
                 self.device,
-                total_environment_steps=self.optimization_schedule_steps,
+                total_environment_steps=self.astar_schedule_steps,
                 post_schedule_astar_lambda=self.post_schedule_astar_lambda,
             )
         else:
@@ -1004,7 +1020,7 @@ class BaselineRun:
 
         return astar_kd_lambda(
             self.global_steps,
-            self.optimization_schedule_steps,
+            self.astar_schedule_steps,
             post_schedule_lambda=self.post_schedule_astar_lambda,
         )
 

@@ -1,0 +1,132 @@
+{
+  "schema": "medium5-astar-formal-preflight-v1",
+  "review_date": "2026-10-06",
+  "status": "local_preflight_passed_owner_cuda_and_seed7_pending",
+  "baseline_commit": "155f74057e0c89ac987eb120920b483a7ecff47b",
+  "owner_approved_schedule": {
+    "environment_steps": 900000,
+    "optimization_schedule_steps": 900000,
+    "astar_schedule_steps": 600000,
+    "post_schedule_astar_lambda": 0.0
+  },
+  "teacher_version": "astar-geometric-cost-v2",
+  "teacher_variant": "no_validity",
+  "initial_training_seed": 7,
+  "remaining_training_seeds": [
+    17,
+    27,
+    37,
+    47,
+    57,
+    67,
+    77
+  ],
+  "remaining_seeds_gate": "owner_architect_seed7_review_and_explicit_confirmation",
+  "validation": {
+    "related_regression_tests": {
+      "passed": 132,
+      "seconds": 75.46
+    },
+    "final_changed_file_tests": {
+      "passed": 26,
+      "seconds": 19.11
+    },
+    "flake8": "passed",
+    "diff_check": "passed",
+    "all8_paired_configs": "passed"
+  },
+  "cpu_integration_smoke": {
+    "schema": "medium5-astar-short-preflight-v1",
+    "status": "passed",
+    "diagnostic_only": true,
+    "run_directory": "D:\\codeProject\\llm-a-mappo\\.worktrees\\formal-environment-training-spec\\artifacts\\formal_environment_training\\diagnostics\\medium-5ag-astar-preflight\\seed_0007_20261006T053349Z",
+    "source_config_sha256": "b24c2b6bd4bcc0ed5f0e877b8377a1564ef0209cb1172e9e46017d5b8adc679b",
+    "environment_steps": 2048,
+    "workers": 16,
+    "updates": 4,
+    "kd_horizon": 1024,
+    "ppo_horizon": 2048,
+    "kd_before_cutoff_shared_gradient_positive": true,
+    "kd_tail_lambda_loss_shared_gradient_zero": true,
+    "ppo_tail_learning_rate_positive_before_end": true,
+    "evaluation_performed": false,
+    "reserved_evaluation_instances_consumed": 0,
+    "planner_query_count": 0,
+    "rows": [
+      {
+        "global_environment_steps": "512",
+        "astar_lambda": "0.02142857142857143",
+        "astar_loss": "0.00273085362277925",
+        "astar_shared_grad_norm": "5.3386618674267083e-05",
+        "actor_learning_rate": "0.000225",
+        "teacher_query_count": "2560"
+      },
+      {
+        "global_environment_steps": "1024",
+        "astar_lambda": "0.0",
+        "astar_loss": "0.0",
+        "astar_shared_grad_norm": "0.0",
+        "actor_learning_rate": "0.00015",
+        "teacher_query_count": "2560"
+      },
+      {
+        "global_environment_steps": "1536",
+        "astar_lambda": "0.0",
+        "astar_loss": "0.0",
+        "astar_shared_grad_norm": "0.0",
+        "actor_learning_rate": "7.5e-05",
+        "teacher_query_count": "2560"
+      },
+      {
+        "global_environment_steps": "2048",
+        "astar_lambda": "0.0",
+        "astar_loss": "0.0",
+        "astar_shared_grad_norm": "0.0",
+        "actor_learning_rate": "0.0",
+        "teacher_query_count": "2560"
+      }
+    ]
+  },
+  "reserved_evaluation_instances_consumed": 0,
+  "formal_training_started_by_agent": false,
+  "pending": [
+    "owner_server_cuda_dry_run",
+    "owner_seed7_900k_run_and_final_200_instance_evaluation",
+    "seed7_review",
+    "remaining7_runs"
+  ],
+  "configs": [
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0007.yaml",
+      "sha256": "b24c2b6bd4bcc0ed5f0e877b8377a1564ef0209cb1172e9e46017d5b8adc679b"
+    },
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0017.yaml",
+      "sha256": "deb1b00f0d15611e7ccb8ebcaa7fe61a02f3d79b577fa650872a16eac269ab52"
+    },
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0027.yaml",
+      "sha256": "dcbc6edf0ec24c5311ef39bacb0edd95d1a5fb88a03c949b7d236acf35c0fde4"
+    },
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0037.yaml",
+      "sha256": "b4852cf6c1f80b3f86d065f849855ce9fa3ddcf61994e2eba2414d3e43aa4843"
+    },
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0047.yaml",
+      "sha256": "3f19bbe83a6d0a5b7586422e521b03ad56f55fadf2a9303963977e1359dbbb3a"
+    },
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0057.yaml",
+      "sha256": "e79f48660a4427ad5aab795ac304125157ba391b3200f15e7a32e77ce55756e7"
+    },
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0067.yaml",
+      "sha256": "1bcbaf69bb8a8568350a1a10e1f0203173e3e9d232e8cd6dae3a9740ed818232"
+    },
+    {
+      "path": "configs/training_v1/medium-5ag-formal-astar-kd/seed_0077.yaml",
+      "sha256": "3dbc1fd70ea356c763228ca11c7d48b3a8844c48670b77aea67fe30cd6ed8951"
+    }
+  ]
+}

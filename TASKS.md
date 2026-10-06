@@ -13,3 +13,5 @@ LLM标签当前pilot失败待数据工程修复；long runs由负责人按工作
 - [x] MB-PREFLIGHT：完成medium baseline正式训练最终审查，准备900k×8seed与200预留评估实例的独立配置和串行启动器；88项回归及4096步CPU短测通过。GPU长训练与性能结论由负责人后续运行。
 
 - [x] MB-IMPORT：修复服务器ROS同名scripts包遮蔽，三个真实模块入口先失败后通过；全量556项通过、2项因无CUDA跳过。提供从c988157更新的增量Git包，服务器CPU验收由负责人执行。
+
+- [x] AK-PREFLIGHT：审查 medium A* KD 正式配置并实现独立 600k 蒸馏/300k 纯 PPO 尾段，保持 baseline 900k 学习率合同；132 项回归、26 项最终专项复测及 16 worker/2048 步 CPU 短测通过。已准备 seed 7 优先、审查后才开放其余 7 seed 的启动器；服务器 CUDA 验收及长训练仍待负责人运行。
