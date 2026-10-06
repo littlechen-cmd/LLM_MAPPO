@@ -157,7 +157,10 @@ def _goal_geometry_target(environment, agent, target, goal_interface, planner):
 def _self_features(environment, agent, phase: str, schema) -> list[float]:
     return (
         _one_hot(agent.dir.name, _DIRECTIONS)
-        + [float(agent.carrying_shelf is not None), float(agent.battery)]
+        + [
+            float(agent.carrying_shelf is not None),
+            float(agent.battery) if environment.energy_enabled else 1.0,
+        ]
         + _one_hot(phase, _TARGET_KINDS)
         + (
             [_priority_weight(environment, agent.id)]
@@ -184,7 +187,7 @@ def _local_map(environment, agent, schema, width: int, height: int) -> list[floa
     warehouse = environment.env
     shelves = {(shelf.x, shelf.y) for shelf in warehouse.shelfs}
     workstations = set(warehouse.picking_stations)
-    chargers = set(warehouse.charging_stations)
+    chargers = set(warehouse.charging_stations) if warehouse.energy_enabled else set()
     other_agents = {
         (peer.x, peer.y) for peer in warehouse.agents if peer.id != agent.id
     }
@@ -228,7 +231,7 @@ def _peer_features(environment, agent, schema, width: int, height: int) -> list[
                 right / scale,
                 *_one_hot(peer.dir.name, _DIRECTIONS),
                 float(peer.carrying_shelf is not None),
-                float(peer.battery),
+                float(peer.battery) if environment.energy_enabled else 1.0,
                 *_one_hot(phase, _TARGET_KINDS),
                 _priority_weight(environment, peer.id),
                 *_action_one_hot(environment.previous_action(peer.id)),

@@ -60,8 +60,12 @@ LEGACY_CORE_INTEGRATION_SCHEMA = "core-mappo-209d-v1"
 CORE_INTEGRATION_SCHEMA = "core-mappo-209d-delivery-v2"
 REWARD_DIAGNOSTIC_SCHEMA = "reward-diagnostic-mappo-209d-delivery-v1"
 ASTAR_TAIL_DIAGNOSTIC_SCHEMA = "astar-tail-diagnostic-v1"
-CONTINUOUS_DELIVERY_SCHEMAS = frozenset({SCHEMA, ASTAR_TAIL_DIAGNOSTIC_SCHEMA})
+NO_ENERGY_DIAGNOSTIC_SCHEMA = "no-energy-diagnostic-v1"
+CONTINUOUS_DELIVERY_SCHEMAS = frozenset({
+    SCHEMA, ASTAR_TAIL_DIAGNOSTIC_SCHEMA, NO_ENERGY_DIAGNOSTIC_SCHEMA,
+})
 DIAGNOSTIC_CHECKPOINT_SCHEMAS = {
+    NO_ENERGY_DIAGNOSTIC_SCHEMA: "mappo-fp-no-energy-diagnostic-checkpoint-v1",
     ASTAR_TAIL_DIAGNOSTIC_SCHEMA: "mappo-fp-astar-tail-diagnostic-checkpoint-v1",
     REWARD_DIAGNOSTIC_SCHEMA: "mappo-fp-209d-delivery-reward-diagnostic-checkpoint-v1",
 }
@@ -134,6 +138,8 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     source = Path(path)
     raw = source.read_bytes()
     values = yaml.safe_load(raw)
+    if values.get("schema") == NO_ENERGY_DIAGNOSTIC_SCHEMA:
+        raise ValueError("No-energy configurations require the diagnostic runner.")
     if values.get("schema") == ASTAR_TAIL_DIAGNOSTIC_SCHEMA:
         raise ValueError("A* tail configurations require the diagnostic runner.")
     if values.get("schema") == REWARD_DIAGNOSTIC_SCHEMA:
@@ -526,9 +532,14 @@ class BaselineRun:
         diagnostic_reward_definition: Mapping[str, Any] | None = None,
         diagnostic_reward_definition_sha256: str | None = None,
     ) -> None:
+        if (experiment.schema == NO_ENERGY_DIAGNOSTIC_SCHEMA
+                and experiment.environment.get("energy_enabled") is not False):
+            raise ValueError("No-energy diagnostic requires disabled energy.")
         reward_diagnostic = experiment.schema == REWARD_DIAGNOSTIC_SCHEMA
         diagnostic_schema = reward_diagnostic or (
-            experiment.schema == ASTAR_TAIL_DIAGNOSTIC_SCHEMA
+            experiment.schema in {
+                ASTAR_TAIL_DIAGNOSTIC_SCHEMA, NO_ENERGY_DIAGNOSTIC_SCHEMA,
+            }
         )
         if diagnostic_schema and not diagnostic_authorized:
             raise ValueError("Diagnostic runs require diagnostic authorization.")
@@ -625,6 +636,8 @@ class BaselineRun:
                 "charging_stations": experiment.environment["charging_stations"],
                 "picking_stations": experiment.environment["picking_stations"],
             })
+        if experiment.schema == NO_ENERGY_DIAGNOSTIC_SCHEMA:
+            self.identity["energy_enabled"] = False
         if reward_diagnostic:
             self.identity["reward_definition_sha256"] = (
                 diagnostic_reward_definition_sha256
@@ -1198,6 +1211,8 @@ class BaselineRun:
                 "charging_stations", "picking_stations", "config_sha256",
                 "seed", "profile_id",
             )
+        if self.experiment.schema == NO_ENERGY_DIAGNOSTIC_SCHEMA:
+            compatibility_fields += ("energy_enabled",)
         mismatched = [
             field for field in compatibility_fields
             if source_identity.get(field) != self.identity.get(field)

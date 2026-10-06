@@ -233,6 +233,7 @@ class Phase2Warehouse:
     env_id: str = "llm-mappo-medium-3ag-v1"
     charge_threshold: float = 0.2
     charge_release_threshold: float = 0.8
+    energy_enabled: bool = field(default=True, kw_only=True)
     battery_cost_scale: float = 1.0
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
@@ -316,6 +317,8 @@ class Phase2Warehouse:
             "local-mean",
         }:
             raise ValueError("Reward-v2 energy-death aggregation is invalid.")
+        if not isinstance(self.energy_enabled, bool):
+            raise ValueError("energy_enabled must be a boolean.")
         if self.battery_cost_scale <= 0.0:
             raise ValueError("battery_cost_scale must be positive.")
         if not self.charge_threshold < self.charge_release_threshold <= 1.0:
@@ -359,6 +362,7 @@ class Phase2Warehouse:
             "task_completion_target": self.task_completion_target,
             "terminate_on_task_target": self.terminate_on_task_target,
             "battery_cost_scale": self.battery_cost_scale,
+            "energy_enabled": self.energy_enabled,
             "replenishment_mode": self.replenishment_mode,
             "delivery_contract": self.delivery_contract,
             "assignment_battery_threshold": self.charge_threshold,
@@ -425,6 +429,9 @@ class Phase2Warehouse:
         if len(actions) != self.n_agents:
             raise ValueError("Expected one discrete action for every AGV.")
 
+        if not self.energy_enabled:
+            for agent in self.env.agents:
+                agent.battery = 1.0
         charging_targets = self._charging_targets()
         before = self._waypoint_distances(charging_targets)
         reward_goals_before = self._reward_goal_snapshots(charging_targets)
@@ -851,6 +858,10 @@ class Phase2Warehouse:
 
     def _charging_targets(self) -> Dict[int, Tuple[int, int]]:
         """Assign at-risk AGVs distinct stations by urgency and occupancy."""
+        if not self.energy_enabled:
+            self._charging_active.clear()
+            self.env.charging_reservations.clear()
+            return {}
         warehouse = self.env
         available_agents = {agent.id for agent in warehouse.agents if not agent.dead}
         self._charging_active.intersection_update(available_agents)
@@ -1113,6 +1124,8 @@ class Phase2Warehouse:
         on every step.  Battery depletion is still handled separately by the
         environment's terminal energy-death consequence.
         """
+        if not self.energy_enabled:
+            return np.zeros(self.n_agents, dtype=np.float32)
         penalties = np.zeros(self.n_agents, dtype=np.float32)
         for index, agent in enumerate(self.env.agents):
             if (
@@ -1131,7 +1144,7 @@ class Phase2Warehouse:
     ) -> np.ndarray:
         """Reward only a requested NOOP that actually increases battery."""
         rewards = np.zeros(self.n_agents, dtype=np.float32)
-        if self.charge_event_reward == 0.0:
+        if not self.energy_enabled or self.charge_event_reward == 0.0:
             return rewards
         for index, agent in enumerate(self.env.agents):
             target = charging_targets.get(agent.id)
@@ -1262,6 +1275,10 @@ class Phase2Warehouse:
         batteries_before: Dict[int, float],
         actions: Sequence[int],
     ) -> None:
+        if not self.energy_enabled:
+            self._low_battery_active.clear()
+            self._charged_pending_recovery.clear()
+            return
         low_before = {
             agent_id
             for agent_id, battery in batteries_before.items()

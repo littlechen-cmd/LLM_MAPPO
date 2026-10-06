@@ -43,6 +43,7 @@ def new_baseline_environment(
         env_id=str(values["environment_id"]),
         charge_threshold=float(values["charge_threshold"]),
         charge_release_threshold=float(values["charge_release_threshold"]),
+        energy_enabled=values.get("energy_enabled", True),
         battery_cost_scale=float(values["battery_cost_scale"]),
         deadlock_steps=int(values["deadlock_steps"]),
         waypoint_reward=float(values.get("goal_progress_reward", 0.0)),

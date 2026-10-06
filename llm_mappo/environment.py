@@ -29,6 +29,7 @@ class DynamicWarehouse(Warehouse):
         initial_ingress_batches: int = 2,
         charging_stations: Optional[Sequence[Tuple[int, int]]] = None,
         picking_stations: Optional[Sequence[Tuple[int, int]]] = None,
+        energy_enabled: bool = True,
         charging_rate: float = 0.02,
         battery_cost_scale: float = 1.0,
         picking_lock_steps: int = 3,
@@ -43,6 +44,9 @@ class DynamicWarehouse(Warehouse):
         assignment_battery_threshold: float = 0.1,
         **kwargs,
     ):
+        if not isinstance(energy_enabled, bool):
+            raise ValueError("energy_enabled must be a boolean.")
+        self.energy_enabled = energy_enabled
         self._validate_options(
             batch_interval,
             batch_size_range,
@@ -254,6 +258,7 @@ class DynamicWarehouse(Warehouse):
             "charging_stations": self.charging_stations,
             "charging_rate": self.charging_rate,
             "battery_cost_scale": self.battery_cost_scale,
+            **({"energy_enabled": False} if not self.energy_enabled else {}),
             "picking_lock_steps": self.picking_lock_steps,
             "auto_assign": self.auto_assign,
             "task_completion_target": self.task_completion_target,
@@ -439,6 +444,10 @@ class DynamicWarehouse(Warehouse):
         if len(actions) != self.n_agents:
             raise ValueError("Expected exactly one action per AGV.")
 
+        if not self.energy_enabled:
+            self.charging_reservations.clear()
+            for agent in self.agents:
+                agent.battery = 1.0
         requested_actions = [Action(action) for action in actions]
         locked_before = {
             agent.id: agent.picking_lock_steps > 0 for agent in self.agents
@@ -751,6 +760,10 @@ class DynamicWarehouse(Warehouse):
             self.request_queue.remove(delivered_shelf)
 
     def _assign_available_tasks(self):
+        if not self.energy_enabled:
+            self.charging_reservations.clear()
+            for agent in self.agents:
+                agent.battery = 1.0
         if not self.auto_assign:
             return
         if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
@@ -924,6 +937,10 @@ class DynamicWarehouse(Warehouse):
             )
 
     def _update_batteries(self, pre_state, locked_before, rewards):
+        if not self.energy_enabled:
+            for agent in self.agents:
+                agent.battery = 1.0
+            return
         newly_dead = []
         for agent in self.agents:
             if agent.dead:

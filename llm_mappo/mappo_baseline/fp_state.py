@@ -151,7 +151,7 @@ def build_fp_state(  # noqa: C901
     task_scale = max(int(warehouse.task_completion_target), 1)
     active_scale = max(task_scale, int(environment.request_queue_size or 1))
     occupied_chargers = sum(
-        (agent.x, agent.y) in warehouse.charging_stations
+        warehouse.energy_enabled and (agent.x, agent.y) in warehouse.charging_stations
         for agent in warehouse.agents
     )
     active_count = max(len(active_tasks), 1)
@@ -176,7 +176,7 @@ def build_fp_state(  # noqa: C901
                 float(agent.x) / max(width - 1, 1),
                 float(agent.y) / max(height - 1, 1),
                 *direction,
-                float(agent.battery),
+                float(agent.battery) if warehouse.energy_enabled else 1.0,
                 float(agent.carrying_shelf is not None),
                 float(agent.dead),
                 min(float(agent.picking_lock_steps) / 3.0, 1.0),
@@ -207,7 +207,7 @@ def build_fp_state(  # noqa: C901
         )
     agent_positions = {(agent.x, agent.y) for agent in warehouse.agents}
     common.extend(
-        float(station in agent_positions)
+        float(warehouse.energy_enabled and station in agent_positions)
         for station in sorted(warehouse.charging_stations)
     )
     common.extend(
