@@ -1,0 +1,161 @@
+{
+  "schema": "medium5-astar-tail-preflight-v1",
+  "date": "2026-10-06",
+  "status": "local_preflight_passed_owner_cuda_and_long_diagnostic_pending",
+  "owner_approved": true,
+  "groups": {
+    "cutoff_450k": {
+      "stop_steps": 450000,
+      "pure_ppo_steps": 450000
+    },
+    "cutoff_600k": {
+      "stop_steps": 600000,
+      "pure_ppo_steps": 300000
+    },
+    "cutoff_750k": {
+      "stop_steps": 750000,
+      "pure_ppo_steps": 150000
+    },
+    "cutoff_900k": {
+      "stop_steps": 900000,
+      "pure_ppo_steps": 0
+    }
+  },
+  "common": {
+    "seed": 7,
+    "environment_steps": 900000,
+    "optimization_schedule_steps": 900000,
+    "astar_schedule_steps": 600000,
+    "post_schedule_astar_lambda": 0.01,
+    "workers_per_learner": 16,
+    "parallel_learners": 4,
+    "evaluation_seeds": [
+      9400,
+      9401,
+      9402,
+      9403,
+      9404,
+      9405,
+      9406,
+      9407,
+      9408,
+      9409
+    ]
+  },
+  "validation": {
+    "related_regression_tests": {
+      "passed": 200,
+      "seconds": 136.39
+    },
+    "final_analyzer_tests": {
+      "passed": 9,
+      "seconds": 0.73
+    },
+    "flake8": "passed",
+    "diff_check": "passed"
+  },
+  "short_smoke": {
+    "schema": "astar-tail-diagnostic-preflight-v1",
+    "status": "passed",
+    "diagnostic_only": true,
+    "run_directory": "D:\\codeProject\\llm-a-mappo\\.worktrees\\formal-environment-training-spec\\artifacts\\astar_tail_diagnostics\\medium-5ag\\preflight\\seed_0007_20261006T054937Z",
+    "environment_steps": 2048,
+    "workers": 16,
+    "updates": 8,
+    "evaluation_seeds": [
+      9300
+    ],
+    "formal_evaluation_instances_consumed": 0,
+    "training_kd_gradient_positive_before_cutoff": true,
+    "tail_lambda_loss_shared_gradient_zero": true,
+    "ppo_tail_learning_rate_positive": true,
+    "training_planner_query_count": 0,
+    "evaluation_direct_goal_without_planner": true,
+    "evaluation_counter_not_separately_recorded": true,
+    "receipt_reconstructed_from_completed_raw_artifacts": true,
+    "rows": [
+      {
+        "global_environment_steps": "256",
+        "astar_lambda": "0.03929094331729764",
+        "astar_loss": "0.004847247619181871",
+        "astar_shared_grad_norm": "9.76406954578124e-05",
+        "actor_learning_rate": "0.0002625"
+      },
+      {
+        "global_environment_steps": "512",
+        "astar_lambda": "0.028581886634595273",
+        "astar_loss": "0.0036353846080601215",
+        "astar_shared_grad_norm": "8.258660818682984e-05",
+        "actor_learning_rate": "0.000225"
+      },
+      {
+        "global_environment_steps": "768",
+        "astar_lambda": "0.01787282995189291",
+        "astar_loss": "0.0023748204112052917",
+        "astar_shared_grad_norm": "4.733600508188829e-05",
+        "actor_learning_rate": "0.00018749999999999998"
+      },
+      {
+        "global_environment_steps": "1024",
+        "astar_lambda": "0.01",
+        "astar_loss": "0.0013701661955565214",
+        "astar_shared_grad_norm": "3.640970680862665e-05",
+        "actor_learning_rate": "0.00015"
+      },
+      {
+        "global_environment_steps": "1280",
+        "astar_lambda": "0.01",
+        "astar_loss": "0.001390283228829503",
+        "astar_shared_grad_norm": "4.6298824599944055e-05",
+        "actor_learning_rate": "0.0001125"
+      },
+      {
+        "global_environment_steps": "1536",
+        "astar_lambda": "0.0",
+        "astar_loss": "0.0",
+        "astar_shared_grad_norm": "0.0",
+        "actor_learning_rate": "7.5e-05"
+      },
+      {
+        "global_environment_steps": "1792",
+        "astar_lambda": "0.0",
+        "astar_loss": "0.0",
+        "astar_shared_grad_norm": "0.0",
+        "actor_learning_rate": "3.75e-05"
+      },
+      {
+        "global_environment_steps": "2048",
+        "astar_lambda": "0.0",
+        "astar_loss": "0.0",
+        "astar_shared_grad_norm": "0.0",
+        "actor_learning_rate": "0.0"
+      }
+    ]
+  },
+  "formal_training_started": false,
+  "long_diagnostic_started": false,
+  "configs": [
+    {
+      "path": "configs/astar_tail_diagnostics/medium-5ag/cutoff_450k.yaml",
+      "sha256": "d2059536de5163f6777f1a2f36fe7a09baa64b5145252a85d81414e3389a575d"
+    },
+    {
+      "path": "configs/astar_tail_diagnostics/medium-5ag/cutoff_600k.yaml",
+      "sha256": "042b5da73b862b2d91f549ddfc0e10e6617189f73966ef10dafc97a0bbe283f9"
+    },
+    {
+      "path": "configs/astar_tail_diagnostics/medium-5ag/cutoff_750k.yaml",
+      "sha256": "da1b2bee48618d56a31a1e8f1ce18f2ef50d6d0afbb46dba17e5a8d0404d23a9"
+    },
+    {
+      "path": "configs/astar_tail_diagnostics/medium-5ag/cutoff_900k.yaml",
+      "sha256": "fd11551659e2fb2a5b947396f69c1e91246d78c256a535abd41adead04274713"
+    }
+  ],
+  "pending": [
+    "owner_cuda_dry_run_and_resource_lease",
+    "4_parallel_900k_runs",
+    "4_group_results_review",
+    "formal_cutoff_selection"
+  ]
+}

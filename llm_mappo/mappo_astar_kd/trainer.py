@@ -103,15 +103,23 @@ def astar_kd_lambda(
     total_steps: int,
     *,
     post_schedule_lambda: float = 0.01,
+    stop_steps: int | None = None,
 ) -> float:
     """Linearly decay 0.05 to 0.01 in 70% of cumulative env transitions.
 
     Steps at or beyond the schedule horizon use ``post_schedule_lambda`` so a
     decoupled tail can hold or disable A*KD without stretching the curriculum.
+    Optional ``stop_steps`` independently turns guidance off at a hard cutoff.
     """
 
     if total_steps < 1:
         raise ValueError("A*KD schedule requires a positive total step budget.")
+    if stop_steps is not None:
+        if (not isinstance(stop_steps, int) or isinstance(stop_steps, bool)
+                or stop_steps < 1):
+            raise ValueError("A*KD stop steps must be a positive integer.")
+        if global_environment_steps >= stop_steps:
+            return 0.0
     if global_environment_steps >= total_steps:
         return float(post_schedule_lambda)
     ratio = max(0.0, min(float(global_environment_steps) / total_steps, 1.0))
@@ -161,12 +169,20 @@ class AStarKDTrainer(MAPPOTrainer):
         *,
         total_environment_steps: int,
         post_schedule_astar_lambda: float = 0.01,
+        astar_stop_steps: int | None = None,
     ) -> None:
         super().__init__(config, device)
         if total_environment_steps < 1:
             raise ValueError("A*KD trainer needs a positive environment-step budget.")
         if post_schedule_astar_lambda < 0.0:
             raise ValueError("A*KD post-schedule lambda must be non-negative.")
+        if astar_stop_steps is not None and (
+            not isinstance(astar_stop_steps, int)
+            or isinstance(astar_stop_steps, bool)
+            or astar_stop_steps < 1
+        ):
+            raise ValueError("A*KD stop steps must be a positive integer.")
+        self.astar_stop_steps = astar_stop_steps
         self.total_environment_steps = int(total_environment_steps)
         self.post_schedule_astar_lambda = float(post_schedule_astar_lambda)
         self.global_environment_steps = 0
@@ -207,6 +223,7 @@ class AStarKDTrainer(MAPPOTrainer):
                 self.global_environment_steps,
                 self.total_environment_steps,
                 post_schedule_lambda=self.post_schedule_astar_lambda,
+                stop_steps=self.astar_stop_steps,
             ),
         )
 

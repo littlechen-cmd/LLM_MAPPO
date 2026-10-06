@@ -59,6 +59,12 @@ class BaselineExperiment:
 LEGACY_CORE_INTEGRATION_SCHEMA = "core-mappo-209d-v1"
 CORE_INTEGRATION_SCHEMA = "core-mappo-209d-delivery-v2"
 REWARD_DIAGNOSTIC_SCHEMA = "reward-diagnostic-mappo-209d-delivery-v1"
+ASTAR_TAIL_DIAGNOSTIC_SCHEMA = "astar-tail-diagnostic-v1"
+CONTINUOUS_DELIVERY_SCHEMAS = frozenset({SCHEMA, ASTAR_TAIL_DIAGNOSTIC_SCHEMA})
+DIAGNOSTIC_CHECKPOINT_SCHEMAS = {
+    ASTAR_TAIL_DIAGNOSTIC_SCHEMA: "mappo-fp-astar-tail-diagnostic-checkpoint-v1",
+    REWARD_DIAGNOSTIC_SCHEMA: "mappo-fp-209d-delivery-reward-diagnostic-checkpoint-v1",
+}
 CORE_INTEGRATION_SCHEMAS = frozenset({
     LEGACY_CORE_INTEGRATION_SCHEMA,
     CORE_INTEGRATION_SCHEMA,
@@ -104,10 +110,10 @@ def _run_directory_name(
 def checkpoint_schema_for_experiment(experiment: BaselineExperiment) -> str:
     """Resolve one experiment's strict checkpoint namespace."""
 
+    if experiment.schema in DIAGNOSTIC_CHECKPOINT_SCHEMAS:
+        return DIAGNOSTIC_CHECKPOINT_SCHEMAS[experiment.schema]
     if experiment.schema == SCHEMA:
         return f"{experiment.method.lower()}-{experiment.environment['scene_id']}-v1"
-    if experiment.schema == REWARD_DIAGNOSTIC_SCHEMA:
-        return "mappo-fp-209d-delivery-reward-diagnostic-checkpoint-v1"
     if experiment.schema == CORE_INTEGRATION_SCHEMA:
         try:
             return DELIVERY_CHECKPOINT_SCHEMAS[experiment.method]
@@ -128,6 +134,8 @@ def load_baseline_experiment(path: str | Path) -> BaselineExperiment:  # noqa: C
     source = Path(path)
     raw = source.read_bytes()
     values = yaml.safe_load(raw)
+    if values.get("schema") == ASTAR_TAIL_DIAGNOSTIC_SCHEMA:
+        raise ValueError("A* tail configurations require the diagnostic runner.")
     if values.get("schema") == REWARD_DIAGNOSTIC_SCHEMA:
         raise ValueError(
             "Reward diagnostic configurations require the diagnostic runner."
@@ -314,6 +322,8 @@ def _validate_training(  # noqa: C901
             raise ValueError("Provisional schedule cannot precede budget approval.")
         if "astar_schedule_steps" in training:
             raise ValueError("A*KD schedule horizon requires an approved budget.")
+        if training.get("astar_stop_steps") is not None:
+            raise ValueError("A*KD stop steps require an approved budget.")
         if training.get("milestone_checkpoint_steps", []) != []:
             raise ValueError("Provisional milestones cannot precede approval.")
         return
@@ -332,6 +342,12 @@ def _validate_training(  # noqa: C901
             or astar_steps > budget
         ):
             raise ValueError("A*KD schedule horizon must be an integer within budget.")
+    stop_steps = training.get("astar_stop_steps")
+    if stop_steps is not None and (
+        not isinstance(stop_steps, int) or isinstance(stop_steps, bool)
+        or stop_steps < 1 or stop_steps > budget
+    ):
+        raise ValueError("A*KD stop steps must be an integer within budget.")
     post_schedule_lr = float(training.get("post_schedule_learning_rate", 0.0))
     maximum_lr = min(
         float(training["actor_learning_rate"]),
@@ -510,9 +526,12 @@ class BaselineRun:
         diagnostic_reward_definition: Mapping[str, Any] | None = None,
         diagnostic_reward_definition_sha256: str | None = None,
     ) -> None:
-        diagnostic_schema = experiment.schema == REWARD_DIAGNOSTIC_SCHEMA
+        reward_diagnostic = experiment.schema == REWARD_DIAGNOSTIC_SCHEMA
+        diagnostic_schema = reward_diagnostic or (
+            experiment.schema == ASTAR_TAIL_DIAGNOSTIC_SCHEMA
+        )
         if diagnostic_schema and not diagnostic_authorized:
-            raise ValueError("Reward diagnostic runs require diagnostic authorization.")
+            raise ValueError("Diagnostic runs require diagnostic authorization.")
         provisional_diagnostic = (
             experiment.schema == SCHEMA and diagnostic_authorized
             and experiment.method == "MAPPO-FP-DG"
@@ -529,7 +548,7 @@ class BaselineRun:
             and not provisional_diagnostic
         ):
             raise ValueError("Diagnostic authorization requires a diagnostic schema.")
-        if diagnostic_schema and (
+        if reward_diagnostic and (
             not isinstance(diagnostic_reward_definition, Mapping)
             or not isinstance(diagnostic_reward_definition_sha256, str)
             or len(diagnostic_reward_definition_sha256) != 64
@@ -563,7 +582,7 @@ class BaselineRun:
         self.schema = FPStateSchema(
             int(experiment.environment["n_agents"]),
             n_shelves=SCENES[experiment.environment["scene_id"]]["n_shelves"]
-            if experiment.schema == SCHEMA else 144,
+            if experiment.schema in CONTINUOUS_DELIVERY_SCHEMAS else 144,
             n_chargers=len(experiment.environment["charging_stations"]),
             n_picking_stations=len(experiment.environment["picking_stations"]),
         )
@@ -597,7 +616,7 @@ class BaselineRun:
             "reward_version": experiment.environment["reward_version"],
             "profile_id": experiment.environment["profile_id"],
         }
-        if experiment.schema == SCHEMA:
+        if experiment.schema in CONTINUOUS_DELIVERY_SCHEMAS:
             self.identity.update({
                 "scene_id": experiment.environment["scene_id"],
                 "environment_id": experiment.environment["environment_id"],
@@ -606,7 +625,7 @@ class BaselineRun:
                 "charging_stations": experiment.environment["charging_stations"],
                 "picking_stations": experiment.environment["picking_stations"],
             })
-        if diagnostic_schema:
+        if reward_diagnostic:
             self.identity["reward_definition_sha256"] = (
                 diagnostic_reward_definition_sha256
             )
@@ -642,7 +661,7 @@ class BaselineRun:
                 "teacher_modules_enabled": self._astar_kd_enabled,
                 "astar_kd_variant": self._astar_kd_variant,
             })
-            if diagnostic_schema:
+            if reward_diagnostic:
                 manifest_path = self.directory / "run_manifest.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 manifest["reward_diagnostic"] = {
@@ -684,6 +703,7 @@ class BaselineRun:
         self.post_schedule_astar_lambda = float(
             experiment.training.get("post_schedule_astar_lambda", 0.01)
         )
+        self.astar_stop_steps = experiment.training.get("astar_stop_steps")
         config = MAPPOConfig(
             observation_dim=self.actor_schema.dimension,
             state_dim=self.schema.dimension,
@@ -708,6 +728,7 @@ class BaselineRun:
                 self.device,
                 total_environment_steps=self.astar_schedule_steps,
                 post_schedule_astar_lambda=self.post_schedule_astar_lambda,
+                astar_stop_steps=self.astar_stop_steps,
             )
         else:
             self.trainer = MAPPOTrainer(config, self.device)
@@ -1022,6 +1043,7 @@ class BaselineRun:
             self.global_steps,
             self.astar_schedule_steps,
             post_schedule_lambda=self.post_schedule_astar_lambda,
+            stop_steps=self.astar_stop_steps,
         )
 
     def _write_due_milestone_checkpoints(self) -> None:
@@ -1043,7 +1065,7 @@ class BaselineRun:
         self.trainer.actor.eval()
         for seed in self.experiment.evaluation["seeds"]:
             results.append(self._evaluation_episode(int(seed)))
-        if self.experiment.schema == SCHEMA:
+        if self.experiment.schema in CONTINUOUS_DELIVERY_SCHEMAS:
             legacy_fields = {
                 "success", "task_completion_rate", "task_completion_target"
             }
@@ -1098,13 +1120,13 @@ class BaselineRun:
                 if self.experiment.evaluation.get("render_replay", True) else None
             ),
             "metrics_plot": (
-                None if self.experiment.schema == SCHEMA
+                None if self.experiment.schema in CONTINUOUS_DELIVERY_SCHEMAS
                 else "evaluation/evaluation_metrics.png"
             ),
         }
         output = self.directory / "evaluation"
         output.mkdir(exist_ok=True)
-        if self.experiment.schema != SCHEMA:
+        if self.experiment.schema not in CONTINUOUS_DELIVERY_SCHEMAS:
             _write_evaluation_plot(output / "evaluation_metrics.png", results)
         _write_json(output / "evaluation.json", result)
         return result
@@ -1170,7 +1192,7 @@ class BaselineRun:
             "reward_version",
             "reward_definition_sha256",
         )
-        if self.experiment.schema == SCHEMA:
+        if self.experiment.schema in CONTINUOUS_DELIVERY_SCHEMAS:
             compatibility_fields += (
                 "scene_id", "environment_id", "layout_sha256", "n_agents",
                 "charging_stations", "picking_stations", "config_sha256",
@@ -1205,7 +1227,7 @@ class BaselineRun:
         try:
             environment.reset(seed=seed)
             durability = (
-                self.experiment.schema == SCHEMA
+                self.experiment.schema in CONTINUOUS_DELIVERY_SCHEMAS
                 and self.experiment.environment["scene_id"] == "formal-8ag"
                 and values["max_steps"] == 5000
                 and self.experiment.evaluation.get("durability_max_steps") == 5000
@@ -1307,7 +1329,10 @@ class BaselineRun:
         if not isinstance(overrides, Mapping):
             raise ValueError("Evaluation environment_overrides must be a mapping.")
         values = {**self.experiment.environment, **overrides}
-        _validate_environment(values, provisional=self.experiment.schema == SCHEMA)
+        _validate_environment(
+            values,
+            provisional=self.experiment.schema in CONTINUOUS_DELIVERY_SCHEMAS,
+        )
         return values
 
     def _checkpoint(self, path: Path) -> None:
@@ -1456,7 +1481,7 @@ class BaselineRun:
             "training_episode_window": _episode_window(
                 window,
                 primary_metric="steps_per_task" if continuous_throughput else None,
-            ) if self.experiment.schema != SCHEMA else (
+            ) if self.experiment.schema not in CONTINUOUS_DELIVERY_SCHEMAS else (
                 _continuous_episode_window(window)
             ),
             "evaluation": evaluation,

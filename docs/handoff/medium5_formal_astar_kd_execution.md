@@ -1,5 +1,8 @@
 # medium-5ag 正式 A* KD 训练执行说明
 
+> 2026-10-06 后续修订：负责人新增四组截断诊断。尚未启动的正式 A* KD 先完成
+> [截断诊断](medium5_astar_tail_diagnostic_execution.md)，本文件 600k/300k 配置保留为候选。
+
 2026-10-06。适用于本次 900k × 8 seed 正式比较；先运行 seed 7，审查后再运行其余 7 个 seed。
 本文件与 `configs/training_v1/medium-5ag-formal-astar-kd/` 是本次执行入口。
 
