@@ -233,6 +233,8 @@ class Phase2Warehouse:
     env_id: str = "llm-mappo-medium-3ag-v1"
     charge_threshold: float = 0.2
     charge_release_threshold: float = 0.8
+    charging_contract: str = "legacy-v1"
+    charging_rate: float = 0.02
     battery_cost_scale: float = 1.0
     deadlock_steps: int = 120
     waypoint_reward: float = 1.0
@@ -319,6 +321,14 @@ class Phase2Warehouse:
             raise ValueError("Reward-v2 energy-death aggregation is invalid.")
         if self.battery_cost_scale <= 0.0:
             raise ValueError("battery_cost_scale must be positive.")
+        if self.charging_contract not in {"legacy-v1", "goal-full-v1"}:
+            raise ValueError("charging_contract is not supported.")
+        if self.charging_contract == "goal-full-v1" and (
+            self.charging_rate != 0.1 or self.charge_release_threshold != 1.0
+        ):
+            raise ValueError(
+                "goal-full-v1 charging requires rate 0.1 and release threshold 1.0."
+            )
         if not self.charge_threshold < self.charge_release_threshold <= 1.0:
             raise ValueError(
                 "charge_release_threshold must be above charge_threshold and at most 1."
@@ -365,6 +375,8 @@ class Phase2Warehouse:
             "replenishment_mode": self.replenishment_mode,
             "delivery_contract": self.delivery_contract,
             "assignment_battery_threshold": self.charge_threshold,
+            "charging_contract": self.charging_contract,
+            "charging_rate": self.charging_rate,
         }
         if self.priority_schedule is not None:
             make_options["priority_schedule"] = tuple(self.priority_schedule)
@@ -429,6 +441,11 @@ class Phase2Warehouse:
             raise ValueError("Expected one discrete action for every AGV.")
 
         charging_targets = self._charging_targets()
+        if self.charging_contract == "goal-full-v1":
+            actions = [
+                Action.NOOP if self.env.charging_service_active(agent) else action
+                for agent, action in zip(self.env.agents, actions)
+            ]
         before = self._waypoint_distances(charging_targets)
         reward_goals_before = self._reward_goal_snapshots(charging_targets)
         task_weights = {
@@ -647,8 +664,13 @@ class Phase2Warehouse:
     def action_masks(self) -> np.ndarray:
         """Return decentralized masks for valid Phase 2 motion interactions."""
         masks = np.ones((self.n_agents, ACTION_COUNT), dtype=bool)
+        if self.charging_contract == "goal-full-v1":
+            self._charging_targets()
         for index, agent in enumerate(self.env.agents):
-            if agent.dead or agent.picking_lock_steps:
+            if (
+                agent.dead or agent.picking_lock_steps
+                or self.env.charging_service_active(agent)
+            ):
                 masks[index] = False
                 masks[index, Action.NOOP.value] = True
             elif self.oracle_interaction_mask:

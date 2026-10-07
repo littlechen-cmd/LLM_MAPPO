@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-08
+
+- 冻结：采用 goal-priority、yielding-preference、local-constraint 三维主语义及 motion-stagnation 第四辅助维度，保留可观察边界并区分历史合同。
+- 冻结：前三维由 LLM 标注，motion-stagnation 从同一可观察窗口规则派生，四维共同预训练并明确记录分维来源。
+- 规划：确认 medium 新建 3,000 条及语义至少三维，基于实际 209D 时序输入完成候选维度与不可观察边界分析，替代此前两维建议。
+
+## 2026-10-07
+
+- 新增：三环境 LLM KD 已批准规格及任务追踪，冻结数据量、八个 RL seeds 和充电合同。
+- 实现：可显式启用到目标站充电锁定、0.1/步补能及满电释放，保留旧合同兼容性，专项 16 项回归通过。
+- 审查：离线核对 medium 4,200 条训练标签的维度重复与充电覆盖，提交新语义及 formal 容量建议，未新增 API 调用。
+
 ## 2026-10-06
 
 - Added: Delivered 6000 formal medium-5AG eight-frame 209D semantic labels,

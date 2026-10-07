@@ -259,6 +259,14 @@ def _validate_environment(environment: Mapping[str, Any]) -> None:  # noqa: C901
     missing = sorted(required - set(environment))
     if missing:
         raise ValueError(f"MAPPO baseline environment is missing: {', '.join(missing)}.")
+    charging_contract = environment.get("charging_contract", "legacy-v1")
+    if charging_contract not in {"legacy-v1", "goal-full-v1"}:
+        raise ValueError("MAPPO baseline charging contract is invalid.")
+    if charging_contract == "goal-full-v1" and (
+        environment.get("charging_rate") != 0.1
+        or environment["charge_release_threshold"] != 1.0
+    ):
+        raise ValueError("Goal-full charging requires rate 0.1 and release 1.0.")
     if environment["observation_schema"] not in {
         DIRECT_GOAL_OBSERVATION_V1,
         DIRECT_GOAL_OBSERVATION_V2,

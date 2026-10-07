@@ -15,6 +15,8 @@ from rware.warehouse import Action, Agent, Direction, RewardType, Shelf, Warehou
 BALANCED_RANDOM_DELIVERY = "balanced-random-v1"
 LEGACY_DELIVERY = "legacy-v1"
 DELIVERY_CONTRACTS = frozenset({LEGACY_DELIVERY, BALANCED_RANDOM_DELIVERY})
+LEGACY_CHARGING = "legacy-v1"
+GOAL_FULL_CHARGING = "goal-full-v1"
 FIXED_PRIORITY_WEIGHTS = {"A": 2.0, "B": 1.5, "C": 1.0}
 
 
@@ -30,6 +32,7 @@ class DynamicWarehouse(Warehouse):
         charging_stations: Optional[Sequence[Tuple[int, int]]] = None,
         picking_stations: Optional[Sequence[Tuple[int, int]]] = None,
         charging_rate: float = 0.02,
+        charging_contract: str = LEGACY_CHARGING,
         battery_cost_scale: float = 1.0,
         picking_lock_steps: int = 3,
         auto_assign: bool = True,
@@ -62,6 +65,11 @@ class DynamicWarehouse(Warehouse):
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
         self.initial_ingress_batches = initial_ingress_batches
+        if charging_contract not in {LEGACY_CHARGING, GOAL_FULL_CHARGING}:
+            raise ValueError("charging_contract is not supported.")
+        if charging_contract == GOAL_FULL_CHARGING and charging_rate != 0.1:
+            raise ValueError("goal-full-v1 charging_rate must be 0.1.")
+        self.charging_contract = charging_contract
         self.charging_rate = charging_rate
         self.battery_cost_scale = battery_cost_scale
         self.picking_lock_steps = picking_lock_steps
@@ -241,7 +249,7 @@ class DynamicWarehouse(Warehouse):
 
     def shadow_config_payload(self) -> dict:
         """Immutable settings covered by the branch import config hash."""
-        return {
+        payload = {
             "grid_size": self.grid_size,
             "goals": self.goals,
             "highways": self.highways.copy(),
@@ -262,6 +270,9 @@ class DynamicWarehouse(Warehouse):
             "delivery_contract": self.delivery_contract,
             "assignment_battery_threshold": self.assignment_battery_threshold,
         }
+        if self.charging_contract != LEGACY_CHARGING:
+            payload["charging_contract"] = self.charging_contract
+        return payload
 
     def shadow_layout_hash(self) -> str:
         payload = {
@@ -431,6 +442,17 @@ class DynamicWarehouse(Warehouse):
         self._shadow_randomness = None
         self._shadow_randomness_address = None
 
+    def charging_service_active(self, agent) -> bool:
+        """Whether the assigned charging goal currently requires service dwell."""
+        position = agent.x, agent.y
+        return (
+            self.charging_contract == GOAL_FULL_CHARGING
+            and not agent.dead
+            and agent.battery < 1.0
+            and position in self.charging_stations
+            and self.charging_reservations.get(position) == agent.id
+        )
+
     def step(self, actions):
         if self.msg_bits:
             raise NotImplementedError(
@@ -455,7 +477,10 @@ class DynamicWarehouse(Warehouse):
             for agent in self.agents
         }
         effective_actions = [
-            Action.NOOP if agent.dead or locked_before[agent.id] else action
+            Action.NOOP
+            if (agent.dead or locked_before[agent.id]
+                or self.charging_service_active(agent))
+            else action
             for agent, action in zip(self.agents, requested_actions)
         ]
         forward_attempts = self._forward_attempts(effective_actions, pre_state)
@@ -949,6 +974,11 @@ class DynamicWarehouse(Warehouse):
         action = agent.req_action
         if (agent.x, agent.y) in self.charging_stations and action == Action.NOOP:
             next_battery = min(1.0, state["battery"] + self.charging_rate)
+            if (
+                self.charging_contract == GOAL_FULL_CHARGING
+                and next_battery >= 1.0 - 1e-12
+            ):
+                next_battery = 1.0
             if next_battery > state["battery"]:
                 self.last_events.append(
                     {
