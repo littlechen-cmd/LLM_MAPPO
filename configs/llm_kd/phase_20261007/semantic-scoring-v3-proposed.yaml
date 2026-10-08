@@ -1,0 +1,44 @@
+schema: observable-semantic-scoring-proposal-v3
+approval_status: provisional
+semantic_contract: observable-priority-coordination-four-score-v3
+semantic_dimensions:
+  - goal-priority
+  - yielding-preference
+  - local-constraint
+  - motion-stagnation
+label_sources: [llm, llm, llm, observable-rule-v3]
+score_anchors: [0.0, 0.25, 0.5, 0.75, 1.0]
+history_length: 8
+dimension_weights: [1.0, 1.0, 1.0, 0.25]
+loss_aggregation: per-dimension-known-mean-then-weighted-mean
+pretraining:
+  seed: 7
+  batch_size: 256
+  learning_rate: 0.001
+  max_epochs: 100
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.0001
+trial:
+  main_samples: 120
+  repeat_samples: 40
+  pro_samples: 40
+  anonymous_review_samples: 60
+quality:
+  first_parse_rate_min: 0.98
+  retry_rate_max: 0.10
+  forbidden_content_rate_max: 0.0
+  accepted_evidence_valid_rate_min: 1.0
+  primary_standard_deviation_min: 0.08
+  repeat_primary_mae_max: 0.15
+  pro_primary_mae_max: 0.20
+  paired_known_state_agreement_min: 0.90
+  paired_common_known_count_min: 20
+  train_primary_known_rate_min: 0.60
+  train_high_score_fraction_min: 0.05
+  train_low_score_fraction_min: 0.10
+  train_auxiliary_positive_count_min: 10
+  train_auxiliary_positive_fraction_min: 0.01
+  train_auxiliary_zero_fraction_min: 0.10
+  redundancy_common_nonzero_count_min: 30
+  redundancy_review_equal_rate_min: 0.95
+  redundancy_review_absolute_pearson_min: 0.95
