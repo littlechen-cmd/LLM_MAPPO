@@ -43,9 +43,9 @@
 三维；两维建议停止采用，具体候选见 [维度分析](semantic-dimensions-v3-analysis.md)。
 后续已批准前三维含义与命名，并增加 `motion-stagnation` 第四辅助维度，见
 [语义合同 v3](semantic-contract-v3.md)。来源已批准为前三维 LLM、第四维同窗口规则
-派生；数值锚点及质量门尚未冻结。
-具体提案已写入 [评分与 pretrain 草案](semantic-scoring-v3.md)；按已批准的分阶段
-冻结流程等待所有者确认，未启动新语义付费标注。
+派生。数值参考锚点、质量门及 pretrain 基础参数已批准，前三维允许连续评分，
+见 [评分与 pretrain 合同](semantic-scoring-v3.md)。medium 采集合同同时获批。
+三环境具体选样清单及正式 RL 评价协议仍须完成；未启动新语义付费标注。
 
 验收：语义及质量合同获批，medium 分支选择明确，新增付费前无定义歧义。
 

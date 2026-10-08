@@ -1,5 +1,28 @@
 # 执行记录
 
+## 2026-10-08：合同获批后实施
+
+所有者批准评分/pretrain 合同及 medium 采集合同，并将前三维修改为 `[0,1]`
+连续评分。离散值仅作语义参考，解析、缓存、检查、交付及训练不得量化或因不等于
+参考值拒绝标签。第四维仍按冻结规则生成确定值。
+
+已批准配置保存在 `configs/llm_kd/phase_20261007/semantic-scoring-v3.yaml`，
+原 proposed 文件迁移到该路径；数值锚点、unknown 条件、质量门、试标数量、loss
+权重和 pretrain 基础超参数使用本次批准状态。formal 容量管理及后两环境完整配置
+仍按各自记录处理；本批准不扩大既有数据外发授权。
+
+依据已批准任务组实施三份互不重叠的工程包：
+
+1. 新独立 medium goal-full schema/profile、精确环境验证及四方法 checkpoint
+   namespace；旧 C1 冻结合同保持兼容，八个正式 seeds 均可验证。
+2. 连续前三维 prompt、解析、证据检查及第四维规则合并；采用新合同身份。
+3. v3 分维 known mask、分维 loss/validation 聚合、标签加载、严格身份与表征导入。
+
+新 artifact 接口约定：dataset schema `llm-dataset-build-run-v3`、label schema
+`llm-dataset-label-run-v3`、主分布 `native-209d-goal-full-main-v3`。合并记录的
+scores/known_masks/sources/evidence/unknown_reasons 均以四个 canonical 名为键，
+receipt 绑定新 semantic_contract_version；旧格式不静默升级。
+
 ## 2026-10-08：最优 pretrain 模型与 v3 具体合同
 
 ### 最优模型修复

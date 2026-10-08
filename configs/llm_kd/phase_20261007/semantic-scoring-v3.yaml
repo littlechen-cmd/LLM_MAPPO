@@ -1,5 +1,5 @@
-schema: observable-semantic-scoring-proposal-v3
-approval_status: provisional
+schema: observable-semantic-scoring-contract-v3
+approval_status: approved
 semantic_contract: observable-priority-coordination-four-score-v3
 semantic_dimensions:
   - goal-priority
@@ -8,6 +8,9 @@ semantic_dimensions:
   - motion-stagnation
 label_sources: [llm, llm, llm, observable-rule-v3]
 score_anchors: [0.0, 0.25, 0.5, 0.75, 1.0]
+primary_score_domain: continuous-closed-unit-interval
+primary_score_quantization: none
+auxiliary_score_domain: deterministic-observable-rule
 history_length: 8
 dimension_weights: [1.0, 1.0, 1.0, 0.25]
 loss_aggregation: per-dimension-known-mean-then-weighted-mean
