@@ -1,5 +1,26 @@
 # 执行记录
 
+## 2026-10-08：原始采集与选样工程验收
+
+新增 `source_actor_v3.py`、`goal_full_dataset_run.py` 及
+`scripts/run_goal_full_llm_dataset.py`。旧 C1 checkpoint、归档配置、manifest、
+state 和 final Actor 独立核验；新硬充电 rollout 使用另一份配置和身份。
+固定 120 个完整 episode，允许先运行前缀并恢复；CPU inference 固定单线程。
+窗口先按完整 episode 分区，再去重及分层选样；名单与内容哈希冻结后禁止改样。
+覆盖不足明确拒绝进入付费标注，不自动扩大采集或混入其他策略。
+
+工程师初版定向 23 passed；独立审查发现冻结已写入但 state 尚未写入时的恢复缺陷，
+已修复。架构师运行恢复及冻结检查：
+
+```powershell
+& D:/Anaconda3/envs/py310/python.exe -m pytest tests/test_llm_kd_goal_full_dataset.py -q -k 'resume or frozen_selection' -p no:cacheprovider --basetemp artifacts/llm_kd/phase_20261007/audit/pytest-dataset-v3-root-20261008-01
+```
+
+结果 13 passed、14 deselected，16.17 秒，退出码 0；退出时出现既有 pyreadline
+析构 OSError，不影响测试结果。工程师生产文件 lint 通过，独立审查未发现阻止真实
+首条采集的其他问题。本节仅完成采集工程验收，不代表已获得合格的 3,000 条标签。
+将首条真实采集计入正式 120 条 episode，后续长采集由所有者运行；不另做丢弃 smoke。
+
 ## 2026-10-08：所有者解除环境合同冲突
 
 发现另一工作树镜像资料改为自主充电 v3、formal 8 AGV、沿用旧 6,000 标签后，
