@@ -1,5 +1,44 @@
 # 执行记录
 
+## 2026-10-08：标注编排与 pretrain 证据校验
+
+新增 `label_budget_v3.py`、`labeling_run_v3.py`、标注 CLI 及定向回归。
+prepare 只读取已完整采集、覆盖通过且冻结的 builder 名单，核对原始五文件哈希、
+完整 episode 回执和来源身份，再冻结连续三维 prompt、请求和 provider/价格/代码身份。
+prepare 不读密钥，不发送请求；全量首次及至多 10% 重试的保守预算不足时明确拒绝，
+保留预算报告。medium job 上限不超过 50 美元，phase 新增累计不超过 100 美元，
+历史费用独立列示；恢复不得自动扩大已冻结预算。
+
+execute 要求具体计划绑定的外发授权及当日价格证据；请求前持久化预留，结果不明
+保留全部预留并停止自动重发。原始响应先保存，最多一次普通重试。trial 只运行固定
+120 条和同 40 条复标/Pro；main 复用已合格试标，只有重新核验 trial Go 和 60 条
+匿名审阅后才继续。正式 pretrain 仍须完整 main Go。
+
+独立审查发现并修复质量报告未绑定配对完整回执、pretrain 只信 eligible 标志两项
+缺口。当前报告绑定 main/repeat/Pro、原始响应、全部请求回执及盲审；v3 pretrain
+入口核对同包相对路径 `quality-main.json` 与 `plan.json` 的哈希、main Go 及
+labels/dataset/plan 一致性，不依赖原电脑绝对路径。legacy 入口保持原合同。
+缓存还必须从原始模型响应重算标签，与保存的连续分数逐字段一致。
+
+工程师补修前定向 62 项通过。架构师复核两项证据缺口：
+
+```powershell
+& D:/Anaconda3/envs/py310/python.exe -m pytest tests/test_llm_kd_labeling_run_v3.py tests/test_llm_kd_pretraining_v3.py -q -k 'refuses_missing_or_unbound_quality_evidence or quality_binds_full_paired' -p no:cacheprovider --basetemp artifacts/llm_kd/phase_20261007/audit/pytest-label-pretrain-bindings-root-20261008-01
+```
+
+实际 7 passed、38 deselected，19.62 秒，退出码 0。实际 CLI 曾加载错误工作树而
+报 ModuleNotFoundError；修复显式工作树路径后 `--help` 退出码 0。
+工程师生产及相关测试 7 文件 lint、diff check 通过；连续分数缓存改写负例先得到
+实际 RED，最后同范围定向验证 63 passed、48.45 秒、退出码 0。没有全仓库测试、真实新 API、
+正式 pretrain 或长训练；真实外发及试标仍等待完整原始覆盖通过。
+
+工程包交付：任务组 3；范围为新增标注编排、预算与 v3 pretrain 证据入口，
+源代码/测试文件见本节及本地聚焦提交。未完成检查包括真实完整采集覆盖、API
+实际服务版本及费用、120 条试标/40 条复标与对照/60 条审阅、完整 3,000 条主集
+质量和服务器训练。所有者长命令见 [原始采集说明](medium-raw-collection-owner.md)。
+禁止据工程回归主张数据已合格、充电覆盖足够、LLM KD 有提升或本 phase Gate 通过。
+保留现有所有者未提交改动，不推送或合并。
+
 ## 2026-10-08：分阶段语义质量门工程验收
 
 新增纯函数 `semantic_quality_v3.py`，覆盖逐维连续分数与 raw 引用重验、辅助维重算、

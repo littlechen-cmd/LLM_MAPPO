@@ -567,6 +567,7 @@ def _validate_label_artifact(dataset: Path, labels: Path) -> None:  # noqa: C901
                 or manifest.get("pretraining_eligible") is not True):
             raise ValueError("Pretraining v3 semantic contract is incompatible.")
         _validate_v3_manifest_semantics(manifest)
+        _validate_v3_quality_evidence(labels, manifest)
         records = [
             json.loads(line) for line in labels_bytes.decode("utf-8").splitlines()
         ]
@@ -631,6 +632,39 @@ def _load_scores(  # noqa: C901
     if not result:
         raise ValueError("Pretraining labels have no successful records.")
     return result
+
+
+def _validate_v3_quality_evidence(labels: Path, manifest: Mapping[str, object]) -> None:
+    """Retained relative evidence paths keep an authenticated bundle portable."""
+    if (manifest.get("quality_report_path") != "quality-main.json"
+            or manifest.get("plan_path") != "plan.json"):
+        raise ValueError("Pretraining v3 requires retained quality and plan evidence.")
+    quality_path, plan_path = labels / "quality-main.json", labels / "plan.json"
+    try:
+        quality_bytes, plan_bytes = quality_path.read_bytes(), plan_path.read_bytes()
+        quality, plan = json.loads(quality_bytes), json.loads(plan_bytes)
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("Pretraining quality or plan evidence is missing.") from error
+    if (sha256(quality_bytes).hexdigest() != manifest.get("quality_report_sha256")
+            or sha256(plan_bytes).hexdigest() != manifest.get("plan_sha256")):
+        raise ValueError("Pretraining v3 quality or plan evidence hash differs.")
+    if (not isinstance(quality, dict) or quality.get("schema")
+            != "semantic-quality-report-v3" or quality.get("stage") != "main"
+            or quality.get("status") != "go"
+            or quality.get("main_pretraining_eligible") is not True
+            or not isinstance(quality.get("checks"), list) or not quality["checks"]
+            or any(not isinstance(check, dict) or check.get("status") != "go"
+                   for check in quality["checks"])):
+        raise ValueError("Pretraining v3 quality evidence is not a complete main Go.")
+    bindings = quality.get("bindings")
+    if (not isinstance(plan, dict) or plan.get("schema") != "frozen-labeling-plan-v3"
+            or plan.get("semantic_contract_version") != SEMANTIC_CONTRACT_V3
+            or plan.get("dataset_manifest_sha256")
+            != manifest["dataset_manifest_sha256"] or not isinstance(bindings, dict)
+            or any(bindings.get(name) != manifest[name] for name in (
+                "plan_sha256", "dataset_manifest_sha256", "labels_sha256"
+            ))):
+        raise ValueError("Pretraining v3 quality/plan bindings differ from the labels.")
 
 
 def _validate_v3_manifest_semantics(manifest: Mapping[str, object]) -> None:

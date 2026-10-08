@@ -187,9 +187,55 @@ def _write_v3_artifacts(tmp_path):
         "semantic_dimensions": list(names),
         "semantic_sources": list(_identity()["semantic_sources"]),
     }
+    plan = {"schema": "frozen-labeling-plan-v3", "semantic_contract_version":
+            _identity()["semantic_contract_version"], "dataset_manifest_sha256":
+            label_manifest["dataset_manifest_sha256"]}
+    (labels / "plan.json").write_text(json.dumps(plan), "utf-8")
+    plan_sha = sha256((labels / "plan.json").read_bytes()).hexdigest()
+    quality = {"schema": "semantic-quality-report-v3", "stage": "main", "status": "go",
+               "main_pretraining_eligible": True,
+               "checks": [{"id": "isolated-fixture", "status": "go"}],
+               "bindings": {"plan_sha256": plan_sha, "dataset_manifest_sha256":
+                            label_manifest["dataset_manifest_sha256"],
+                            "labels_sha256": label_manifest["labels_sha256"]}}
+    (labels / "quality-main.json").write_text(json.dumps(quality), "utf-8")
+    label_manifest.update(
+        plan_path="plan.json", plan_sha256=plan_sha,
+        quality_report_path="quality-main.json",
+        quality_report_sha256=sha256((labels / "quality-main.json").read_bytes()).hexdigest(),
+    )
     (labels / "manifest.json").write_text(json.dumps(label_manifest), "utf-8")
     (labels / "state.json").write_text(json.dumps({"status": "completed"}), "utf-8")
     return dataset, labels
+
+
+@pytest.mark.parametrize("mutation", ["missing-quality", "missing-plan", "quality-hash",
+                                      "plan-hash", "no-go", "stale-binding"])
+def test_v3_pretraining_refuses_missing_or_unbound_quality_evidence(tmp_path, mutation):
+    dataset, labels = _write_v3_artifacts(tmp_path)
+    quality_path = labels / "quality-main.json"
+    if mutation == "missing-quality":
+        quality_path.unlink()
+    elif mutation == "missing-plan":
+        (labels / "plan.json").unlink()
+    elif mutation == "quality-hash":
+        quality_path.write_text(quality_path.read_text("utf-8") + " ", "utf-8")
+    elif mutation == "plan-hash":
+        path = labels / "plan.json"
+        path.write_text(path.read_text("utf-8") + " ", "utf-8")
+    else:
+        report = json.loads(quality_path.read_text("utf-8"))
+        if mutation == "no-go":
+            report["status"] = "pending"
+        else:
+            report["bindings"]["labels_sha256"] = "f" * 64
+        quality_path.write_text(json.dumps(report), "utf-8")
+        manifest_path = labels / "manifest.json"
+        manifest = json.loads(manifest_path.read_text("utf-8"))
+        manifest["quality_report_sha256"] = sha256(quality_path.read_bytes()).hexdigest()
+        manifest_path.write_text(json.dumps(manifest), "utf-8")
+    with pytest.raises(ValueError, match="quality|evidence|plan"):
+        runner._validate_label_artifact(dataset, labels)
 
 
 def _v3_config(tmp_path, dataset, labels):
