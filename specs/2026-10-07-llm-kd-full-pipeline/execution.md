@@ -1,5 +1,39 @@
 # 执行记录
 
+## 2026-10-08：分阶段语义质量门工程验收
+
+新增纯函数 `semantic_quality_v3.py`，覆盖逐维连续分数与 raw 引用重验、辅助维重算、
+训练覆盖及去共同零分冗余诊断、复标/Pro 的逐维 MAE 与 known agreement、
+60 条匿名审阅、请求审计。缺失证据为 pending，不推定成功；trial Go 不放行正式 pretrain。
+独立审查修复两处错误放行风险：repeat/Pro 必须同一固定 40 条，每条 accepted 标签
+必须有同组同 view 的成功请求，不能只靠总体 98% 门掩盖单条失败。
+另统一 ordinary 定义，排除正分停滞窗口。
+
+工程师原定向 16 passed，补修 5 passed，生产 lint 通过。架构师复核：
+
+```powershell
+& D:/Anaconda3/envs/py310/python.exe -m pytest tests/test_llm_kd_semantic_quality_v3.py -q -k 'repeat_and_pro or accepted_label or stagnant_open or trial_go' -p no:cacheprovider --basetemp artifacts/llm_kd/phase_20261007/audit/pytest-quality-v3-root-20261008-01
+```
+
+实际 4 passed、16 deselected，10.21 秒，退出码 0；筛选词 trial_go 未匹配测试，
+不把它计作本次验证。既有 pyreadline 析构 OSError 同前。此为工程验收，
+未生成或通过真实新标签；API 编排仍在独立审查中。
+
+## 2026-10-08：首条正式原始采集已保存
+
+本地提交 `644ecfa` 后执行真实 collector，退出码 0，命令进程约 9.08 秒。
+运行目录 `artifacts/llm_kd/phase_20261007/dataset/goal-full-v3-bf8fad003f9033f8`，
+完成 seed 10000 的完整 800 步 truncated episode，数组 `[5,800,209]`，
+reset 对齐且数值有限。保存原始压缩数组、完成凭据、意图记录和实际代码身份。
+20 份实现源码按身份哈希验证后保存快照；没有改写历史 Actor 或来源文件。
+
+500 个非重叠窗口的规则参考诊断：ordinary=462、structural=33、
+stagnation_positive=5，competition=0、charging_service=0。
+不能从首条轨迹推断完整采集覆盖，尚未选样或调用 API。
+审查记录：`artifacts/llm_kd/phase_20261007/audit/first-real-episode-v3-20261008.json`。
+补齐正式 120 个 episode 的恢复及选样命令见
+[所有者运行说明](medium-raw-collection-owner.md)；按已批准分工由所有者运行长采集。
+
 ## 2026-10-08：原始采集与选样工程验收
 
 新增 `source_actor_v3.py`、`goal_full_dataset_run.py` 及
