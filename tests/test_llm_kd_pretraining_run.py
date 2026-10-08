@@ -22,6 +22,27 @@ from llm_mappo.mappo_llm_kd.pretraining_run import (
 import llm_mappo.mappo_llm_kd.pretraining_run as pretraining_run
 
 
+@pytest.mark.parametrize("batch_size", [1, 2, 3])
+def test_validation_loss_weights_samples_equally_across_uneven_batches(batch_size):
+    actor = pretraining_run.MAPPOActor(209, 5, 64)
+    model = pretraining_run.SemanticPretrainingModel(actor)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+    samples = []
+    for index, target in enumerate([0.5, 0.5, 1.0]):
+        sample = _window("validation", f"episode-{index}", np.zeros(209))
+        sample["scores"] = [target] * 4
+        samples.append(sample)
+
+    loss = pretraining_run._evaluate(
+        model, samples, batch_size, torch.device("cpu"), torch.ones(4)
+    )
+
+    # Predictions are 0.5: two zero-error samples and one with MSE 0.25.
+    assert loss == pytest.approx(1.0 / 12.0)
+
+
 def _selection_config(tmp_path, *, min_delta=0.0):
     dataset, labels = _labeled_dataset(tmp_path)
     return PretrainingRunConfig(

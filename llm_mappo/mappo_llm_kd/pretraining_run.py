@@ -671,15 +671,18 @@ def _pretraining_batch(samples, device: torch.device) -> PretrainingBatch:
 
 def _evaluate(model, samples, batch_size, device, weights) -> float:
     model.eval()
-    losses = []
+    total_loss = 0.0
+    target_count = 0
     with torch.no_grad():
         for batch_samples in _batches(samples, batch_size):
             batch = _pretraining_batch(batch_samples, device)
             loss = masked_semantic_loss(
                 model(batch), batch.targets, batch.target_masks, weights
             )
-            losses.append(float(loss.detach().cpu()))
-    result = float(np.mean(losses))
+            count = int(batch.target_masks.sum().item())
+            total_loss += float(loss.detach().cpu()) * count
+            target_count += count
+    result = total_loss / target_count if target_count else float("nan")
     _require_finite(result, "validation loss")
     return result
 

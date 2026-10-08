@@ -37,6 +37,20 @@
 不能把该字段当作完整 epoch 的训练损失比较。validation 计算及模型选择不受此统计
 限制影响。v3 的全分区分维 validation 聚合另行实现。
 
+随后修复现行全已知标签的 validation 聚合：按有效监督帧数加权，消除对最后一个
+不足 batch 大小的批次过度加权。新增真实模型回归以 3 个样本分别产生 0、0、0.25
+的 MSE；旧实现 batch_size=2 错得 0.125，修复后 batch_size=1/2/3 均得 1/12。
+工程师 runner 文件定向测试 16 passed，24.78 秒，两文件 flake8 及 diff 检查通过；
+架构师审阅实际 diff 并执行以下单风险复核：3 passed，13 deselected，13.80 秒，
+退出码 0。Python 控制台析构出现 ignored OSError，不影响本次测试退出状态。
+
+```powershell
+& D:\Anaconda3\envs\py310\python.exe -m pytest tests/test_llm_kd_pretraining_run.py -q -k validation_loss_weights_samples_equally -p no:cacheprovider
+```
+
+该修复针对现有 rank-2 mask、每个监督帧四维均已知的情况；v3 分维 unknown mask
+仍需逐维全分区误差和/有效计数聚合，不能直接继承按帧加权作为新合同的实现。
+
 ### v3 草案与可观察对应核验
 
 已形成 [评分、质量门及 pretrain 草案](semantic-scoring-v3.md) 和对应 proposed YAML，
