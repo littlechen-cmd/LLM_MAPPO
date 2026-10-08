@@ -1,9 +1,9 @@
-schema: core-mappo-209d-delivery-c1-v3
+schema: core-mappo-209d-goal-full-v1
 method: MAPPO-FP-DG
-approval_status: provisional
+approval_status: approved
 artifact_root: artifacts/core_integration/phase_20261007/medium5/baseline
 environment:
-  profile_id: medium-5ag-phase2-train
+  profile_id: medium-5ag-goal-full-v1
   environment_id: llm-mappo-medium-3ag-v1
   n_agents: 5
   max_steps: 800

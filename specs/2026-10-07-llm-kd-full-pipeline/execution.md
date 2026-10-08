@@ -18,6 +18,25 @@
 2. 连续前三维 prompt、解析、证据检查及第四维规则合并；采用新合同身份。
 3. v3 分维 known mask、分维 loss/validation 聚合、标签加载、严格身份与表征导入。
 
+### medium 独立入口证据
+
+新增 `goal_full_contract.py`，schema 为 `core-mappo-209d-goal-full-v1`，profile
+为 `medium-5ag-goal-full-v1`。新配置批准状态、完整环境/reward/训练/evaluation
+数值独立校验，包含 0.30 触发、0.1/步、1.0 释放、600k 步及八个 seeds。
+四方法使用独立 goal-full checkpoint namespace，A* no-validity 分派保持原设计。
+旧 `medium5_contract.py`、旧源 Actor 和精确 C1 环境哈希未改。
+
+工程师关联定向测试 54 passed，13.22 秒；最新入口专项 28 passed，10.63 秒。
+架构师审阅独立合同、runner 最小 patch、旧兼容及初始化边界，专项复核命令：
+
+```powershell
+& D:\Anaconda3\envs\py310\python.exe -m pytest tests/test_goal_full_contract.py -q -p no:cacheprovider --basetemp artifacts/llm_kd/phase_20261007/audit/pytest-goal-full-root-20261008-01
+```
+
+结果 28 passed，10.52 秒，退出码 0；Python 控制台析构存在 ignored OSError。
+工程师 flake8 与限定 diff 检查通过。runner 只暂存相对实施起点的专用 patch，
+现有所有者未提交 hunks 保留。入口通过不等于已执行正式训练或通过数据覆盖门。
+
 新 artifact 接口约定：dataset schema `llm-dataset-build-run-v3`、label schema
 `llm-dataset-label-run-v3`、主分布 `native-209d-goal-full-main-v3`。合并记录的
 scores/known_masks/sources/evidence/unknown_reasons 均以四个 canonical 名为键，
