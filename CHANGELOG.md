@@ -2,6 +2,7 @@
 
 ## 2026-10-08
 
+- 确认：按所有者最新指示恢复硬充电 LLM KD 流水线；formal AGV 数延后冻结，medium 继续优先。
 - 实现：v3 三维连续标签与规则辅助维合并、分维 unknown mask、全分区 validation 聚合及严格表征身份；审查修复 float32 等距 peer 误拒，保留旧合同兼容。
 - 实现：新增独立 medium goal-full 配置与四方法 checkpoint 身份，支持八个正式 seeds，保留旧 C1 精确合同；新入口专项 28 项通过。
 - 批准：前三维 LLM 标签采用 [0,1] 连续评分，离散值仅为参考锚点，禁止量化；同步冻结评分、质量门、pretrain 参数和 medium 采集合同。

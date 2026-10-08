@@ -19,8 +19,8 @@
 
 1. 来源 Actor 先按原始配置、checkpoint、导出哈希及来源身份严格加载；独立按
    获批新配置构造 rollout 环境，禁止改写 source 身份或旧 collector 的精确约束。
-2. 新采集入口按真实 n_agents 分配 hidden/observation/mask 数组；支持结构上的
-   3/5/12 规模，实际启用环境仍必须经过各自配置冻结。
+2. 新采集入口按真实 n_agents 分配 hidden/observation/mask 数组；既有 3/5/12
+   合成回归仅证明数组接口，formal 规模暂不冻结，实际启用环境须经过各自配置冻结。
 3. 原始完整 episode 逐个压缩保存，绑定来源和 rollout 两类哈希；未到边界不能
    把截断诊断当完整 episode。恢复校验已完成文件，不覆盖失败和原始轨迹。
 4. 先以确定性盐值将完整 episode 切成 70/15/15，再在分区内选择 8 帧窗口。
