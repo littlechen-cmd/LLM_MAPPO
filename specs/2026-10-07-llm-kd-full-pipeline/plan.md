@@ -53,7 +53,7 @@
   保持有界内存、原始轨迹保留、episode 隔离和可恢复追加。
 - [ ] 依据冻结语义更新 prompt、检查器、规则对照、pretrain head 和导出身份，
   旧版本独立保存，禁止静默升级。
-- [ ] 实现 best pretrain checkpoint 保存、恢复、加载及导出；保留 latest 用于恢复，
+- [x] 实现 best pretrain checkpoint 保存、恢复、加载及导出；保留 latest 用于恢复，
   明确 validation 选模型、test 最终报告的边界。
 - [ ] 按每环境 pretrain seed 7、八个 RL seeds 共用表征的已批准策略，冻结其余
   pretrain 超参数、常量/规则比较及必要诊断；避免多轮无目标搜索。
@@ -62,6 +62,11 @@
 - [ ] 对变更运行定向回归；首次真实任务首段兼作联通验证，通过后继续同一任务。
 
 验收：三规模接口可用，best 导出可证，正式命令无占位符，恢复与身份检查通过。
+
+2026-10-08 证据：best 按实际最小 validation loss 选择，min_delta 独立控制早停；
+latest 保留最后更新状态，导出前加载 best。工程师四模块定向回归 75 项通过，架构师
+审阅权重、恢复边界及历史记录测试；具体命令与结果见 [执行记录](execution.md)。
+此项完成不代表 v3 分维 mask、通用采集或整个任务组已完成。
 
 ## 任务组 4：medium 首个完整闭环
 

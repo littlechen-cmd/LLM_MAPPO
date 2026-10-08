@@ -2,6 +2,7 @@
 
 ## 2026-10-08
 
+- 修复：pretrain 按 validation 实际最小损失保存并导出 best，latest 独立用于恢复；补充历史记录、模型哈希和中断边界回归。
 - 冻结：采用 goal-priority、yielding-preference、local-constraint 三维主语义及 motion-stagnation 第四辅助维度，保留可观察边界并区分历史合同。
 - 冻结：前三维由 LLM 标注，motion-stagnation 从同一可观察窗口规则派生，四维共同预训练并明确记录分维来源。
 - 规划：确认 medium 新建 3,000 条及语义至少三维，基于实际 209D 时序输入完成候选维度与不可观察边界分析，替代此前两维建议。

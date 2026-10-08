@@ -151,9 +151,21 @@ def run_semantic_pretraining(  # noqa: C901
     start_epoch = 1
     start_batch = 0
     best_validation_loss = float(np.finfo(np.float64).max)
+    selected_validation_loss = best_validation_loss
+    best_epoch = 0
     bad_epochs = 0
     history: list[dict[str, float | int]] = []
     if resume is not None:
+        best_restored = None
+        if (directory / "checkpoint_best.pt").is_file():
+            best_restored = load_pretraining_checkpoint(
+                directory / "checkpoint_best.pt", model, optimizer,
+                expected_identity=identity, map_location=target_device,
+            )
+            selected_validation_loss = float(
+                best_restored["early_stopping"]["best_validation_loss"]
+            )
+            best_epoch = int(best_restored["progress"]["epoch"])
         restored = load_pretraining_checkpoint(
             directory / "checkpoint_latest.pt",
             model,
@@ -170,12 +182,25 @@ def run_semantic_pretraining(  # noqa: C901
             early_stopping["best_validation_loss"]
         )
         bad_epochs = int(early_stopping["bad_epochs"])
+        if best_restored is not None:
+            if best_restored["progress"]["global_step"] > global_step:
+                raise ValueError("Pretraining best checkpoint is ahead of latest.")
+        elif start_epoch > 1:
+            raise ValueError(
+                "Pretraining prior best checkpoint is missing; discarded "
+                "validation weights cannot be recovered."
+            )
+    completed_epochs = start_epoch - 1
+    if resume is not None:
+        history = _load_run_history(directory, completed_epochs)
     _atomic_json(directory / "state.json", {"status": "running"})
     try:
         train_batches = list(_batches(train, config.batch_size))
         if start_batch > len(train_batches):
             raise ValueError("Pretraining resume batch position is out of range.")
         for epoch in range(start_epoch, config.max_epochs + 1):
+            if completed_epochs > 0 and bad_epochs >= config.early_stopping_patience:
+                break
             model.train()
             train_losses = []
             batch_offset = start_batch if epoch == start_epoch else 0
@@ -214,6 +239,24 @@ def run_semantic_pretraining(  # noqa: C901
             validation_loss = _evaluate(
                 model, validation, config.batch_size, target_device, weights
             )
+            _require_finite(validation_loss, "validation loss")
+            if validation_loss < selected_validation_loss:
+                selected_validation_loss = validation_loss
+                best_epoch = epoch
+                save_pretraining_checkpoint(
+                    directory / "checkpoint_best.pt", model, optimizer,
+                    identity=identity,
+                    progress={
+                        "global_step": global_step, "epoch": epoch,
+                        "batch_in_epoch": len(train_batches),
+                    },
+                    early_stopping={
+                        "best_validation_loss": selected_validation_loss,
+                        "bad_epochs": bad_epochs,
+                        "patience": config.early_stopping_patience,
+                        "minimum_improvement": config.early_stopping_min_delta,
+                    },
+                )
             improved = validation_loss < (
                 best_validation_loss - config.early_stopping_min_delta
             )
@@ -231,6 +274,7 @@ def run_semantic_pretraining(  # noqa: C901
                     "validation_loss": validation_loss,
                 }
             )
+            _atomic_json(directory / "history.json", {"history": history})
             save_pretraining_checkpoint(
                 directory / "checkpoint_latest.pt",
                 model,
@@ -248,9 +292,14 @@ def run_semantic_pretraining(  # noqa: C901
                     "minimum_improvement": config.early_stopping_min_delta,
                 },
             )
+            completed_epochs = epoch
             if bad_epochs >= config.early_stopping_patience:
                 break
             start_batch = 0
+        load_pretraining_checkpoint(
+            directory / "checkpoint_best.pt", model, optimizer,
+            expected_identity=identity, map_location=target_device,
+        )
         representation = export_actor_representation(
             directory / "representation.pt", model.actor, identity=identity
         )
@@ -258,9 +307,21 @@ def run_semantic_pretraining(  # noqa: C901
             "schema": PRETRAINING_RUNNER_V1,
             "identity": identity,
             "global_step": global_step,
-            "completed_epochs": len(history),
-            "best_validation_loss": best_validation_loss,
+            "completed_epochs": completed_epochs,
+            "best_validation_loss": selected_validation_loss,
+            "best_epoch": best_epoch,
+            "best_checkpoint": {
+                "path": "checkpoint_best.pt",
+                "file_sha256": sha256(
+                    (directory / "checkpoint_best.pt").read_bytes()
+                ).hexdigest(),
+            },
+            "early_stopping_reference_loss": best_validation_loss,
             "history": history,
+            "history_missing_epochs": sorted(
+                set(range(1, completed_epochs + 1))
+                - {int(row["epoch"]) for row in history}
+            ),
             "representation": representation,
             "formal_performance_evidence": False,
         }
@@ -273,6 +334,38 @@ def run_semantic_pretraining(  # noqa: C901
         )
         raise
     return {"run_directory": str(directory.resolve()), "manifest": manifest}
+
+
+def _load_run_history(directory: Path, completed_epochs: int) -> list[dict]:
+    """Read known rows and discard validation not yet committed in latest."""
+    path = directory / "history.json"
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("Pretraining history cannot be read.") from error
+    if (
+        not isinstance(payload, dict) or set(payload) != {"history"}
+        or not isinstance(payload["history"], list)
+    ):
+        raise ValueError("Pretraining history fields are invalid.")
+    previous_epoch = 0
+    rows = payload["history"]
+    for row in rows:
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"epoch", "train_loss", "validation_loss"}
+            or type(row["epoch"]) is not int
+            or row["epoch"] <= previous_epoch
+        ):
+            raise ValueError("Pretraining history epoch ordering is invalid.")
+        for key in ("train_loss", "validation_loss"):
+            value = row[key]
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                raise ValueError("Pretraining history loss is invalid.")
+        previous_epoch = row["epoch"]
+    return [row for row in rows if row["epoch"] <= completed_epochs]
 
 
 def _validate_config(config: object) -> None:  # noqa: C901

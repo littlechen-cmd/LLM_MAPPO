@@ -1,5 +1,57 @@
 # 执行记录
 
+## 2026-10-08：最优 pretrain 模型与 v3 具体合同
+
+### 最优模型修复
+
+- `checkpoint_best.pt` 按实际最小 validation loss 保存；相同损失保留最早 epoch。
+  `min_delta` 仅控制早停，不能阻止保存真实最优权重。
+- `checkpoint_latest.pt` 保留最后参数、optimizer、RNG、早停计数和批次位置。
+  恢复时先校验 best、再恢复 latest，导出前重新加载 best；不覆盖 latest 的进度。
+- manifest 记录 best epoch、实际最优损失、早停参考损失及 best/导出文件哈希。
+  `history.json` 保留已知历史，按 latest 已完成 epoch 裁剪；缺失历史明确列出。
+- 缺少已发生验证的 best、best 进度领先 latest、历史乱序或非有限损失均拒绝恢复。
+- 保持 checkpoint schema 与旧语义身份规则；尚未实现 v3 分维 unknown mask。
+
+工程师执行四模块定向命令：
+
+```powershell
+& D:\Anaconda3\envs\py310\python.exe -m pytest tests/test_llm_kd_pretraining_run.py tests/test_llm_kd_pretraining_checkpoint.py tests/test_llm_kd_representation_export.py tests/test_llm_kd_initialization.py -q
+```
+
+结果：75 passed，14.51 秒。架构师已检查实际 diff，暂停前单独执行 runner 专项测试
+13 passed，6.98 秒。恢复任务后的复核因系统临时目录权限在 fixture setup 阶段失败
+13 项，未执行测试逻辑；改用项目内全新 basetemp 并禁用 pytest cache 后，
+13 passed，21.10 秒，退出码 0。对应 flake8 与限定 diff 检查通过。
+恢复任务后的实际命令为：
+
+```powershell
+& D:\Anaconda3\envs\py310\python.exe -m pytest tests/test_llm_kd_pretraining_run.py -q -p no:cacheprovider --basetemp artifacts/llm_kd/phase_20261007/audit/pytest-best-review-20261008-02
+```
+
+回归覆盖非单调 validation、min_delta 内的小幅改善、相同最优损失、导出权重、
+中断恢复、best/latest 写入边界、终止后零更新、哈希及历史完整性。
+这些是合成数据回归，不能作为真实 pretrain 收敛或 RL 性能证据。
+
+保留限制：epoch 中途恢复时，旧 train_loss 字段仅统计剩余批次，若无剩余批次则为 0；
+不能把该字段当作完整 epoch 的训练损失比较。validation 计算及模型选择不受此统计
+限制影响。v3 的全分区分维 validation 聚合另行实现。
+
+### v3 草案与可观察对应核验
+
+已形成 [评分、质量门及 pretrain 草案](semantic-scoring-v3.md) 和对应 proposed YAML，
+数值合同仍待所有者明确批准；继续任务不自动改写为批准状态。
+
+对旧 medium 的 4,200 个 train 末帧核验仅由 observation 推导的 peer/cell 对应：
+1,752 帧包含局部 AGV，2,169 个局部 peer 槽全部与占用格一致，失败 0；
+最大整数格重建残差约 1.0003e-6，小于 proposed 的 1e-4 容差。
+报告位于 `artifacts/llm_kd/phase_20261007/audit/observable-peer-cell-mapping-v3.json`。
+held-out 内容未用于该分析，未读隐藏坐标或真实 AGV ID 进行对应。此核验不证明新
+充电合同或 formal 数据已合格，后续采集仍执行逐窗口校验。
+
+本轮尚未执行新增 API 标注、真实 pretrain 或正式长训练；medium 行为 Actor 在新
+充电合同下的适用性诊断继续推进，旧源 manifest 不改写。
+
 ## 2026-10-07：充电基础与第一轮语义审查
 
 ### 工作区与权限
