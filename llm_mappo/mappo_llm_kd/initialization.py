@@ -8,7 +8,7 @@ from typing import Mapping
 
 from llm_mappo.mappo_baseline.networks import MAPPOActor
 
-from .pretraining import validate_pretraining_identity
+from .pretraining import normalize_pretraining_identity
 from .representation_export import import_actor_representation
 
 
@@ -47,7 +47,7 @@ def load_representation_initialization(
     )
     if identity is None:
         raise ValueError("Representation initialization identity is invalid.")
-    validate_pretraining_identity(identity)
+    identity = normalize_pretraining_identity(identity)
     return RepresentationInitialization(artifact_path, artifact_sha256, identity)
 
 

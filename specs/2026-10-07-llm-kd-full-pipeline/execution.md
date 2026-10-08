@@ -1,5 +1,40 @@
 # 执行记录
 
+## 2026-10-08：连续评分与分维 pretrain 工程交付
+
+前三维新 prompt、严格 parser、raw evidence 支持检查及第四维规则合并已实现；
+前三维任意合法连续分数原样保存，参考锚点不用于量化或精确分数匹配。
+第四维完整保留跨帧证据。新 pretrain 支持 rank-3 known mask、逐维有效 MSE
+加权、全 validation SSE/count、unknown 零梯度及独立 v3 身份；旧合同继续兼容。
+best/latest 与 encoder/GRU-only 导入边界保持一致。
+
+独立审查发现 float32 等距 peer 的排序误拒问题：原绝对容差 1e-9 太小，合法等距
+观测会使 yielding 错误 unknown。修复采用 2**-22 相对容差，明显乱序继续拒绝；
+真实 209D 回归先得到 1 failed/1 passed，修复后通过。其余审查未发现明确阻塞问题。
+训练 loader 的原始路径真实性、view 绑定及第四维重算由上游质量门负责，本轮尚未
+完成该质量门实现或任何真实新标签验收。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 工程师：semantic 与 temporal 定向回归，排序修复前 | 59 passed，5.40 秒 |
+| 工程师：v3 pretrain 加五个 legacy 模块 | 137 passed，29.63 秒 |
+| 架构师：semantic_v3 与 pretraining_v3 定向复核，排序修复前 | 69 passed，13.55 秒 |
+| 审查修复者：最终 semantic 文件 | 49 passed |
+| 架构师：最终等距及明显乱序两项 | 2 passed，47 deselected，5.60 秒 |
+
+上述命令均退出码 0；部分进程退出时有既存 pyreadline 控制台析构 OSError。
+工程师报告修改生产文件 flake8 通过。没有运行完整仓库 suite，不据此宣称完整项目验收。
+
+架构师另用旧 medium 的一个真实 **train observation** 作为接口输入，模拟连续
+响应 0.37/0.63，经 parse、merge、JSON 往返和新训练 loader 均保持原值。
+该检查没有真实 LLM 响应，不能充当语义质量证据；报告位于
+`artifacts/llm_kd/phase_20261007/audit/v3-continuous-cross-module-root-20261008.json`。
+前三维仍须通过试标、复标、Pro 与 60 条匿名审阅，第四维须 100% 重算一致。
+
+所有者曾要求暂停并记录，随后明确恢复；当前继续执行，无待解除的暂停授权。
+真实新采集、v3 标注编排与质量报告继续推进；截至本节记录，新增 API 调用为 0，
+未运行真实 pretrain 或长训练。公开服务核对见 [服务准备记录](provider-readiness.md)。
+
 ## 2026-10-08：合同获批后实施
 
 所有者批准评分/pretrain 合同及 medium 采集合同，并将前三维修改为 `[0,1]`

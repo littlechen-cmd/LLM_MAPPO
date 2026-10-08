@@ -26,6 +26,15 @@ from .pretraining import (
     SEMANTIC_ONTOLOGY_V1,
     SEMANTIC_ONTOLOGY_V2,
     SEMANTIC_CONTRACT_V2,
+    SEMANTIC_CONTRACT_V3,
+    SEMANTIC_ONTOLOGY_V3,
+    SEMANTIC_DIMENSIONS_V3,
+    SEMANTIC_SOURCES_V3,
+    LOSS_AGGREGATION_V3,
+    DATASET_BUILD_V3,
+    LABEL_RUN_V3,
+    MAIN_BASELINE_DISTRIBUTION_V3,
+    UNKNOWN_REASONS_V3,
     PretrainingBatch,
     SemanticPretrainingModel,
     masked_semantic_loss,
@@ -119,7 +128,15 @@ def run_semantic_pretraining(  # noqa: C901
     labels = Path(config.label_directory)
     windows = _load_eligible_windows(dataset)
     _validate_label_artifact(dataset, labels)
-    scores = _load_scores(labels / "labels.jsonl")
+    label_manifest = json.loads((labels / "manifest.json").read_text("utf-8"))
+    contract = label_manifest.get("semantic_contract_version")
+    v3 = contract == SEMANTIC_CONTRACT_V3
+    if v3 and config.dimension_weights != (1.0, 1.0, 1.0, 0.25):
+        raise ValueError("Pretraining v3 dimension_weights differ from the contract.")
+    scores = _load_scores(
+        labels / "labels.jsonl", contract=contract,
+        view_ids={_window_id(window) for window in windows} if v3 else None,
+    )
     samples = _attach_scores(windows, scores)
     train = [sample for sample in samples if sample["partition"] == "train"]
     validation = [
@@ -192,7 +209,7 @@ def run_semantic_pretraining(  # noqa: C901
             )
     completed_epochs = start_epoch - 1
     if resume is not None:
-        history = _load_run_history(directory, completed_epochs)
+        history = _load_run_history(directory, completed_epochs, v3=v3)
     _atomic_json(directory / "state.json", {"status": "running"})
     try:
         train_batches = list(_batches(train, config.batch_size))
@@ -204,10 +221,17 @@ def run_semantic_pretraining(  # noqa: C901
             model.train()
             train_losses = []
             batch_offset = start_batch if epoch == start_epoch else 0
+            skipped_unknown_batches = (
+                sum(not any(any(sample["known_masks"]) for sample in previous_batch)
+                    for previous_batch in train_batches[:batch_offset]) if v3 else 0
+            )
             for batch_index, batch_samples in enumerate(
                 train_batches[batch_offset:], start=batch_offset
             ):
                 batch = _pretraining_batch(batch_samples, target_device)
+                if v3 and not batch.target_masks.any().item():
+                    skipped_unknown_batches += 1
+                    continue
                 optimizer.zero_grad(set_to_none=True)
                 predictions = model(batch)
                 loss = masked_semantic_loss(
@@ -274,6 +298,8 @@ def run_semantic_pretraining(  # noqa: C901
                     "validation_loss": validation_loss,
                 }
             )
+            if v3:
+                history[-1]["skipped_unknown_batches"] = skipped_unknown_batches
             _atomic_json(directory / "history.json", {"history": history})
             save_pretraining_checkpoint(
                 directory / "checkpoint_latest.pt",
@@ -325,6 +351,10 @@ def run_semantic_pretraining(  # noqa: C901
             "representation": representation,
             "formal_performance_evidence": False,
         }
+        if v3:
+            manifest["skipped_unknown_batches"] = sum(
+                row["skipped_unknown_batches"] for row in history
+            )
         _atomic_json(directory / "manifest.json", manifest)
         _atomic_json(directory / "state.json", {"status": "completed"})
     except Exception as error:
@@ -336,7 +366,9 @@ def run_semantic_pretraining(  # noqa: C901
     return {"run_directory": str(directory.resolve()), "manifest": manifest}
 
 
-def _load_run_history(directory: Path, completed_epochs: int) -> list[dict]:
+def _load_run_history(  # noqa: C901
+    directory: Path, completed_epochs: int, *, v3: bool = False,
+) -> list[dict]:
     """Read known rows and discard validation not yet committed in latest."""
     path = directory / "history.json"
     if not path.exists():
@@ -352,10 +384,13 @@ def _load_run_history(directory: Path, completed_epochs: int) -> list[dict]:
         raise ValueError("Pretraining history fields are invalid.")
     previous_epoch = 0
     rows = payload["history"]
+    fields = {"epoch", "train_loss", "validation_loss"}
+    if v3:
+        fields.add("skipped_unknown_batches")
     for row in rows:
         if (
             not isinstance(row, dict)
-            or set(row) != {"epoch", "train_loss", "validation_loss"}
+            or set(row) != fields
             or type(row["epoch"]) is not int
             or row["epoch"] <= previous_epoch
         ):
@@ -364,6 +399,9 @@ def _load_run_history(directory: Path, completed_epochs: int) -> list[dict]:
             value = row[key]
             if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                 raise ValueError("Pretraining history loss is invalid.")
+        if v3 and (type(row["skipped_unknown_batches"]) is not int
+                   or row["skipped_unknown_batches"] < 0):
+            raise ValueError("Pretraining history skip count is invalid.")
         previous_epoch = row["epoch"]
     return [row for row in rows if row["epoch"] <= completed_epochs]
 
@@ -411,27 +449,51 @@ def _load_eligible_windows(  # noqa: C901
         state = json.loads((directory / "state.json").read_text("utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError("Pretraining dataset artifact cannot be read.") from error
+    v3 = isinstance(manifest, dict) and manifest.get("schema") == DATASET_BUILD_V3
     if (
         not isinstance(manifest, dict)
-        or manifest.get("schema") != "llm-dataset-build-run-v1"
-        or manifest.get("distribution") != MAIN_BASELINE_DISTRIBUTION
+        or manifest.get("schema") != (
+            DATASET_BUILD_V3 if v3 else "llm-dataset-build-run-v1"
+        )
+        or manifest.get("distribution") != (
+            MAIN_BASELINE_DISTRIBUTION_V3 if v3 else MAIN_BASELINE_DISTRIBUTION
+        )
         or manifest.get("main_pretraining_eligible") is not True
         or not isinstance(state, dict)
         or state.get("status") != "completed"
     ):
         raise ValueError("Pretraining requires a completed eligible main dataset.")
+    if v3:
+        _validate_v3_manifest_semantics(manifest)
     windows_path = directory / "windows.jsonl"
     try:
         lines = windows_path.read_text(encoding="utf-8").splitlines()
     except OSError as error:
         raise ValueError("Pretraining dataset has no windows.") from error
     result = []
+    episodes = {}
+    seen_ids = set()
     for number, line in enumerate(lines, 1):
         try:
             window = json.loads(line)
         except json.JSONDecodeError as error:
             raise ValueError(f"Pretraining window {number} is invalid JSON.") from error
+        if v3:
+            if (not isinstance(window, dict)
+                    or window.get("partition") not in {"train", "validation", "test"}
+                    or not isinstance(window.get("episode_id"), str)):
+                raise ValueError("Pretraining window partition identity is invalid.")
+            previous_partition = episodes.setdefault(
+                window["episode_id"], window["partition"]
+            )
+            if previous_partition != window["partition"]:
+                raise ValueError("Pretraining episode crosses dataset partitions.")
+            if window["partition"] == "test":
+                continue
         _validate_window(window)
+        if v3 and _window_id(window) in seen_ids:
+            raise ValueError("Pretraining windows have duplicate identities.")
+        seen_ids.add(_window_id(window))
         result.append(window)
     if not result:
         raise ValueError("Pretraining dataset has no windows.")
@@ -465,7 +527,7 @@ def _validate_window(window: object) -> None:
         raise ValueError("Pretraining window tensor payload is invalid.")
 
 
-def _validate_label_artifact(dataset: Path, labels: Path) -> None:
+def _validate_label_artifact(dataset: Path, labels: Path) -> None:  # noqa: C901
     labels_path = labels / "labels.jsonl"
     try:
         manifest = json.loads((labels / "manifest.json").read_text("utf-8"))
@@ -481,7 +543,7 @@ def _validate_label_artifact(dataset: Path, labels: Path) -> None:
     )
     if (
         not isinstance(manifest, dict)
-        or (manifest.get("schema") != "llm-dataset-label-run-v1"
+        or (manifest.get("schema") not in {"llm-dataset-label-run-v1", LABEL_RUN_V3}
             and not rule_artifact)
         or manifest.get("dataset_manifest_sha256")
         != sha256((dataset / "manifest.json").read_bytes()).hexdigest()
@@ -495,6 +557,24 @@ def _validate_label_artifact(dataset: Path, labels: Path) -> None:
     dataset_manifest = json.loads((dataset / "manifest.json").read_text("utf-8"))
     contract = dataset_manifest.get("semantic_contract_version")
     label_contract = manifest.get("semantic_contract_version")
+    if (manifest.get("schema") == LABEL_RUN_V3
+            and label_contract != SEMANTIC_CONTRACT_V3):
+        raise ValueError("Pretraining v3 label artifact requires its v3 contract.")
+    if contract == SEMANTIC_CONTRACT_V3 or label_contract == SEMANTIC_CONTRACT_V3:
+        if (contract != SEMANTIC_CONTRACT_V3 or label_contract != contract
+                or dataset_manifest.get("schema") != DATASET_BUILD_V3
+                or manifest.get("schema") != LABEL_RUN_V3
+                or manifest.get("pretraining_eligible") is not True):
+            raise ValueError("Pretraining v3 semantic contract is incompatible.")
+        _validate_v3_manifest_semantics(manifest)
+        records = [
+            json.loads(line) for line in labels_bytes.decode("utf-8").splitlines()
+        ]
+        if (any(not isinstance(record, dict) or record.get("status") != "ok"
+                for record in records)
+                or len(records) != manifest["successful_records"]):
+            raise ValueError("Pretraining v3 label success coverage is invalid.")
+        return
     if contract is not None or label_contract is not None:
         if (contract != SEMANTIC_CONTRACT_V2 or label_contract != contract
                 or manifest.get("pretraining_eligible") is not True):
@@ -514,8 +594,8 @@ def _validate_label_artifact(dataset: Path, labels: Path) -> None:
 
 
 def _load_scores(  # noqa: C901
-    path: Path,
-) -> dict[str, tuple[float, float, float, float]]:
+    path: Path, *, contract: str | None = None, view_ids: set[str] | None = None,
+) -> dict:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as error:
@@ -529,8 +609,13 @@ def _load_scores(  # noqa: C901
         if not isinstance(label, dict) or label.get("status") != "ok":
             continue
         view_id, values = label.get("view_id"), label.get("scores")
+        if view_ids is not None and view_id not in view_ids:
+            continue
         if not isinstance(view_id, str) or view_id in result:
             raise ValueError("Pretraining labels have duplicate or invalid view IDs.")
+        if contract == SEMANTIC_CONTRACT_V3:
+            result[view_id] = _v3_scores(label)
+            continue
         if not isinstance(values, dict) or set(values) != set(_SCORE_FIELDS):
             raise ValueError("Pretraining label scores are invalid.")
         ordered = tuple(values[name] for name in _SCORE_FIELDS)
@@ -548,13 +633,58 @@ def _load_scores(  # noqa: C901
     return result
 
 
+def _validate_v3_manifest_semantics(manifest: Mapping[str, object]) -> None:
+    if (manifest.get("semantic_contract_version") != SEMANTIC_CONTRACT_V3
+            or manifest.get("semantic_dimensions") != list(SEMANTIC_DIMENSIONS_V3)
+            or manifest.get("semantic_sources") != list(SEMANTIC_SOURCES_V3)):
+        raise ValueError("Pretraining v3 manifest semantics are incompatible.")
+
+
+def _v3_scores(label: Mapping[str, object]) -> dict:  # noqa: C901
+    fields = ("scores", "known_masks", "sources", "evidence", "unknown_reasons")
+    for field in fields:
+        if (not isinstance(label.get(field), dict)
+                or set(label[field]) != set(SEMANTIC_DIMENSIONS_V3)):
+            raise ValueError(f"Pretraining v3 label {field} fields are invalid.")
+    receipt = label.get("receipt")
+    if (not isinstance(receipt, dict)
+            or receipt.get("semantic_contract_version") != SEMANTIC_CONTRACT_V3):
+        raise ValueError("Pretraining v3 label receipt contract is incompatible.")
+    scores, masks = [], []
+    for name, source in zip(SEMANTIC_DIMENSIONS_V3, SEMANTIC_SOURCES_V3):
+        score = label["scores"][name]
+        known = label["known_masks"][name]
+        evidence = label["evidence"][name]
+        reason = label["unknown_reasons"][name]
+        if type(known) is not bool or label["sources"][name] != source:
+            raise ValueError("Pretraining v3 known masks or label sources differ.")
+        if (not isinstance(evidence, list)
+                or any(not isinstance(path, str) or not path for path in evidence)):
+            raise ValueError("Pretraining v3 evidence is invalid.")
+        if (len(set(evidence)) != len(evidence)
+                or (name != "motion-stagnation" and not 1 <= len(evidence) <= 4)):
+            raise ValueError("Pretraining v3 evidence count or uniqueness is invalid.")
+        if known:
+            if (type(score) not in (int, float) or not math.isfinite(score)
+                    or not 0 <= score <= 1 or reason is not None or not evidence):
+                raise ValueError("Pretraining v3 known score is invalid.")
+        elif (score is not None or not isinstance(reason, str)
+              or reason not in UNKNOWN_REASONS_V3[name]):
+            raise ValueError("Pretraining v3 unknown score must be null with a reason.")
+        scores.append(float(score) if known else 0.0)
+        masks.append(known)
+    return {"scores": tuple(scores), "known_masks": tuple(masks)}
+
+
 def _attach_scores(windows, scores):
     result = []
     for window in windows:
         view_id = _window_id(window)
         if view_id not in scores:
             raise ValueError("Pretraining windows do not have complete label coverage.")
-        result.append({**window, "scores": scores[view_id]})
+        payload = scores[view_id]
+        result.append({**window, **payload} if isinstance(payload, dict)
+                      else {**window, "scores": payload})
     return result
 
 
@@ -577,13 +707,23 @@ def _identity(config: PretrainingRunConfig, dataset: Path, labels: Path) -> dict
         digest.update(content)
     manifest = json.loads((labels / "manifest.json").read_text("utf-8"))
     contract = manifest.get("semantic_contract_version")
-    if contract is not None and contract != SEMANTIC_CONTRACT_V2:
+    v3 = contract == SEMANTIC_CONTRACT_V3
+    if v3:
+        content = (labels / "manifest.json").read_bytes()
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    if contract is not None and contract not in {
+        SEMANTIC_CONTRACT_V2, SEMANTIC_CONTRACT_V3,
+    }:
         raise ValueError("Pretraining label semantic contract is incompatible.")
     identity = {
         "observation_schema": "direct-goal-observation-v2",
         "observation_dim": OBSERVATION_DIM,
-        "ontology_schema": SEMANTIC_ONTOLOGY_V2 if contract else SEMANTIC_ONTOLOGY_V1,
-        "semantic_dimensions": SEMANTIC_DIMENSIONS,
+        "ontology_schema": (
+            SEMANTIC_ONTOLOGY_V3 if v3 else
+            SEMANTIC_ONTOLOGY_V2 if contract else SEMANTIC_ONTOLOGY_V1
+        ),
+        "semantic_dimensions": SEMANTIC_DIMENSIONS_V3 if v3 else SEMANTIC_DIMENSIONS,
         "actor_architecture": ACTOR_ARCHITECTURE_V1,
         "hidden_dim": HIDDEN_DIM,
         "dataset_sha256": digest.hexdigest(),
@@ -591,6 +731,9 @@ def _identity(config: PretrainingRunConfig, dataset: Path, labels: Path) -> dict
     }
     if contract:
         identity["semantic_contract_version"] = contract
+    if v3:
+        identity["semantic_sources"] = SEMANTIC_SOURCES_V3
+        identity["loss_aggregation"] = LOSS_AGGREGATION_V3
     validate_pretraining_identity(identity)
     return identity
 
@@ -644,7 +787,11 @@ def _pretraining_batch(samples, device: torch.device) -> PretrainingBatch:
     valid_masks = torch.zeros(batch_size, length, dtype=torch.bool, device=device)
     reset_masks = torch.zeros(batch_size, length, dtype=torch.bool, device=device)
     targets = torch.zeros(batch_size, length, len(SEMANTIC_DIMENSIONS), device=device)
-    target_masks = torch.zeros(batch_size, length, dtype=torch.bool, device=device)
+    per_dimension = "known_masks" in samples[0]
+    if any(("known_masks" in sample) != per_dimension for sample in samples):
+        raise ValueError("Pretraining batch mixes semantic target mask contracts.")
+    mask_shape = (batch_size, length, 4) if per_dimension else (batch_size, length)
+    target_masks = torch.zeros(mask_shape, dtype=torch.bool, device=device)
     for index, sample in enumerate(samples):
         values = torch.as_tensor(
             sample["observations"], dtype=torch.float32, device=device
@@ -658,7 +805,10 @@ def _pretraining_batch(samples, device: torch.device) -> PretrainingBatch:
         valid_masks[index, start:] = True
         reset_masks[index, start:] = resets
         targets[index, -1] = score
-        target_masks[index, -1] = True
+        target_masks[index, -1] = (
+            torch.as_tensor(sample["known_masks"], dtype=torch.bool, device=device)
+            if per_dimension else True
+        )
     return PretrainingBatch(
         observations=observations,
         valid_masks=valid_masks,
@@ -673,16 +823,34 @@ def _evaluate(model, samples, batch_size, device, weights) -> float:
     model.eval()
     total_loss = 0.0
     target_count = 0
+    dimension_sse = torch.zeros(4, dtype=torch.float64, device=device)
+    dimension_counts = torch.zeros(4, dtype=torch.int64, device=device)
+    per_dimension = bool(samples) and "known_masks" in samples[0]
     with torch.no_grad():
         for batch_samples in _batches(samples, batch_size):
             batch = _pretraining_batch(batch_samples, device)
+            predictions = model(batch)
+            if per_dimension:
+                errors = (predictions.double() - batch.targets.double()).square()
+                dimension_sse += errors.masked_fill(
+                    ~batch.target_masks, 0.0
+                ).sum(dim=(0, 1))
+                dimension_counts += batch.target_masks.sum(dim=(0, 1))
+                continue
             loss = masked_semantic_loss(
-                model(batch), batch.targets, batch.target_masks, weights
+                predictions, batch.targets, batch.target_masks, weights
             )
             count = int(batch.target_masks.sum().item())
             total_loss += float(loss.detach().cpu()) * count
             target_count += count
     result = total_loss / target_count if target_count else float("nan")
+    if per_dimension:
+        active = (dimension_counts > 0) & (weights > 0)
+        if active.any().item():
+            means = dimension_sse / dimension_counts.clamp_min(1)
+            result = float((
+                (means[active] * weights[active]).sum() / weights[active].sum()
+            ).cpu())
     _require_finite(result, "validation loss")
     return result
 

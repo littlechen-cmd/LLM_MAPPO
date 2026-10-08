@@ -61,6 +61,8 @@
   旧版本独立保存，禁止静默升级。
 - [x] 实现 best pretrain checkpoint 保存、恢复、加载及导出；保留 latest 用于恢复，
   明确 validation 选模型、test 最终报告的边界。
+- [x] 实现并审查 v3 连续三维 prompt/parser 与规则第四维合并、分维 unknown mask、
+  全 validation SSE/count 及严格表征身份；保留 legacy 兼容。
 - [ ] 按每环境 pretrain seed 7、八个 RL seeds 共用表征的已批准策略，冻结其余
   pretrain 超参数、常量/规则比较及必要诊断；避免多轮无目标搜索。
 - [ ] 生成真实路径/哈希绑定的 LLM KD 与 A*+LLM KD 配置，验证仅 encoder/GRU 导入，

@@ -22,6 +22,7 @@ from .pretraining import (
     OBSERVATION_DIM,
     PRETRAINING_EXPORT_V1,
     validate_pretraining_identity,
+    normalize_pretraining_identity,
 )
 
 
@@ -43,8 +44,7 @@ def export_actor_representation(
     """Atomically export only the exact Actor Encoder and GRU tensors."""
 
     _validate_actor(actor)
-    identity_copy = copy.deepcopy(dict(identity))
-    validate_pretraining_identity(identity_copy)
+    identity_copy = normalize_pretraining_identity(copy.deepcopy(dict(identity)))
     representation = _representation_state(actor)
     payload = {
         "export_schema": PRETRAINING_EXPORT_V1,
@@ -92,8 +92,9 @@ def import_actor_representation(  # noqa: C901
     """Authenticate file bytes, validate, dry-load, then apply representation."""
 
     _validate_actor(actor)
-    expected_copy = copy.deepcopy(dict(expected_identity))
-    validate_pretraining_identity(expected_copy)
+    expected_copy = normalize_pretraining_identity(
+        copy.deepcopy(dict(expected_identity))
+    )
     if not _is_sha256(expected_artifact_sha256):
         raise ValueError(
             "expected_artifact_sha256 must be a lowercase SHA-256 digest."
@@ -161,7 +162,9 @@ def _validate_payload(payload, actor, *, expected_identity):  # noqa: C901
     if payload["export_schema"] != PRETRAINING_EXPORT_V1:
         raise ValueError("Representation export schema is incompatible.")
     validate_pretraining_identity(payload["identity"])
-    if not _strict_equal(payload["identity"], expected_identity):
+    if not _strict_equal(
+        normalize_pretraining_identity(payload["identity"]), expected_identity
+    ):
         raise ValueError("Representation identity does not match expected_identity.")
 
     expected = _representation_state(actor)

@@ -22,6 +22,25 @@ PRETRAINING_EXPORT_V1 = "actor-representation-export-v1"
 SEMANTIC_ONTOLOGY_V1 = "agent-centric-four-score-ontology-v1"
 SEMANTIC_ONTOLOGY_V2 = "agent-centric-observable-coordination-four-score-v2"
 SEMANTIC_CONTRACT_V2 = "observable-coordination-four-score-v2"
+SEMANTIC_ONTOLOGY_V3 = "agent-centric-priority-coordination-four-score-v3"
+SEMANTIC_CONTRACT_V3 = "observable-priority-coordination-four-score-v3"
+SEMANTIC_DIMENSIONS_V3 = (
+    "goal-priority", "yielding-preference", "local-constraint", "motion-stagnation",
+)
+SEMANTIC_SOURCES_V3 = ("llm", "llm", "llm", "observable-rule-v3")
+LOSS_AGGREGATION_V3 = "per-dimension-known-mean-then-weighted-mean"
+DATASET_BUILD_V3 = "llm-dataset-build-run-v3"
+LABEL_RUN_V3 = "llm-dataset-label-run-v3"
+MAIN_BASELINE_DISTRIBUTION_V3 = "native-209d-goal-full-main-v3"
+UNKNOWN_REASONS_V3 = {
+    "goal-priority": frozenset(),
+    "yielding-preference": frozenset((
+        "ambiguous-peer-association", "missing-peer-attributes", "symmetric-priority",
+        "conflicting-peer-evidence", "hard-service-lock", "ambiguous-service-state",
+    )),
+    "local-constraint": frozenset(("ambiguous-shelf-mobility",)),
+    "motion-stagnation": frozenset(("ambiguous-service-state",)),
+}
 ACTOR_ARCHITECTURE_V1 = "mappo-actor-encoder-gru-v1"
 
 OBSERVATION_DIM = 209
@@ -156,6 +175,14 @@ def masked_semantic_loss(
     weights = dimension_weights.to(
         device=predictions.device, dtype=predictions.dtype
     )
+    if valid_masks.ndim == 3:
+        counts = valid_masks.sum(dim=(0, 1))
+        active = (counts > 0) & (weights > 0)
+        if not active.any().item():
+            raise ValueError("At least one weighted known target is required.")
+        errors = (predictions - targets).square().masked_fill(~valid_masks, 0.0)
+        means = errors.sum(dim=(0, 1)) / counts.clamp_min(1)
+        return (means[active] * weights[active]).sum() / weights[active].sum()
     valid_errors = (
         predictions[valid_masks] - targets[valid_masks]
     ).square()
@@ -173,7 +200,10 @@ def _validate_loss_tensors(
         raise ValueError("targets must match prediction shape [batch,time,4].")
     if valid_masks.dtype is not torch.bool:
         raise ValueError("valid_masks must be a boolean tensor.")
-    if tuple(valid_masks.shape) != tuple(predictions.shape[:2]):
+    expected_mask_shape = (
+        predictions.shape if valid_masks.ndim == 3 else predictions.shape[:2]
+    )
+    if tuple(valid_masks.shape) != tuple(expected_mask_shape):
         raise ValueError("valid_masks must match prediction batch/time axes.")
     if not valid_masks.any().item():
         raise ValueError("At least one valid frame is required.")
@@ -216,24 +246,33 @@ def validate_pretraining_identity(identity: Mapping[str, object]) -> None:
     if not isinstance(identity, Mapping):
         raise ValueError("Pretraining identity must be a mapping.")
     versioned = "semantic_contract_version" in identity
+    v3 = identity.get("semantic_contract_version") == SEMANTIC_CONTRACT_V3
     fields = REQUIRED_PRETRAINING_IDENTITY_FIELDS + (
         ("semantic_contract_version",) if versioned else ()
-    )
+    ) + (("semantic_sources", "loss_aggregation") if v3 else ())
     if tuple(identity.keys()) != fields:
         raise ValueError("Pretraining identity fields and order must be exact.")
     expected = {
         "observation_schema": DIRECT_GOAL_OBSERVATION_V2,
         "observation_dim": OBSERVATION_DIM,
-        "ontology_schema": SEMANTIC_ONTOLOGY_V2 if versioned else SEMANTIC_ONTOLOGY_V1,
-        "semantic_dimensions": SEMANTIC_DIMENSIONS,
+        "ontology_schema": (
+            SEMANTIC_ONTOLOGY_V3 if v3 else
+            SEMANTIC_ONTOLOGY_V2 if versioned else SEMANTIC_ONTOLOGY_V1
+        ),
+        "semantic_dimensions": SEMANTIC_DIMENSIONS_V3 if v3 else SEMANTIC_DIMENSIONS,
         "actor_architecture": ACTOR_ARCHITECTURE_V1,
         "hidden_dim": HIDDEN_DIM,
     }
     if versioned:
-        expected["semantic_contract_version"] = SEMANTIC_CONTRACT_V2
+        expected["semantic_contract_version"] = (
+            SEMANTIC_CONTRACT_V3 if v3 else SEMANTIC_CONTRACT_V2
+        )
+    if v3:
+        expected["semantic_sources"] = SEMANTIC_SOURCES_V3
+        expected["loss_aggregation"] = LOSS_AGGREGATION_V3
     for name, value in expected.items():
         supplied = identity[name]
-        if name == "semantic_dimensions":
+        if name in {"semantic_dimensions", "semantic_sources"}:
             supplied = (
                 tuple(supplied)
                 if isinstance(supplied, (list, tuple))
@@ -256,6 +295,16 @@ def _require_tensor(name: str, value: object) -> None:
         raise ValueError(f"{name} must be a torch.Tensor.")
 
 
+def normalize_pretraining_identity(identity: Mapping[str, object]) -> dict:
+    """Canonicalize v3 sequence fields while retaining strict legacy identities."""
+    validate_pretraining_identity(identity)
+    result = dict(identity)
+    if result.get("semantic_contract_version") == SEMANTIC_CONTRACT_V3:
+        for name in ("semantic_dimensions", "semantic_sources"):
+            result[name] = tuple(result[name])
+    return result
+
+
 def _validate_mask(name: str, value: Tensor, batch_time: tuple[int, int]) -> None:
     if value.dtype is not torch.bool:
         raise ValueError(f"{name} must be a boolean tensor.")
@@ -268,6 +317,13 @@ def _validated_target_masks(
 ) -> Tensor:
     target_masks = valid_masks if supplied is None else supplied
     _require_tensor("target_masks", target_masks)
+    if target_masks.ndim == 3:
+        if (target_masks.dtype is not torch.bool
+                or tuple(target_masks.shape) != (*batch_time, SEMANTIC_DIM)):
+            raise ValueError("target_masks must have boolean shape [batch,time,4].")
+        if torch.any(target_masks & ~valid_masks.unsqueeze(-1)).item():
+            raise ValueError("target_masks cannot mark padded frames.")
+        return target_masks
     _validate_mask("target_masks", target_masks, batch_time)
     if torch.any(target_masks & ~valid_masks).item():
         raise ValueError("target_masks cannot mark padded frames.")

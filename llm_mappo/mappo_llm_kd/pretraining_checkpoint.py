@@ -17,6 +17,7 @@ from .pretraining import (
     PRETRAINING_CHECKPOINT_V1,
     SemanticPretrainingModel,
     validate_pretraining_identity,
+    normalize_pretraining_identity,
 )
 
 
@@ -78,8 +79,9 @@ def load_pretraining_checkpoint(
 ) -> dict:
     """Validate a safe payload completely, then atomically restore its state."""
 
-    expected_identity_copy = copy.deepcopy(dict(expected_identity))
-    validate_pretraining_identity(expected_identity_copy)
+    expected_identity_copy = normalize_pretraining_identity(
+        copy.deepcopy(dict(expected_identity))
+    )
     try:
         payload = torch.load(
             Path(path), map_location=map_location, weights_only=True
@@ -116,8 +118,7 @@ def load_pretraining_checkpoint(
 
 def _build_payload(model, optimizer, identity, progress, early_stopping):
     _require_model_optimizer(model, optimizer)
-    identity_copy = copy.deepcopy(dict(identity))
-    validate_pretraining_identity(identity_copy)
+    identity_copy = normalize_pretraining_identity(copy.deepcopy(dict(identity)))
     progress_copy = _validate_progress(progress)
     early_copy = _validate_early_stopping(early_stopping)
     actor_state = {
@@ -158,7 +159,9 @@ def _validate_payload(
     validate_pretraining_identity(payload["identity"])
     if (
         expected_identity is not None
-        and not _strict_equal(payload["identity"], expected_identity)
+        and not _strict_equal(
+            normalize_pretraining_identity(payload["identity"]), expected_identity
+        )
     ):
         raise ValueError("Checkpoint identity does not match expected_identity.")
     progress = _validate_progress(payload["progress"])
