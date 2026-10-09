@@ -148,6 +148,11 @@ GPU 小时以正式任务首段实测吞吐和冻结步数估计，不另开计�
 
 ## 所需输入
 
+2026-10-09 更新：所有者已提供新硬充电 medium seed 7 final checkpoint，并明确授权
+通过来源核验后由代理自行执行本次采集。该授权仅覆盖本次原始采集及覆盖检查，
+不改动正式 RL 长训练与八 seed 评估的所有者分工。新来源采用其原生运行环境，
+详见 [新来源核验](new-hard-charge-source-review.md)；以下旧 C1 路径只保留作历史记录。
+
 各环境需要最终配置、行为 Actor 的 `checkpoint_final.pt`、对应
 `run_manifest.json`、`state.json` 与配置/代码身份。导出的 Actor 可由本 phase
 从合格 checkpoint 生成，不要求所有者事先准备。默认不要求 A* KD checkpoint。

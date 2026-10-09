@@ -1,5 +1,31 @@
 # 执行记录
 
+## 2026-10-09：新硬充电来源接入与采集授权
+
+所有者提供 `artifacts/llm_kd/dataset/new-medium-5ag/seed_0007_20261009T055025617937Z`
+并明确允许核验通过后由代理执行采集。严格核对 completed 状态、final 900k、
+checkpoint/manifest identity、原配置 SHA、Actor 参数有限值及 209/5/64 维度，均通过。
+保存的 200 次评估含真实到站和充电事件，也保留了能量死亡和死锁记录；
+来源资格不等于性能 Gate。详情见 [新来源核验](new-hard-charge-source-review.md)。
+
+新增独立脚本 `scripts/run_hard_charge_dataset_snapshot.py`，将原 commit 必要代码和
+配置提取为不可变快照，在子进程使用原生 batch loader，避免修改旧严格 source loader
+或其他工作树。归档显式禁用 autocrlf，以保留训练配置原始 SHA。生产入口采用受限
+safe globals/weights_only 加载，核对实际导入路径和 feature ledger。只读 inspect
+已通过，未 reset 环境。4 项恢复/数组/自然充电保护定向回归通过，生产 lint 通过。
+脚本冻结 SHA 为 ef11655d86f96fb4e52260c67b120e280bfe7fae72131b9288b93c477c6b10a6。
+
+新 selector 用最多 8 个 decoded frame 缓存，保留原 serializer 的逐帧验证、reset
+裁切及原 summary 计算。原窗口集合、rank、分区和去重规则不变。
+新增 reset/censor/充电/动作等价回归通过。对历史真实轨迹的连续 100 窗只读复核：
+canonical bytes、SHA 和 flags 全部一致；decode 0.4987→0.09763 秒，完整
+decode+flags+SHA 0.8507→0.5045 秒，不含 SQLite，不据此宣称全量实测耗时。
+凭据 `artifacts/llm_kd/phase_20261007/audit/selector-cache-comparison-20261009.json`。
+
+本次新增来源按其原生 hard-charge-v2 环境采集；旧 bf8fad 轨迹保留，不继续追加。
+代理自行运行本次原始采集是所有者明确授权的例外，正式 RL/八 seed 长评估仍由
+所有者运行。此节尚未代表完整 120 episode、3,000 条标签或语义 Gate 通过。
+
 ## 2026-10-08：标注编排与 pretrain 证据校验
 
 新增 `label_budget_v3.py`、`labeling_run_v3.py`、标注 CLI 及定向回归。

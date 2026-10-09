@@ -1,6 +1,6 @@
 """Identity-separated v3 episode collection and bounded on-disk selection."""
 
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from functools import lru_cache
 import json
 import math
@@ -29,7 +29,7 @@ from .semantic_v3 import (
 from .source_actor_v3 import (
     canonical_sha256, file_sha256, load_pinned_medium_source,
 )
-from .temporal_view import serialize_temporal_semantic_view
+from .temporal_view import _summarize, serialize_temporal_semantic_view
 
 
 COLLECTION_V3 = "goal-full-dataset-collection-v3"
@@ -300,6 +300,38 @@ def _window_view(rows, resets):
     return serialize_temporal_semantic_view(rows, resets, SCHEMA.feature_names, 8)
 
 
+def _iter_window_views(rows, resets):
+    """Yield original sliding windows using at most eight decoded raw frames.
+
+    Each frame still passes the original serializer's validation. Windows are
+    read-only because adjacent windows share decoded frame objects; summaries
+    are independently rebuilt with the original reset/censor semantics.
+    """
+    if len(rows) < 8:
+        return
+    tail = deque(maxlen=8)
+    for end in range(len(rows)):
+        single = serialize_temporal_semantic_view(
+            rows[end:end + 1], resets[end:end + 1], SCHEMA.feature_names, 1,
+        )
+        tail.append((single["history"][0], bool(resets[end])))
+        if end < 7:
+            continue
+        entries = list(tail)
+        reset_indices = [index for index, (_, reset) in enumerate(entries) if reset]
+        start = reset_indices[-1] if reset_indices else 0
+        frames = [frame for frame, _ in entries[start:]]
+        yield end, {
+            "schema_version": single["schema_version"],
+            "observation_schema": single["observation_schema"],
+            "history": frames,
+            "summary": _summarize(
+                frames, requested_history_length=8,
+                history_left_censored=not bool(reset_indices),
+            ),
+        }
+
+
 def _observable_flags(view):
     """Reference-based candidate diagnostics, never accepted LLM labels."""
     reference = reference_semantics_v3(view)
@@ -375,9 +407,7 @@ def _index_candidates(connection, directory, receipts, assignments):
             with np.load(path, allow_pickle=False) as payload:
                 observations, resets = payload["observations"], payload["reset_masks"]
             for agent in range(observations.shape[0]):
-                for end in range(7, observations.shape[1]):
-                    view = _window_view(observations[agent, end - 7:end + 1],
-                                        resets[agent, end - 7:end + 1])
+                for end, view in _iter_window_views(observations[agent], resets[agent]):
                     stratum, flags = _observable_flags(view)
                     rank = canonical_sha256([SALT, episode_id, agent + 1, end])
                     connection.execute(
