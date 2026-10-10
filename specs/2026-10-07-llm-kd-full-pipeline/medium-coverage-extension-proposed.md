@@ -32,6 +32,15 @@ train 高让行原始代理仅 40、有竞争的低让行仅 56，达不到各 1
 
 ## 实施依赖
 
+新版本 train 选样先按原始覆盖下限补齐，再以原 stratum round-robin 填满 2,100。
+预先冻结的补齐顺序为 `yielding-preference_high`、`competitive_low`、
+`charging_service`、`stagnation_positive`、`stagnation_zero`、`goal-priority_high`、
+`goal-priority_low`、`yielding-preference_low`、`local-constraint_high`、
+`local-constraint_low`、`ordinary`、`competition`、`structural`。
+目标数量直接沿用原覆盖门；已满足的项跳过，每项内部按原 rank/episode/agent/end
+稳定排序，并先执行内容去重及窗口间距检查。这是已批准覆盖目标的实施细化，
+不改变原始候选、评分规则、holdout 或原版本算法，不读取 LLM 输出。
+
 批准后，由工程师实现分批候选索引恢复、原始池引用及 holdout 保留的身份校验，
 进行定向回归和架构审查，再执行首批正式追加。当前脚本冻结为 120 episode，
 不能直接改命令参数扩大或覆盖 collection_identity。
