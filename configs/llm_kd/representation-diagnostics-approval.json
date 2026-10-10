@@ -1,0 +1,8 @@
+{
+  "schema_version": "phase3-owner-gate-approval-v1",
+  "gate": "M1",
+  "status": "approved",
+  "approved_on": "2026-09-12",
+  "approval_source": "project-owner-chat",
+  "approved_config_sha256": "872d0889146246bfd8c90f1e9eb1325b24b1a9bb83430f3913193546dceffcc1"
+}

@@ -1,0 +1,20 @@
+# Provisional P1 values. This file intentionally cannot start a real run until
+# the owner changes approval_status to "approved" after architecture freeze.
+schema: semantic-pretraining-runner-v1
+dataset_directory: artifacts/llm_kd/dataset/REPLACE_WITH_COMPLETED_MAIN_DATASET
+label_directory: artifacts/llm_kd/dataset/REPLACE_WITH_COMPLETED_LABEL_ARTIFACT
+artifact_root: artifacts/llm_kd/pretraining
+approval_status: provisional
+
+# Seed derives from the most recent stable Phase 3 collection-baseline YAML.
+seed: 7
+
+# Pretraining-specific values derive from the approved M1 diagnostic YAML.
+# PPO-only fields are deliberately absent: offline semantic pretraining has no
+# rollout, GAE, clipping, or environment-step budget.
+batch_size: 256
+max_epochs: 100
+learning_rate: 0.001
+dimension_weights: [1.0, 1.0, 1.0, 1.0]
+early_stopping_patience: 10
+early_stopping_min_delta: 0.0001

@@ -9,10 +9,13 @@ from llm_mappo.types import LABEL_PATTERN, PriorityAdjustment, Task, TaskStatus
 class TaskQueue:
     """FIFO-by-label queue with atomic priority changes and task locking."""
 
-    def __init__(self):
+    def __init__(self, *, priority_weights: Optional[Dict[str, float]] = None):
         self._tasks: Dict[str, Task] = {}
         self._next_task_index = 1
         self._next_label_number: Dict[str, int] = {}
+        self._priority_weights = (
+            dict(priority_weights) if priority_weights is not None else None
+        )
 
     @property
     def tasks(self) -> Sequence[Task]:
@@ -55,6 +58,26 @@ class TaskQueue:
         self._next_label_number[letter] = next_number
         return tuple(created)
 
+    def create_prioritized_batch(
+        self,
+        shelf_ids: Iterable[int],
+        batch_id: int,
+        letters: Iterable[str],
+        arrival_step: int,
+    ) -> Sequence[Task]:
+        """Create one batch whose priority is frozen independently per task."""
+
+        shelf_ids = tuple(shelf_ids)
+        letters = tuple(letters)
+        if len(shelf_ids) != len(letters):
+            raise ValueError("Every shelf must have exactly one priority letter.")
+        created = []
+        for shelf_id, letter in zip(shelf_ids, letters):
+            created.extend(
+                self.create_batch((shelf_id,), batch_id, letter, arrival_step)
+            )
+        return tuple(created)
+
     def task_for_shelf(self, shelf_id: int) -> Optional[Task]:
         for task in self._tasks.values():
             if task.shelf_id == shelf_id and task.status != TaskStatus.COMPLETED:
@@ -82,6 +105,23 @@ class TaskQueue:
                 self._tasks[task.task_id] = assigned
                 return assigned
         return None
+
+    def assign(self, task_id: str, agent_id: int, battery: float) -> Optional[Task]:
+        """Lock one explicit pending task for a currently idle AGV."""
+
+        if battery < 0.1:
+            return None
+        existing = self.task_for_agent(agent_id)
+        if existing is not None:
+            return existing
+        task = self._tasks[task_id]
+        if task.status != TaskStatus.PENDING:
+            return None
+        assigned = replace(
+            task, status=TaskStatus.ASSIGNED, assigned_agent_id=agent_id
+        )
+        self._tasks[task_id] = assigned
+        return assigned
 
     def complete(self, task_id: str, completed_step: int) -> Task:
         task = self._tasks[task_id]
@@ -148,6 +188,11 @@ class TaskQueue:
         return tuple(updated)
 
     def priority_weight(self, label: str) -> float:
+        if self._priority_weights is not None:
+            try:
+                return float(self._priority_weights[label[0]])
+            except KeyError as error:
+                raise ValueError("Unknown fixed task priority.") from error
         letters = sorted({task.label[0] for task in self.active_tasks})
         if len(letters) <= 1:
             return 1.0

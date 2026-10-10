@@ -17,8 +17,8 @@ preferred-citation:
   - family-names: "Albrecht"
     given-names: "Stefano"
   journal: "34th Conference on Neural Information Processing Systems"
-  start: 10707 # First page number
-  end: 10717 # Last page number
+  start: 10707
+  end: 10717
   title: "Shared Experience Actor-Critic for Multi-Agent Reinforcement Learning"
   volume: 33
   year: 2020

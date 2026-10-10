@@ -1,0 +1,727 @@
+# Changelog
+
+## 2026-10-10
+
+- 批准：同环境同 checkpoint 最多追加 240 个训练专用自然 episode，每批 40 个、覆盖通过即停止；保留原 holdout、3,000 条配额和质量门，新增采集及派生选样须独立身份。
+- 验收：完整选出 3,000 条未标注窗口，但高让行与竞争低让行覆盖不足；候选池也不足以补齐，保留失败报告并停止付费标注，不放行 pretrain。
+- 采集：收录新硬充电 medium 来源的完整 120 个 episode，96,000 环境步、560 次满电释放及 4,763 步充电锁定，违规为 0；选样事务中断后复用原始轨迹重算，新 API 请求为 0。
+
+## 2026-10-09
+
+- 实现：独立原生硬充电采集入口，安全加载新 checkpoint，核对 209D 特征顺序，验证自然充电锁定/满电释放并保留恢复凭据；4 项定向回归通过。
+- 优化：选样复用最多 8 帧解码缓存，真实连续 100 窗的内容、哈希与规则诊断完全一致，保持原滑窗集合和采样合同。
+- 核验：接收新硬充电 medium baseline final checkpoint，确认 900k 完结、来源配置和身份一致；改用原生运行时准备独立采集，停止推荐旧来源长采集命令。
+
+## 2026-10-08
+
+- 实现：冻结 v3 标注载荷和预算，保留原始响应及未结算预留，绑定配对标签、质量报告与 pretrain；修复工作树入口及连续分数缓存来源核验。
+- 验证：真实硬充电采集已保存首个完整 800 步 episode 和源码快照；交付补齐 120 个 episode 的恢复命令，未调用新 API。
+- 实现：v3 分阶段语义质量报告，修复配对名单不同及单条无成功请求仍可能放行的问题；架构师定向 4 项通过。
+- 实现：独立硬充电数据采集与固定选样入口，绑定旧 Actor 来源和新 rollout 身份，保留完整 episode、恢复记录与覆盖缺口；复核 13 项恢复/冻结检查通过。
+- 确认：按所有者最新指示恢复硬充电 LLM KD 流水线；formal AGV 数延后冻结，medium 继续优先。
+- 实现：v3 三维连续标签与规则辅助维合并、分维 unknown mask、全分区 validation 聚合及严格表征身份；审查修复 float32 等距 peer 误拒，保留旧合同兼容。
+- 实现：新增独立 medium goal-full 配置与四方法 checkpoint 身份，支持八个正式 seeds，保留旧 C1 精确合同；新入口专项 28 项通过。
+- 批准：前三维 LLM 标签采用 [0,1] 连续评分，离散值仅为参考锚点，禁止量化；同步冻结评分、质量门、pretrain 参数和 medium 采集合同。
+- 规划：提交 v3 评分锚点、分维 unknown、连续停滞规则、质量门及 pretrain 参数草案，数值合同保持待批准状态。
+- 审查：核验旧 medium Actor 在新充电规则下的有界执行，确认加载可用但站内服务覆盖未验证，提出来源与 rollout 身份分离方案。
+- 修复：pretrain 按 validation 实际最小损失保存并导出 best，latest 独立用于恢复；补充历史记录、模型哈希和中断边界回归。
+- 修复：全已知标签的 validation loss 按有效监督帧聚合，消除最后小 batch 权重偏高，验证不同 batch 划分结果一致。
+- 冻结：采用 goal-priority、yielding-preference、local-constraint 三维主语义及 motion-stagnation 第四辅助维度，保留可观察边界并区分历史合同。
+- 冻结：前三维由 LLM 标注，motion-stagnation 从同一可观察窗口规则派生，四维共同预训练并明确记录分维来源。
+- 规划：确认 medium 新建 3,000 条及语义至少三维，基于实际 209D 时序输入完成候选维度与不可观察边界分析，替代此前两维建议。
+
+## 2026-10-07
+
+- 新增：三环境 LLM KD 已批准规格及任务追踪，冻结数据量、八个 RL seeds 和充电合同。
+- 实现：可显式启用到目标站充电锁定、0.1/步补能及满电释放，保留旧合同兼容性，专项 16 项回归通过。
+- 审查：离线核对 medium 4,200 条训练标签的维度重复与充电覆盖，提交新语义及 formal 容量建议，未新增 API 调用。
+
+## 2026-10-06
+
+- Added: Delivered 6000 formal medium-5AG eight-frame 209D semantic labels,
+  isolated 4200/900/900 partitions, a same-window rule comparator, quality
+  receipts, and a hash-verified training bundle.
+- Fixed: Enforced observable coordination evidence and owner-approved bounded
+  citation/network repair while retaining failed requests and cumulative costs.
+- Changed: Bound semantic pretraining and representation identities to the
+  observable coordination v2 contract; preserved legacy artifact isolation.
+
+## 2026-09-15
+
+- Added: Prepared an owner-approved, isolated current-runtime 208D v1
+  low-workload regression that exactly matches the failed 209D run's behavioral
+  configuration while rejecting its artifacts from the Phase 3 collector and D1.
+- Changed: Added an owner-approved, isolated native-209D medium-5AG
+  low-workload collection baseline after the continuous-throughput collection
+  run completed no tasks; preserved the failed configuration and formal Phase 2
+  evaluation contract under their original identities.
+
+## 2026-09-14
+
+- Added: Implemented fixture-only Group 7 diagnostic identity, externally
+  anchored one-shot test-access receipts, approved-M1 snapshot validation, and
+  side-effect-free frozen Encoder+GRU embedding extraction; stopped before
+  probe training or any real held-out evaluation.
+- Added: Implemented and validated fixture-only Phase 3 recurrent semantic
+  pretraining infrastructure, strict resumable checkpoints, and authenticated
+  Encoder+GRU-only exports; real training, P1 approval, and artifact inspection
+  remain owner-pending.
+- Added: Recorded deterministic three-branch MAPPO baseline v2 contract
+  equivalence evidence, preserving owner-dirty worktrees and deferring all
+  integration decisions to the owner.
+- Changed: Embedded the exact reproducible contract-payload generator and
+  canonical field order in the cross-branch v2 equivalence evidence.
+
+## 2026-09-13
+
+- Planned: Defined a safety-first cross-branch MAPPO baseline synchronization
+  contract that preserves all Phase 1/2/A* v1 checkpoints and configurations
+  while adding contract-equivalent optional v2/209D capability.
+- Fixed: Phase 3 collection now exports a separate weights-only-safe Actor
+  artifact, binds it to the exact five-agent environment and an explicitly
+  approved artifact hash, rejects incomplete episode groups, and keeps partial
+  LLM provider audits explicitly incomplete.
+
+- Added: Recorded native 209D Phase 3 collection-baseline readiness: its
+  isolated MAPPO-FP-DG configuration, same-observation collector, strict
+  checkpoint rejection, and downstream-initialization exclusion passed focused
+  validation; collection and owner gate D1 remain pending.
+- Added: Implemented the secret-safe Phase 3 OpenAI-compatible label boundary,
+  exact four-score/evidence prompt parser, atomic resumable cache, deterministic
+  eight-view shared audit subset, and two-provider L1 configuration proposal.
+- Approved: Recorded owner gate L1 against the exact two-provider audit config
+  hash and made the real-call command fail closed without that approval.
+- Changed: Diagnosed the first real-call smoke, versioned the clarified complete
+  evidence-path syntax as prompt v2, and preserved safe HTTP status codes in
+  provider-failure receipts; the changed L1 hash now requires renewed approval.
+- Changed: Reduced the v2 retry limit to one so the eight consumed diagnostic
+  attempts plus the worst-case v2 audit remain below the original L1 HTTP cap.
+- Approved: Rebound owner gate L1 to prompt v2 and added an explicit configured-
+  provider subset for the owner-directed DeepSeek-only smoke; outputs are
+  isolated by the approved configuration hash.
+- Validated: The real DeepSeek prompt-v2 smoke passed strict four-score and
+  evidence-path parsing without retry; GPT remained deferred and no teacher was
+  selected.
+- Diagnosed: Completed the 8-primary/4-repeat DeepSeek audit with 12 valid
+  labels and no retries, while recording elevated concession-score repeat
+  disagreement as a negative result that blocks dataset labeling pending review.
+- Changed: Prepared prompt v3 with owner-approved directional-evidence,
+  free-space, and observable-interaction anchors while deliberately retaining
+  LLM reasoning freedom for concession scores; the new hash requires approval.
+- Approved: Rebound owner gate L1 to the exact prompt-v3 configuration hash for
+  the DeepSeek-only 8-primary/4-repeat re-audit.
+- Diagnosed: Prompt v3 completed 12 DeepSeek labels and reduced same-subset macro
+  repeat MAE from 0.071875 to 0.009375 while retaining a soft nonzero concession
+  judgment; recorded one successful validation retry and no teacher claim.
+- Added: Implemented the Phase 3 episode collector that runs only a native 208D
+  Phase 2 baseline Actor while recording same-state 209D observations, plus
+  episode-disjoint splitting, observable stratification, and hard exclusion of
+  A* diagnostic trajectories from main pretraining data.
+- Changed: Superseded the temporary 208D-to-209D collection design with an
+  owner-approved, from-scratch native 209D Phase 3 collection baseline whose
+  checkpoint is prohibited from downstream diagnostic initialization.
+
+## 2026-09-12
+
+- Added: Predeclared Phase 3 label, semantic-prediction, representation-health,
+  fresh-probe control, and four-arm diagnostic contracts, together with strict
+  five-stage configuration schemas and an approved, hash-bound M1 threshold
+  contract.
+- Added: Introduced the isolated LLM KD raw 209D trajectory contract and the
+  deterministic, episode-safe `TemporalSemanticView-v1`, with exact field
+  ordering, censored-history semantics, anonymous-peer summaries, strict
+  feature-ledger validation, and privileged-information leakage tests.
+- Added: Phase 3 introduces a strictly versioned 209D recurrent Actor
+  observation with the focal AGV priority at feature index 10, while preserving
+  the historical 208D schema and rejecting cross-schema checkpoint restore;
+  active LLM documentation now uses the approved four-dimensional agent-centric
+  pre-RL representation contract.
+- Changed: Made the Phase 2 450k/6-worker/64-rollout training and fixed
+  9400/9401 evaluation contract authoritative for future LLM KD work; marked
+  the old E1/E2 150k/16-worker/128-rollout and 65-run/71-run contracts as
+  historical-only without rewriting their evidence, and established the
+  isolated `codex/llm-kd` worktree boundary.
+- Changed: Integrated the Phase 2 A*KD implementation with the Phase 1 mainline,
+  including the formal 450k training profiles and deterministic evaluation
+  workload of two initial AGV-sized batches, one batch every 100 steps, and a
+  completion target of five tasks per AGV.
+
+## 2026-09-11
+
+- Changed: Phase 2 evaluation now starts with two deterministic AGV-sized task
+  batches, adds one AGV-sized batch every 100 steps, and requires five
+  completed tasks per AGV; training replenishment and termination are unchanged.
+- Changed: All Phase 2 training and checkpoint-evaluation profiles now share
+  the formal 450k environment-step budget; the 25k checkpoint cadence and
+  budget-relative learning-rate/A*KD schedules remain unchanged.
+- Added: A*KD now applies a separately logged supervision-scope mask so
+  auxiliary gradients cover only non-idle, motion-executable navigation away
+  from the current goal, while teacher validity retains its existing meaning.
+- Added: Phase 2 diagnostics now record MotionPrior and policy agreement with
+  the A* teacher, static route regret and invalid-root selection, per-phase
+  action ratios, successful direction reversals, motion steps per task, and
+  separate PPO/A*KD gradient norms on the shared actor trunk.
+- Fixed: Full-validity A*KD now supervises the forced pickup boundary as a
+  post-pickup transition using the loaded footprint and the rule-selected
+  delivery or charging goal, while `TOGGLE_LOAD` remains the only executable
+  environment action.
+
+## 2026-09-10
+
+- Fixed: Registered the Phase 2 large-5AG warehouse and made checkpoint
+  evaluation actor-only and worker-free, allowing medium-trained policies to
+  run on the larger geometry without constructing an incompatible FP critic
+  state.
+- Fixed: Checkpoint evaluation manifests now record the effective environment
+  after evaluation overrides, and legacy medium evaluation aliases use the
+  common target-8 workload contract instead of a separate high-workload mode.
+- Changed: Phase 2 medium 3-AGV and medium 5-AGV training now uses a
+  500-step horizon to limit unproductive rollouts; its independent evaluation
+  remains explicitly fixed at 800 steps.
+- Fixed: Phase 2 continuous training now propagates
+  `terminate_on_task_target: false` to the underlying warehouse, so completed
+  task targets no longer reset a training episode before its 800-step horizon.
+- Changed: Phase 2 dynamic-ingress evaluation now starts with one AGV-sized
+  task batch and adds the same fixed-size batch every 150 steps; the former
+  low/high workload batch schedules are no longer used.
+
+## 2026-09-09
+
+- Changed: Phase 2 training profiles now explicitly ignore task-target
+  termination and treat the `max_steps` horizon as truncation, while their
+  evaluation overrides retain task-target termination. Training evidence now
+  records `steps_per_task` as its primary continuous-throughput metric.
+- Fixed: Phase 2 vector rollouts now replace A*KD labels and cache deltas with
+  the worker payload returned for each step, including correct accounting for
+  a final partial worker batch; the earlier stale reset-payload diagnostics do
+  not constitute valid per-state A*KD training evidence.
+- Added: Phase 2 recurrent MAPPO-FP-A*KD now provides an orientation-aware,
+  footprint-aware static cost-to-go teacher, a 3-action MotionPriorHead,
+  fail-closed full/no-validity labels, cached table diagnostics and a
+  training-only KL auxiliary loss.
+- Added: Phase 2 3-AGV and 5-AGV 300k training profiles use RWARE
+  replenishment with training-only `task_target: 18`; fixed-seed dynamic-ingress
+  low/high evaluation and three-arm large-5AG pressure-test profiles preserve
+  their approved targets and do not query the teacher during evaluation.
+
+## 2026-09-08
+
+- Added: Phase 1 can now evaluate one completed medium-5AG MAPPO-FP-DG
+  checkpoint independently under matched Low and High dynamic-ingress profiles.
+  High keeps the same topology, stations, policy and fixed seeds while using
+  60-step two-task ingress and target 12; its receipt is evaluation-only and
+  cannot resume or alter the source training evidence.
+- Added: Group 6 now has an executable 5-AGV DirectGoal low-workload profile:
+  800-step episodes, the current `-0.1/-0.1` event penalties, one-time
+  deadlock penalty, RWARE replenishment during training and dynamic ingress
+  during fixed evaluation.
+- Changed: Phase 1 DirectGoal training restores original RWARE delivery-time
+  fixed-request replenishment: every delivered requested shelf is immediately
+  replaced with one new task. Fixed evaluation remains on dynamic ingress, and
+  both modes are captured in the run configuration.
+- Added: The DirectGoal recovery profile now applies a single `-5.0` team
+  reward only on the transition that first reaches episode deadlock. It retains
+  `-0.005` per-step cost and the known executable `-0.1/-0.1` blocked-forward/
+  occupancy-conflict pair; the deadlock amount is logged separately.
+- Changed: The conditional Phase 1 waypoint diagnostic now restores the
+  owner-identified executable Reward-v2 pair (`-0.1` blocked-forward and
+  `-0.1` occupancy-conflict) and disables the separate charging-reward probe,
+  so its only intended learning-interface difference from the accepted DG
+  reference is waypoint geometry.
+- Added: Registered three fresh Phase 1 3-AGV DirectGoal efficiency diagnostics
+  that share all training/environment settings and a `+0.05` confirmed charging
+  event reward, varying only blocked-forward/occupancy-conflict penalties:
+  P1 `-0.15/-0.50`, P2 `-0.50/-0.50`, and P3 `-0.15/-1.00`.
+- Changed: Low-battery shaping now charges `-0.5` only when an AGV crosses
+  into the low-battery state. Remaining low is no longer repeatedly penalized;
+  energy depletion remains a severe environment consequence. This preserves
+  charging as a safety condition without allowing it to erase delivery reward.
+- Changed: Phase 1 Reward-v2 now uses a `-0.1` shared penalty for every
+  blocked-forward event and AGV occupancy conflict, while retaining a separate
+  raw-event neutralization step so the legacy `-2.0` environment collision
+  consequence cannot leak back into the team reward.
+- Changed: Phase 1 3-AGV DirectGoal and paired waypoint diagnostics now allow
+  800 environment steps per episode. Training-worker count, PPO cadence and
+  cumulative environment-step budgets are unchanged.
+- Added: Reward-v2 progress is measured with static traversable-grid distance.
+  It excludes peer occupancy, priorities and plans, and therefore credits a
+  necessary shelf detour even when its immediate Manhattan distance increases.
+- Added: Spawned MAPPO workers now write per-worker failure evidence, including
+  worker/process identity, last command/global step and traceback or exit code;
+  failed run state records the evidence directory and parent error message.
+- Added: Phase 1 Group 5 now provides a paired `MAPPO-FP-WP` 300k
+  configuration. It retains every DG environment, reward, seed, worker and
+  PPO setting, replacing only the 208D Actor goal geometry with the current
+  static A* next-waypoint geometry; no planner action, path sequence,
+  reservation or scheduling data enters the Actor.
+- Changed: Recorded the completed Group 4 DG diagnostic and its joint review:
+  successful pickups occurred but no delivery completed, so the paired WP
+  diagnostic is now authorized. This remains diagnostic evidence, not a formal
+  performance claim.
+- Added: Phase 1 Group 3 introduces executable 3-AGV/5-AGV low-workload
+  CPU profiles, six spawned environment workers, four learner CPU threads,
+  exact cumulative environment-step accounting and per-run review receipts.
+- Changed: Reward-v2 now follows the approved shared-reward candidate
+  (`+5×priority` completion, `+0.5` pickup, signed progress, `-0.15`
+  blocked-forward, `-2.0` collision and `-0.005` step cost); every component
+  is separately written to episode CSV and TensorBoard.
+- Added: Baseline diagnostics now emit fixed evaluations for seeds 9400/9401,
+  a slow seed-9400 replay, TensorBoard, final checkpoint and a pending
+  owner/architect review receipt. A 12-step CPU functional check completed;
+  it is interface evidence only, not a learning result.
+- Changed: Phase 1 MAPPO baseline now uses a compact 208D structured Actor
+  input, separate 64D Actor/Critic GRUs, recurrent PPO sequences and resumable
+  worker/AGV hidden states; the FP Critic now records current shelf and station
+  occupancy without exposing teacher information to the Actor.
+- Added: Phase 1 inspected the RWARE medium/large layouts and produced three
+  colour-only facility/workload preview proposals; the 3-AGV profile records
+  the required single-picking-station environment change for owner approval.
+- Planned: Added the owner-approved Phase 1 recurrent MAPPO baseline work,
+  covering RWARE-derived facility previews, a 64D GRU Actor/Critic, local
+  teacher-free diagnostics and review-gated DirectGoal/waypoint comparison.
+- Removed: Cleared superseded G2/G3, Phase 1--4, O1/O2/P1 and early R1-C
+  materials (their configs, runners, diagnostics, tests, historical task packages,
+  archived runbooks and obsolete experiment artifacts). The canonical R1/MAPPO-FP,
+  current specifications, stable worktree and formal three-dimensional label corpus
+  remain intact.
+- Planned: Re-froze the pending R1-C2 MAPPO-FP-DG capability run around Reward-v2
+  and a distinct `r1-mappo-fp-dg-v2` identity; legacy-v1 remains only a historical
+  R1-C causal control.
+- Planned: Added R1-C3, a paired 300k Goal-Interface diagnostic that isolates
+  DirectGoal from execution-time waypoint hints under identical MAPPO-FP and
+  Reward-v2 conditions, with independent evaluation seeds `9500–9509` and an
+  owner-only waypoint-return decision rule.
+- Changed: Narrowed the paper-method boundary: MAPPO is evaluated as a multi-agent
+  path-planning and local-coordination policy; rule-layer task priority, queueing and
+  charging targets are not presented as learned autonomous scheduling.
+
+## 2026-09-04
+
+- Added: R1-C2 introduces a teacher-free MAPPO-FP-DG baseline with a shared
+  DirectGoal actor, a 212D feature-pruned agent-specific centralized critic,
+  per-worker/per-agent GAE, ValueNorm, clipped Huber value loss, independent
+  actor/critic optimizers, and canonical PPO update semantics.
+- Added: The R1-C2 owner runner uses 16 spawned CPU environments, 64-step
+  rollouts, exact cumulative-step and checkpoint-resume accounting, complete
+  episode/TensorBoard evidence, and final-checkpoint deterministic evaluation
+  on held-out seeds `9400–9409`. The 500k capability run remains pending.
+- Changed: DirectGoal construction now loads the legacy planner lazily, so the
+  MAPPO-FP-DG process does not import or instantiate it.
+
+## 2026-09-02
+
+- Changed: R1/E1 TensorBoard now records PPO stability, complete-episode,
+  teacher/calibration, semantic-reliability and performance signals. R1-C
+  replay GIFs sample every two environment steps at 250 ms per frame, and an
+  evaluation-only entry point can regenerate them without retraining.
+
+- Added: R1-C0 now provides the isolated 4-AGV LowLoad `2×2` diagnostic
+  configuration and runner. Every run/checkpoint binds its full environment
+  profile, layout, reward version, rollout length, worker count, raw-label
+  evidence and initial parameter hash; incompatible resume is rejected.
+- Added: Each completed R1-C arm automatically writes TensorBoard evidence,
+  the pre-registered deterministic five-seed evaluation, fixed/lowest-case
+  headless GIF replays, an explicit unavailable-success marker when applicable,
+  and a complete-episode trend receipt for owner review.
+
+- Planned: Replaced the former 3-AGV R1-C diagnostic with a 4-AGV LowLoad
+  profile on the formal topology and expanded the reward/cadence comparison to
+  a strict four-cell `2×2`. R1-C remains MAPPO-DG scratch-only; 4-AGV
+  checkpoints cannot initialize the 5-AGV capability Gate.
+- Planned: Added environment-identity, E1 deterministic evaluation and replay
+  prerequisites before R1-C. Curriculum is deferred until 5-AGV Formal scratch
+  fails and a separate 5-AGV LowLoad diagnosis supports a load bottleneck.
+- Added: R1-B freezes and implements versioned Reward-v2. Task completion is
+  now an undiluted team `+10W`, pickup is local `+2W`, same-goal progress is
+  signed `0.1(d_t-d_{t+1})`, target switches suppress progress, blocked forward
+  is local `-0.15`, and the team step cost remains `-0.01`. Existing collision
+  and energy terms are preserved.
+- Changed: Optimization training now defaults to `reward-v2`, while explicit
+  `legacy-v1` remains available only for the R1-C causal control. The reward
+  version is bound into run and shadow identities to prevent cross-version
+  resume or Reward Calibration branch mixing.
+- Fixed: R1-A now records terminal episodes independently for every spawned
+  environment worker, builds final summaries from the latest 100 complete
+  episodes, and fails closed when a required non-smoke run has no episode
+  evidence. Partial worker state is no longer presented as convergence.
+- Added: R1-A writes complete-episode and optimization scalars to TensorBoard,
+  restores the exact Reward Calibration EMA on resume, and stores each pending
+  CSV evidence batch inside the atomic checkpoint before idempotently
+  materializing it. A crash between checkpoint and CSV writes can therefore be
+  reconciled without duplicate or missing committed rows.
+- Planned: Added the R1 convergence-recovery phase before confirmatory E2. R1
+  repairs complete-episode evidence, isolates reward shaping from PPO refresh
+  cadence, requires owner-reviewed TensorBoard and deterministic replays after
+  every test run, and gates E2 on RC-AStarKD reaching at least 90% overall task
+  completion with no training-seed mean below 85%.
+- Changed: Paused the existing 65-run E2 matrix and reclassified
+  `e2_formal_vector16_7de1f04` as diagnostic-only evidence. The reward redesign
+  was subsequently frozen and implemented as Reward-v2 in R1-B.
+- Changed: Updated the technical contract and terminology to distinguish the
+  old 128-step rollout from R1's 32-step candidate, and defined complete
+  episodes, convergence trends, capability gates, TensorBoard review and
+  diagnostic-only evidence for non-specialist review.
+- Changed: Formal MAPPO rollout now uses one centralized RTX 4090 learner with
+  16 spawned CPU environment workers and a frozen 128-vector-step rollout,
+  preserving the aggregate 150000-transition budget and per-stream GAE.
+- Changed: The owner launched the complete 65-run E2 matrix from `7de1f04` with
+  four learner slots. Its canonical artifact root is
+  `artifacts/optimization/e2_formal_vector16_7de1f04`; QMIX-DG retains its
+  single-environment trainer.
+- Recorded: E1 governance closeout follows the already-authorized E2 launch.
+  The earlier `5f56f20` CUDA smoke validates the functional training paths;
+  the 16-worker revision uses early formal-run stability as engineering health
+  evidence and must not turn throughput into a method-performance claim.
+- Recorded: The immutable raw noisy-teacher source contains 800 attempts and
+  799 valid labels at SHA256 `a108d35e8398114baec1cf88dbe34446efaefda4c9066725d5e7a57a0fed2512`.
+  Its stale `status: running` remains a disclosed metadata anomaly, and its
+  strict semantic-quality Gate remains No-Go.
+
+## 2026-09-01
+
+- Fixed: E1 CUDA smoke now uses its own shared-server preflight. It retains
+  host and RTX 4090 identity checks, records external compute processes, and
+  relies on the runner's exact four-slot memory gate rather than P1's 95%
+  exclusive-free-memory requirement.
+- Changed: E1/E2 training and CUDA smoke now use four independent process slots
+  exclusively on the RTX 4090; the RTX 4080 SUPER is inventory-only and cannot
+  receive a training run.
+- Added: E1-C through E1-F implementation now includes a three-dimensional
+  exploratory noisy-teacher MAPPO path, DirectGoal QMIX-DG isolation and resume
+  state, formal slot/seed scheduling primitives, and an owner-run two-wave
+  four-slot CUDA smoke harness with 128-to-256 receipts. Formal long training
+  has not been started.
+- Changed: The owner approved the v5 Pro raw 800-record label source as
+  exploratory noisy-teacher evidence after its strict semantic label Gate
+  No-Go. The raw evidence remains immutable; no record is manually repaired,
+  retried, deleted or re-ordered, and all LLMKD results are now explicitly
+  exploratory rather than confirmatory label-quality claims.
+- Fixed: E1 formal review packs now use shuffled neutral blind IDs and include
+  only the reviewer-readable deidentified semantic view, scores, reasons and
+  content hash. Provenance strata, scenario IDs and opaque 61D vectors no
+  longer leak into the reviewer-facing artifact.
+- Fixed: E1 formal semantic-label collection now resumes only from an immutable,
+  contiguous `records.jsonl` prefix after validating the existing attempts and
+  frozen label-session identity; it never regenerates, rewrites, or re-requests
+  completed records.
+- Fixed: E1-B now records `semantic-prompt-v5-state-contract`. It restores the
+  canonical three-dimensional anchors/rubric missing from the runtime prompt and
+  explicitly defines priority-rank direction, static highway connectivity and the
+  transport-task meaning of a charging diversion. Prior v4 Pilot labels remain
+  archived and cannot enter formal data or training.
+- Fixed: E1-B's narrow-corridor injector now measures focal highway degree using
+  the same complete highway-neighbor definition as semantic-view-v3. Station
+  cells no longer silently reduce the degree count and admit a three-way layout.
+- Fixed: E1 pilot review artifacts now keep scenario strata and IDs in an owner-only
+  review key; the reviewer-facing pack contains neither field, preserving the required
+  blind review boundary.
+- Fixed: E1-B's controlled semantic scenarios now vary their observable physical
+  candidate state per pre-registered index and preserve NumPy-backed views during
+  atomic JSONL writes. This prevents duplicate content hashes in the then-current Pilot
+  generator and the prior first-record serialization failure.
+- Fixed: E1-B's semantic-scenario-v3 injector no longer reuses the incompatible Phase 4
+  scenario helper or manufactures uniqueness through tiny battery perturbations. It now
+  constructs and verifies the frozen physical invariants, uses SHA-ordered geometry/task
+  candidates, and rejects duplicate semantic content before any API request.
+- Added: E1-B introduces an owner-only semantic-view-v3 label-session primitive and
+  pilot/formal runner. It deidentifies prompt input, reads `DEEPSEEK_API_KEY` only
+  from process scope, preserves redacted evidence and pauses formal generation on a
+  backend fingerprint change. No API call or label generation was performed locally.
+- Added: E1-A freezes the machine-readable 65-run optimization matrix, 150000-step
+  formal budget, final-checkpoint evaluation contract and 6400-episode O3 exploratory
+  matrix. The validator audits group counts, exact seed blocks and duplicate identities.
+- Added: `terminology.md` now defines the E1 formal-run, seed, GPU provenance,
+  dataset-Gate, system-fingerprint and resume-identity terms.
+- Validated: The owner-run O2 matrix completed all six non-diagnostic 150000-step runs
+  with final checkpoints. RC teacher coverage was `91.19%/89.27%/92.32%`; paired AUC
+  degradation was `24.01%/1.89%/-11.39%`, with the preregistered median at `1.89%` and
+  no aggregation errors. The retained seed-107 variation prohibits a universal
+  performance-improvement claim from O2 alone.
+- Decided: O0, P1, O1, O2 and O3 readiness gates all passed, so D1 selects the
+  optimization route at commit `11b0c8391514f42880a6ebd8c61100ba4643a46e` and advances
+  to E1. The stable route remains an isolated lower-bound backup/diagnostic and cannot
+  alter the decision using later results.
+- Added: `docs/evidence/o2-calibration-gate-v1.json` records the O2 identity, exact Gate
+  metrics, artifact hashes and paper-claim boundary independently of ignored artifacts.
+
+## 2026-08-30
+
+- Added: A single owner-run O2 matrix launcher now executes all six frozen members in
+  order, isolates each member in a child process, skips matching completed evidence,
+  resumes one valid interrupted checkpoint, prevents concurrent duplicate launchers and
+  automatically writes the aggregate Gate result. No additional server-performance
+  qualification is required after the accepted P1, O1 and O2 smoke evidence.
+- Changed: Linux long-job guidance now uses owner-started `nohup` with logs under
+  `/home/lzx/` and no longer assumes `tmux` is installed.
+- Fixed: O2's frozen dynamic-ingress contract now explicitly starts priorities at
+  `A` and passes that field into its environment. A 1,000-step episode can create
+  26 batches, so the legacy adapter default `B` would exhaust `Z`; the formal
+  configuration now matches the already accepted G2/G3 priority convention.
+- Added: O2 run manifests now bind each diagnostic or formal artifact to its actual
+  logical device, CUDA availability, device name and PyTorch version; unavailable CUDA
+  causes a fail-closed error before an artifact is created.
+- Added: O2 now saves an identity-bound live environment snapshot at completed PPO
+  update boundaries after each 10k-step checkpoint threshold. Interrupted runs can resume
+  only from the matching run directory, commit, configuration, seed, optimizer, EMA and
+  RNG state; all other resume attempts fail closed.
+- Validated: P1 Linux readiness and the independent O1 CUDA Gate have passed. The
+  immutable O1 receipt is bound to
+  `artifacts/optimization/o1_cuda_gate/20260829T075212Z_7c305ea2` at commit
+  `7c305ea24cdca34467c2e7e8a5a9d66ba1133d1e`; H12/baseline runtime ratio is
+  `2.880` and the persistent-memory Gate passed.
+- Added: O2 now has a strict machine-readable six-run calibration contract, an
+  identity-bound O1 receipt verifier and a dedicated owner-run implementation plan.
+  The contract fixes the canonical environment, energy values, PPO hyperparameters,
+  zero-semantic O2 interface and prohibitions on LLMKD and Fixed-AStarKD long runs.
+- Changed: Governance records now place O2 in experiment-layer implementation, mark
+  P1/O1 complete, and document direct SSH or `nohup` as the supported owner launch
+  methods rather than `tmux`.
+
+## 2026-08-29
+
+- Fixed: The O1 benchmark worker now resets an episode when its existing
+  deadlock metric fires, matching the paired-shadow terminal rule and preventing
+  post-deadlock dynamic-ingress execution from exhausting priority labels.
+- Fixed: O1 shadow restore reconstructs the omitted derived `agent_steps` metric from the
+  frozen `episode steps × n_agents` invariant, preserving charging exposure across restore
+  without changing the snapshot schema or Reward Calibration contract.
+- Added: O1 shadow restore failures now report the first mismatching component and field
+  path, expected/actual overall and component hashes, and compact ndarray dtype/shape/hash
+  summaries while preserving fail-closed behavior.
+- Added: An H12 CPU stress regression crosses multiple workers, rollout updates, dynamic
+  ingress and episode reset boundaries without changing the frozen O1 Gate parameters.
+
+## 2026-08-28
+
+- Fixed: P1 server preflight now parses the Chinese-localized `lscpu` model-name field
+  (`型号名称`) emitted by the shared Linux host, while retaining English parsing and all
+  fail-closed resource checks.
+- Validated: P1-A through P1-G pass local cross-platform regression, Flake8, CLI, YAML,
+  package-build and active-runtime safety audits; P1 remains in progress pending owner Linux
+  environment and GPU smoke evidence.
+- Added: A literal, owner-only P1 short-smoke runbook captures read-only preflight, five-sample
+  eligibility, CUDA logical-device binding, a 128-step functional smoke and artifact hashes
+  without starting O1 or O2.
+
+This file records meaningful project engineering and experiment-governance
+changes. Completing a `TASKS.md` subtask requires a matching entry here.
+
+## 2026-08-28
+
+- Added: P1-F introduces the owner-only tmux wait-to-O1 launcher, which pins GPU 0 before
+  the benchmark child, retains the lease through the Gate, and only reports the O2 handoff.
+- Added: P1-E makes O1 runtime and memory evidence atomic and identity-bound, permits only
+  declared infrastructure recovery, and writes an O2 receipt only after a complete Gate Go.
+- Changed: P1-D makes the normal O1 Linux CUDA Gate baseline/H12-only, isolates H4 as a
+  failed-Gate diagnostic, and binds evidence to GPU 0, CUDA visibility, preflight and environment reports.
+- Added: P1-C provides fail-closed Linux server inventory, five-sample/48-hour resource
+  preflight, project-only GPU lease, immutable artifact writes, and read-only CLI modes.
+- Added: P1-B freezes the Linux Python 3.10.19/cu128 dependency contract, a read-only
+  fail-closed verifier, and the owner-only user-prefix installation runbook.
+- Changed: P1-A aligns the experiment protocol and machine-readable manifest with the
+  owner-run Linux sequence `P1→O1→O2`, physical GPU 0, and separate O2 launch boundary.
+- Added: The approved P1 specification freezes the optimization route's Ubuntu
+  Python/CUDA environment, shared-server preflight, GPU binding and lease, baseline/H12
+  O1 Gate, diagnostic-only H4 path, resumable evidence, and mandatory P1→O1→O2 order.
+
+## 2026-08-27
+
+- Validated: The project owner approved O3 topology/interface readiness after a fresh
+  34-test focused gate, 257-test full regression, Flake8, CLI, and leakage scan; no
+  learned-policy performance or cross-topology generalization claim is implied.
+- Completed: O3-A through O3-F freeze two evaluation-only unseen topologies and
+  pass 34 focused tests, 257 full tests, Flake8, CLI, static leakage, and contract
+  audits; learned-policy performance and the owner readiness decision remain pending.
+- Added: O3-E central fail-closed guards keep both unseen topology IDs and their
+  provenance out of Phase 2/3/4 and optimization training, offline label collection,
+  and semantic/OOD reference fitting; nine leakage regressions pass.
+- Changed: Optimization resource governance now keeps the 65-run formal matrix,
+  reduces O2 from nine to six calibration runs, requires a revised baseline/H12
+  O1 Gate as the fail-fast prefix of the same owner A600 job, and reserves H4 for
+  failure-only diagnostics; runner implementation remains pending.
+- Changed: Canonical-core held-out seeds are now the mandatory fixed-topology
+  robustness evidence; O3 learned-policy performance is an optional, precommitted
+  exploratory stress test with no cross-topology generalization claim.
+- Added: A three-perspective optimization resource replan records the remaining
+  `71` A600 learning runs plus one short CUDA Gate and keeps the formal 65-run
+  training budget unchanged.
+- Added: O3-D verifies byte-deterministic reset and 41-step ingress trajectories for
+  seeds `9301/9302`, 613D/61D interfaces, zero planner queries, Pure Motion Teacher
+  provenance, shadow restore, and shared collision/charging/load safety behavior.
+- Added: O3-C introduces immutable `TopologySpec` metadata, packaged `v2` map
+  resources, source/effective hash fail-closed checks, and a temporary-registration
+  evaluation factory that leaves held-out IDs unavailable to ordinary `gym.make`.
+- Fixed: O3 map dimensions now match the canonical core at `20×24`
+  (width×height); the owner-approved `v2` maps are deterministic rotations that
+  preserve density and graph certificates without adding aspect ratio as a confound.
+- Added: O3-B records the initial `v1` narrow-passage and central-cross previews,
+  subsequently superseded by the dimension-corrected `v2` maps, together with
+  ASCII maps, graph certificates, explicit charging-station coordinates, deterministic
+  PNG previews, and static format/structure regression tests without policy execution.
+
+## 2026-08-26
+
+- Added: Root `terminology.md` aligns planning, topology, hashing, experiment-isolation
+  and multi-teacher concepts using plain-language explanations, professional definitions
+  and their project-specific implications.
+- Changed: Replanned optimization dependencies so O3 topology/interface work can run
+  while O1 waits for the owner-only A600 gate; O2 remains blocked and unseen-topology
+  performance remains deferred until E2 after D1.
+- Added: The unique O3 feature spec freezes two 5-AGV evaluation-only loaded-transport
+  topologies, explicit files and IDs, dual hashes, graph certificates, owner map-preview
+  approval, code-level leakage guards, and non-performance validation boundaries.
+- Added: The O1 owner-only A600 gate now runs the frozen baseline/H4/H12
+  comparison with matching rollout updates, fresh repeat processes, persistent-memory
+  windows, fail-closed CUDA checks, and complete machine-readable evidence artifacts.
+- Fixed: Paired shadow rollouts now use disposable Pure Motion Teacher caches, leaving
+  the real rollout Teacher cache unchanged; H4 remains diagnostic-only while H12 is
+  the sole formal calibration horizon.
+- Changed: O1 local implementation and validation are complete; the phase now waits
+  for the research owner to run the frozen A600 runtime and persistent-memory gate.
+
+## 2026-08-25
+
+- Added: O1-F composes the isolated optimization runtime, strict functional-smoke
+  configuration, compact evidence logger, semantic fixture boundary, and frozen CLI
+  entry points; the 128-step smoke is interface-only and makes no performance claim.
+- Added: O1-E introduces canonical JSON `o0-shadow-state-v1` snapshots,
+  preconstructed branch restore, stateless `crn-v1` dynamic-ingress events, shared
+  `calibration-sampler-v1`, and the frozen Welford/EMA reward-calibration state.
+- Added: O1-D adds strict three-score semantic parsing, `semantic-view-v3` 61D
+  encoding, validity-only offline retrieval, truncated-exponential OOD reliability,
+  and a zero-network owner-only label validation CLI.
+- Added: O1-C implements the deterministic `pure-motion-astar-v1` Teacher with a
+  shared bounded search, root-conditioned soft motion prior, exact-query cache, and
+  fail-closed per-robot results.
+- Added: O1-B adds the isolated 613D/61D O0 Student, per-agent optimization buffer,
+  real-environment-step schedule, and strict `o0-student-checkpoint-v1` loader.
+- Added: O1-A introduces versioned DirectGoal and NoGoalHint physical observations,
+  zero planner-query instrumentation, and regression coverage while preserving the
+  legacy waypoint schema as the default.
+- Changed: The research owner gave final written approval to the complete O0 contract;
+  O0 is closed and O1 role-alignment implementation is now the active phase.
+- Added: O0-G records the zero-deviation architecture audit and freezes the sole O1
+  implementation task package, including module interfaces, TDD order, short smoke,
+  strict legacy isolation, and the owner-only A600 runtime/memory gate command.
+- Changed: O0-A through O0-F are recorded as individually approved; O0 remains pending
+  until the research owner gives final written approval of the complete frozen contract.
+- Fixed: Replaced the non-executable WinGet Links ripgrep target with the verified
+  `C:\Users\28016\bin\rg.exe` executable path.
+- Changed: Windows ripgrep searches must directly invoke the canonical approved
+  executable; bare `rg` and repair or diagnosis of the Codex WindowsApps copy are
+  prohibited.
+- Added: O0-F freezes compact teacher/effect logs, the 9-run O2 gate, the
+  65-run E1/E2 evidence matrix, a 74-run total budget, seven seed-level primary
+  contrasts, Holm correction, confidence intervals, effect sizes, and claim limits.
+- Changed: Optimization semantics now use a continuous three-score DeepSeek rubric;
+  deterministic RuleKD-v3 is isolated as a baseline, ShuffleKD-v3 is a stratified
+  fixed-point-free derangement, and the old optimization NoWP group is renamed
+  NoGoalHint to avoid misrepresenting execution-time A* evidence.
+- Changed: Synchronized the Python/tool contract, P0 experiment protocol, governance
+  manifest, label-audit protocol, Roadmap, TASKS, figure/table manifests, and
+  traceability matrix; mapped and removed the two untracked proposal inputs.
+- Added: O0-E freezes the 613D DirectGoal physical observation, 61D three-score
+  semantic branch, detached late-fusion Student, motion-only prior loss,
+  environment-step linear teacher schedule, strict 3D checkpoint isolation, and
+  the evidence gate required before claiming A*-free Student execution.
+- Added: O0-D freezes a leakage-resistant 61-dimensional `semantic-view-v3`,
+  five-point three-score anchors, truncated-exponential OOD reliability selected
+  in the semantic view space, Flash-to-Pro pilot gating, immutable 60/800 label
+  datasets, fingerprint isolation, and formal dataset-level No-Go thresholds.
+- Changed: All project Python work must directly invoke the existing canonical
+  `D:\Anaconda3\envs\py310\python.exe`; PATH lookup, Conda activation, and virtual
+  environment creation or modification are prohibited.
+- Added: O0-C freezes a canonical branch-state snapshot, H=12 paired Student/A*
+  shadows, event-addressed common random numbers, detached return calibration, a
+  deterministic shared 1/16 calibration mask for Fixed/RC-KD, EMA state, and the
+  A600 3x runtime/persistent-memory No-Go gate.
+- Added: O0-B freezes `pure-motion-astar-v1` as an independent, anonymous-occupancy
+  bounded A* teacher with a 12-step motion window, 512-expansion budget, motion-only
+  support, deterministic tie-break, binary per-agent validity, and fail-closed output.
+- Changed: O0-B replaces fixed 0.85/0.15 smoothing with a root-action-conditioned
+  short-horizon planning-cost prior, using one provenance-preserving bounded search,
+  state-wise min-max normalization, and a fixed `tau_motion=1.0` Boltzmann transform.
+- Added: O0-A now records the P0 field-level teacher-to-policy data flow, twelve
+  confirmed A* and semantic pollution gaps, the historical label/checkpoint
+  provenance, and a claim-by-claim disposition of both research inputs.
+- Added: The O0 specification scopes a Pure Motion A* teacher, H=12 paired-shadow
+  reward calibration, route-isolated three-dimensional LLM semantics, and an explicit
+  owner approval gate before implementation, with mandatory review pauses between
+  task groups.
+
+## 2026-08-24
+
+- Added: P0 migration audit and ignored safety backup uniquely classify and protect
+  every pre-existing workspace change before baseline integration.
+- Changed: Replaced the root Constitution and legacy G2/G3 task entrances with the
+  dual-route specs, route-aware protocol/manifest/TASKS, and indexed historical archive.
+- Added: Behavior-neutral A* diagnostics now preserve the planner-to-execution action
+  pipeline, distinct conflict reasons, explicit legacy-schema availability, and count
+  conservation while retaining the default NOOP coordinator behavior.
+- Added: Static ASCII layout preview validates geometry, symbols, cell size and Pillow,
+  writes deterministic PNG output, and exits before environment or policy setup.
+- Removed: Two untracked rejected-layout drafts and the obsolete active 8-AGV planning
+  contract; O3 will design unseen topologies from scratch.
+- Verified: A clean P0 checkout installs through an isolated editable prefix and passes
+  184 tests, focused A*/layout/config checks, 30 YAML parses, CLI smokes, and Flake8.
+- Added: The stable-route engineer handoff freezes S1 scope, permissions, evidence,
+  artifact isolation, owner-run boundaries, acceptance thresholds, and prohibited claims.
+- Completed: P0 governance, shared diagnostics, reproducibility validation, and the
+  common baseline for the optimization and stable branches.
+
+## 2026-08-20
+
+- Added: A complete G3 architecture task package now fixes ownership, evidence,
+  the provisional/final freeze sequence, and the implementable G3-6 unseen-layout
+  contract without starting experiments.
+- Added: G3-5 external MARL, semantic-control, NoWP, and heuristic baseline
+  configurations and their reproducible implementation boundaries.
+- Added: Eight-seed formal analysis, normalized learning-curve AUC, frozen
+  confirmatory comparisons, and the blind semantic-label audit protocol.
+- Changed: The project experiment contract now targets a realistic CAS Q2 method
+  paper evidence chain while retaining Q1 as a stretch objective.
+- Fixed: Bounded A* terminal reservations, explicit waiting, and partial-path
+  diagnostics reduce false no-path and rotation-livelock risks pending paired audit.
+- Fixed: Experiment checkpoints can be reproduced from a clean checkout.
+- Changed: Formal architecture governance is split between project owner, core
+  architect, and project engineer; future completed task items require changelog
+  updates in the same commit.
+
+## 2026-08-19
+
+- Added: Battery-cost scale experimentation for charging-exposure calibration.
+
+## 2026-08-17
+
+- Added: The intermediate `1.10/0.25/0.80` charging candidate and its matched
+  retraining configuration.
+
+## 2026-08-16
+
+- Added: The project Constitution, charging calibration workflow, charging
+  hysteresis, and charging observability metrics.
+
+## 2026-08-15
+
+- Added: Persistent process-based environment workers and parallel CUDA Phase 4
+  training support.
+- Added: Offline dual-semantic LLM distillation with zero online LLM calls during
+  training and execution.
+
+## 2026-08-11
+
+- Added: Phase 3 R2 robustness workflow.
+
+## 2026-08-10
+
+- Added: Phase 3 dual-head MAPPO baseline and multi-agent yielding recovery.
+
+## 2026-07-31
+
+- Added: Time-reserved multi-agent A*, medium-map warm-start validation, checkpoint
+  visualization, and the small-map A*-MAPPO curriculum.
+
+## 2026-07-30
+
+- Added: Staged training policy documentation and Phase 2 waypoint-reward
+  comparison support.

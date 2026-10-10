@@ -930,10 +930,8 @@ class Warehouse(gym.Env):
                 continue
             # a shelf was successfully delived.
             shelf_delivered = True
-            # remove from queue and replace it
-            candidates = [s for s in self.shelfs if s not in self.request_queue]
-            new_request = self.np_random.choice(candidates)
-            self.request_queue[self.request_queue.index(shelf)] = new_request
+            # remove from queue and replace it according to the environment policy
+            self._renew_delivered_request(shelf)
             # also reward the agents
             if self.reward_type == RewardType.GLOBAL:
                 rewards += 1
@@ -963,6 +961,22 @@ class Warehouse(gym.Env):
         new_obs = tuple([self._make_obs(agent) for agent in self.agents])
         info = self._get_info()
         return new_obs, list(rewards), done, truncated, info
+
+    def _renew_delivered_request(self, delivered_shelf: Shelf) -> None:
+        """Replace a delivered request when another shelf is available.
+
+        The original fixed-queue environment normally keeps the request queue
+        full. A full-catalog queue has no replacement candidate, so remove the
+        delivered shelf instead of sampling from an empty sequence.
+        """
+        index = self.request_queue.index(delivered_shelf)
+        candidates = [
+            shelf for shelf in self.shelfs if shelf not in self.request_queue
+        ]
+        if candidates:
+            self.request_queue[index] = self.np_random.choice(candidates)
+        else:
+            self.request_queue.pop(index)
 
     def render(self):
         if not self.renderer:

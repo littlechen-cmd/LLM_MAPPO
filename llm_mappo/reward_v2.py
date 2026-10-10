@@ -1,0 +1,296 @@
+"""Reward-v2 primitives for the R1 convergence-recovery experiments."""
+
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass
+from typing import Hashable, Mapping, Sequence
+
+import numpy as np
+
+
+REWARD_V2 = "reward-v2"
+LEGACY_REWARD_V1 = "legacy-v1"
+SUPPORTED_REWARD_VERSIONS = frozenset({LEGACY_REWARD_V1, REWARD_V2})
+
+COMPLETION_REWARD = 5.0
+PICKUP_REWARD = 0.5
+PROGRESS_REWARD = 0.1
+BLOCKED_FORWARD_PENALTY = 0.1
+COLLISION_PENALTY = 0.1
+STEP_COST = 0.005
+ENERGY_DEATH_PENALTY = 20.0
+ENERGY_DEATH_AGGREGATIONS = frozenset({"team-broadcast", "local-mean"})
+LEGACY_COMPLETION_REWARD = 5.0
+LEGACY_COLLISION_PENALTY = 2.0
+
+
+@dataclass(frozen=True)
+class RewardV2Breakdown:
+    """Auditable scalar contributions to one shared Reward-v2 transition."""
+
+    completion: float
+    pickup: float
+    progress: float
+    blocked_forward: float
+    collision: float
+    charging: float
+    deadlock: float
+    energy: float
+    step_cost: float
+
+    @property
+    def team_reward(self) -> float:
+        return (
+            self.completion
+            + self.pickup
+            + self.progress
+            + self.blocked_forward
+            + self.collision
+            + self.charging
+            + self.deadlock
+            + self.energy
+            + self.step_cost
+        )
+
+    def as_dict(self) -> dict[str, float]:
+        return {
+            "reward_completion": self.completion,
+            "reward_pickup": self.pickup,
+            "reward_progress": self.progress,
+            "reward_blocked_forward": self.blocked_forward,
+            "reward_collision": self.collision,
+            "reward_charging": self.charging,
+            "reward_deadlock": self.deadlock,
+            "reward_energy": self.energy,
+            "reward_step_cost": self.step_cost,
+        }
+
+
+@dataclass(frozen=True)
+class RewardGoalSnapshot:
+    """Goal identity and distance at one side of an environment transition."""
+
+    identity: tuple[Hashable, ...]
+    coordinate: tuple[int, int]
+    distance: int
+
+
+def static_grid_distance(
+    start: tuple[int, int],
+    goal: tuple[int, int],
+    *,
+    width: int,
+    height: int,
+    blocked: set[tuple[int, int]],
+) -> int:
+    """Return static four-neighbour route distance, or ``-1`` when unreachable.
+
+    This intentionally excludes peer AGV positions, reservations, priorities and
+    plans.  It captures only geometry which a carrying AGV must respect, so a
+    route around shelves is rewarded even when its next cell increases Manhattan
+    distance to the target.
+    """
+    if start == goal:
+        return 0
+    blocked = set(blocked)
+    blocked.discard(start)
+    blocked.discard(goal)
+    frontier = deque([(start, 0)])
+    visited = {start}
+    while frontier:
+        (x, y), distance = frontier.popleft()
+        for next_point in ((x, y - 1), (x + 1, y), (x, y + 1), (x - 1, y)):
+            nx, ny = next_point
+            if not (0 <= nx < width and 0 <= ny < height):
+                continue
+            if next_point in blocked or next_point in visited:
+                continue
+            if next_point == goal:
+                return distance + 1
+            visited.add(next_point)
+            frontier.append((next_point, distance + 1))
+    return -1
+
+
+def reward_v2_progress_deltas(
+    before: Sequence[RewardGoalSnapshot],
+    after: Sequence[RewardGoalSnapshot],
+) -> np.ndarray:
+    """Return signed distance progress, suppressing every goal switch."""
+    if len(before) != len(after):
+        raise ValueError("Reward-v2 goal snapshots must preserve agent cardinality.")
+    return np.asarray(
+        [
+            float(prior.distance - current.distance)
+            if (
+                prior.identity == current.identity
+                and prior.distance >= 0
+                and current.distance >= 0
+            )
+            else 0.0
+            for prior, current in zip(before, after)
+        ],
+        dtype=np.float64,
+    )
+
+
+def reward_v2_team_reward(
+    *,
+    raw_rewards: Sequence[float],
+    events: Sequence[Mapping],
+    task_weights: Mapping[Hashable, float],
+    pickup_weights: Mapping[int, float],
+    progress_deltas: Sequence[float],
+    low_battery_penalties: Sequence[float],
+    charge_rewards: Sequence[float] | None = None,
+    terminal_deadlock: bool = False,
+    legacy_blocked_forward_penalty: float,
+    blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
+    collision_penalty: float = COLLISION_PENALTY,
+    deadlock_penalty: float = 0.0,
+    progress_reward: float = PROGRESS_REWARD,
+    energy_death_aggregation: str = "team-broadcast",
+) -> float:
+    """Replace legacy shaping while preserving collision and energy rewards."""
+    return reward_v2_team_reward_breakdown(
+        raw_rewards=raw_rewards,
+        events=events,
+        task_weights=task_weights,
+        pickup_weights=pickup_weights,
+        progress_deltas=progress_deltas,
+        low_battery_penalties=low_battery_penalties,
+        charge_rewards=charge_rewards,
+        terminal_deadlock=terminal_deadlock,
+        legacy_blocked_forward_penalty=legacy_blocked_forward_penalty,
+        blocked_forward_penalty=blocked_forward_penalty,
+        collision_penalty=collision_penalty,
+        deadlock_penalty=deadlock_penalty,
+        progress_reward=progress_reward,
+        energy_death_aggregation=energy_death_aggregation,
+    ).team_reward
+
+
+def reward_v2_team_reward_breakdown(  # noqa: C901
+    *,
+    raw_rewards: Sequence[float],
+    events: Sequence[Mapping],
+    task_weights: Mapping[Hashable, float],
+    pickup_weights: Mapping[int, float],
+    progress_deltas: Sequence[float],
+    low_battery_penalties: Sequence[float],
+    charge_rewards: Sequence[float] | None = None,
+    terminal_deadlock: bool = False,
+    legacy_blocked_forward_penalty: float,
+    blocked_forward_penalty: float = BLOCKED_FORWARD_PENALTY,
+    collision_penalty: float = COLLISION_PENALTY,
+    deadlock_penalty: float = 0.0,
+    progress_reward: float = PROGRESS_REWARD,
+    energy_death_aggregation: str = "team-broadcast",
+) -> RewardV2Breakdown:
+    """Compute Reward-v2 and retain each term in shared-reward units.
+
+    Completion is moved out of the legacy per-agent vector before aggregation.
+    All local consequences are averaged over the AGV team, matching the Phase 1
+    shared-reward contract. ``pickup_weights`` supplies only successful-pickup
+    identities; pickup reward itself is deliberately priority-independent.
+    """
+    local = np.asarray(raw_rewards, dtype=np.float64).copy()
+    progress = np.asarray(progress_deltas, dtype=np.float64)
+    energy = np.asarray(low_battery_penalties, dtype=np.float64)
+    charging = np.zeros_like(local) if charge_rewards is None else np.asarray(
+        charge_rewards, dtype=np.float64
+    )
+    if (
+        local.ndim != 1
+        or progress.shape != local.shape
+        or energy.shape != local.shape
+        or charging.shape != local.shape
+    ):
+        raise ValueError("Reward-v2 per-agent vectors must have identical shapes.")
+    if (
+        not np.all(np.isfinite(local))
+        or not np.all(np.isfinite(progress))
+        or not np.all(np.isfinite(charging))
+    ):
+        raise ValueError("Reward-v2 inputs must be finite.")
+    if (
+        blocked_forward_penalty < 0.0
+        or collision_penalty < 0.0
+        or deadlock_penalty < 0.0
+        or progress_reward < 0.0
+    ):
+        raise ValueError("Reward-v2 event penalties must not be negative.")
+    if energy_death_aggregation not in ENERGY_DEATH_AGGREGATIONS:
+        raise ValueError("Reward-v2 energy-death aggregation is invalid.")
+
+    agent_count = local.size
+    completion = 0.0
+    raw_completion = 0.0
+    blocked_events = 0
+    collision_events = 0
+    energy_death_events = 0
+    for event in events:
+        event_type = event.get("type")
+        if event_type == "task_completed":
+            task_id = event["task_id"]
+            if task_id not in task_weights:
+                raise ValueError(
+                    "Reward-v2 completion lacks its pre-step priority weight."
+                )
+            weight = float(task_weights[task_id])
+            agent_index = int(event["agent_id"]) - 1
+            local[agent_index] -= LEGACY_COMPLETION_REWARD * weight
+            raw_completion += LEGACY_COMPLETION_REWARD * weight
+            completion += COMPLETION_REWARD * weight
+        elif event_type == "blocked_forward":
+            agent_index = int(event["agent_id"]) - 1
+            local[agent_index] -= (
+                blocked_forward_penalty - legacy_blocked_forward_penalty
+            )
+            blocked_events += 1
+        elif event_type == "collision":
+            collision_events += 1
+        elif event_type == "agent_dead":
+            energy_death_events += 1
+
+    for agent_id in pickup_weights:
+        local[int(agent_id) - 1] += PICKUP_REWARD
+    local += progress_reward * progress
+    local += charging
+    local += energy
+
+    pickup = PICKUP_REWARD * len(pickup_weights) / agent_count
+    progress_component = progress_reward * float(np.mean(progress))
+    blocked = -blocked_forward_penalty * blocked_events / agent_count
+    collision = -collision_penalty * collision_events / agent_count
+    charging_component = float(np.mean(charging))
+    deadlock = -deadlock_penalty if terminal_deadlock else 0.0
+    raw_energy = (
+        float(np.sum(np.asarray(raw_rewards, dtype=np.float64)))
+        - raw_completion
+        + legacy_blocked_forward_penalty * blocked_events
+        + LEGACY_COLLISION_PENALTY * collision_events
+    ) / agent_count
+    if energy_death_aggregation == "local-mean":
+        raw_energy += (
+            ENERGY_DEATH_PENALTY
+            * energy_death_events
+            * (agent_count - 1)
+            / agent_count
+        )
+    energy_component = raw_energy + float(np.mean(energy))
+    breakdown = RewardV2Breakdown(
+        completion=completion,
+        pickup=pickup,
+        progress=progress_component,
+        blocked_forward=blocked,
+        collision=collision,
+        charging=charging_component,
+        deadlock=deadlock,
+        energy=energy_component,
+        step_cost=-STEP_COST,
+    )
+    if not np.isfinite(breakdown.team_reward):
+        raise ValueError("Reward-v2 produced a non-finite team reward.")
+    return breakdown

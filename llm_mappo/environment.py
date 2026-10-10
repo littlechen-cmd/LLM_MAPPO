@@ -1,57 +1,99 @@
 """Dynamic warehouse environment used by the LLM-MAPPO implementation."""
 
+import copy
+from hashlib import sha256
+import json
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
 from llm_mappo.rules import TaskQueue
-from llm_mappo.types import PriorityAdjustment, Task
-from rware.warehouse import Action, Direction, RewardType, Warehouse
+from llm_mappo.types import PriorityAdjustment, Task, TaskStatus
+from rware.warehouse import Action, Agent, Direction, RewardType, Shelf, Warehouse
+
+
+BALANCED_RANDOM_DELIVERY = "balanced-random-v1"
+LEGACY_DELIVERY = "legacy-v1"
+DELIVERY_CONTRACTS = frozenset({LEGACY_DELIVERY, BALANCED_RANDOM_DELIVERY})
+LEGACY_CHARGING = "legacy-v1"
+GOAL_FULL_CHARGING = "goal-full-v1"
+FIXED_PRIORITY_WEIGHTS = {"A": 2.0, "B": 1.5, "C": 1.0}
 
 
 class DynamicWarehouse(Warehouse):
     """RWARE with dynamic tasks, hard scheduling rules, energy, and stations."""
 
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         *args,
         batch_interval: int = 40,
         batch_size_range: Tuple[int, int] = (1, 3),
+        initial_ingress_batches: int = 2,
         charging_stations: Optional[Sequence[Tuple[int, int]]] = None,
+        picking_stations: Optional[Sequence[Tuple[int, int]]] = None,
         charging_rate: float = 0.02,
+        charging_contract: str = LEGACY_CHARGING,
+        battery_cost_scale: float = 1.0,
         picking_lock_steps: int = 3,
         auto_assign: bool = True,
         initial_priority_label: str = "A",
         priority_schedule: Optional[Sequence[str]] = None,
         blocked_forward_penalty: float = 0.05,
         task_completion_target: Optional[int] = None,
+        terminate_on_task_target: bool = True,
+        replenishment_mode: str = "dynamic_ingress",
+        delivery_contract: str = LEGACY_DELIVERY,
+        assignment_battery_threshold: float = 0.1,
         **kwargs,
     ):
         self._validate_options(
             batch_interval,
             batch_size_range,
+            initial_ingress_batches,
             charging_rate,
+            battery_cost_scale,
             picking_lock_steps,
             initial_priority_label,
             priority_schedule,
             blocked_forward_penalty,
             task_completion_target,
+            terminate_on_task_target,
+            replenishment_mode,
+            delivery_contract,
+            assignment_battery_threshold,
         )
         self.batch_interval = batch_interval
         self.batch_size_range = batch_size_range
+        self.initial_ingress_batches = initial_ingress_batches
+        if charging_contract not in {LEGACY_CHARGING, GOAL_FULL_CHARGING}:
+            raise ValueError("charging_contract is not supported.")
+        if charging_contract == GOAL_FULL_CHARGING and charging_rate != 0.1:
+            raise ValueError("goal-full-v1 charging_rate must be 0.1.")
+        self.charging_contract = charging_contract
         self.charging_rate = charging_rate
+        self.battery_cost_scale = battery_cost_scale
         self.picking_lock_steps = picking_lock_steps
         self.auto_assign = auto_assign
         self.initial_priority_label = initial_priority_label
         self.priority_schedule = tuple(priority_schedule or ())
         self.blocked_forward_penalty = blocked_forward_penalty
-        self.task_queue = TaskQueue()
+        self.terminate_on_task_target = terminate_on_task_target
+        self.replenishment_mode = replenishment_mode
+        self.delivery_contract = delivery_contract
+        self.assignment_battery_threshold = assignment_battery_threshold
+        self.task_queue = self._new_task_queue()
         self._batch_index = 0
+        self._priority_bag: List[str] = []
+        self._priority_rng = None
+        self._assignment_rng = None
+        self._replacement_rng = None
         self._shelf_home = {}
         self.total_collisions = 0
         self.total_blocked_forwards = 0
         self.last_events: List[dict] = []
         self.charging_reservations = {}
+        self._shadow_randomness = None
+        self._shadow_randomness_address = None
         super().__init__(*args, **kwargs)
         self.task_completion_target = (
             task_completion_target
@@ -81,25 +123,48 @@ class DynamicWarehouse(Warehouse):
                     f"Charging station must have an accessible neighbor: {station}"
                 )
         self.charging_stations = tuple(stations)
-        self.picking_stations = tuple(self.goals)
+        base_goals = tuple(self.goals)
+        selected_picking_stations = tuple(picking_stations or base_goals)
+        if not selected_picking_stations:
+            raise ValueError("DynamicWarehouse requires at least one picking station.")
+        if len(set(selected_picking_stations)) != len(selected_picking_stations):
+            raise ValueError("Picking station coordinates must be unique.")
+        if not set(selected_picking_stations).issubset(base_goals):
+            raise ValueError("Picking stations must be RWARE delivery goals.")
+        if set(selected_picking_stations) & set(self.charging_stations):
+            raise ValueError("Charging and picking stations must not overlap.")
+        # Base RWARE delivery is keyed to ``goals``. Replacing that set makes the
+        # approved subset operational rather than merely a visualization label.
+        self.goals = selected_picking_stations
+        self.picking_stations = selected_picking_stations
 
     @staticmethod
-    def _validate_options(
+    def _validate_options(  # noqa: C901
         batch_interval,
         batch_size_range,
+        initial_ingress_batches,
         charging_rate,
+        battery_cost_scale,
         picking_lock_steps,
         initial_priority_label,
         priority_schedule,
         blocked_forward_penalty,
         task_completion_target,
+        terminate_on_task_target,
+        replenishment_mode,
+        delivery_contract,
+        assignment_battery_threshold,
     ):
         if batch_interval <= 0:
             raise ValueError("batch_interval must be positive.")
         if batch_size_range[0] <= 0 or batch_size_range[0] > batch_size_range[1]:
             raise ValueError("batch_size_range must be a positive ordered pair.")
+        if initial_ingress_batches not in {1, 2}:
+            raise ValueError("initial_ingress_batches must be one or two.")
         if not 0.0 < charging_rate <= 1.0:
             raise ValueError("charging_rate must be within (0, 1].")
+        if battery_cost_scale <= 0.0:
+            raise ValueError("battery_cost_scale must be positive.")
         if picking_lock_steps < 0:
             raise ValueError("picking_lock_steps must not be negative.")
         if len(initial_priority_label) != 1 or not initial_priority_label.isupper():
@@ -117,15 +182,36 @@ class DynamicWarehouse(Warehouse):
             isinstance(task_completion_target, bool) or task_completion_target < 1
         ):
             raise ValueError("task_completion_target must be a positive integer.")
+        if not isinstance(terminate_on_task_target, bool):
+            raise ValueError("terminate_on_task_target must be a boolean.")
+        if replenishment_mode not in {"dynamic_ingress", "rware_delivery"}:
+            raise ValueError("replenishment_mode is not supported.")
+        if delivery_contract not in DELIVERY_CONTRACTS:
+            raise ValueError("delivery_contract is not supported.")
+        if not 0.0 <= assignment_battery_threshold <= 1.0:
+            raise ValueError("assignment_battery_threshold must be within [0, 1].")
+        if (
+            delivery_contract == BALANCED_RANDOM_DELIVERY
+            and tuple(priority_schedule or ()) != ("A", "B", "C")
+        ):
+            raise ValueError(
+                "Balanced-random delivery requires the A/B/C priority schedule."
+            )
 
     def reset(self, seed=None, options=None):
-        self.task_queue = TaskQueue()
+        self.task_queue = self._new_task_queue()
         self._batch_index = 0
+        self._priority_bag = []
         self.total_collisions = 0
         self.total_blocked_forwards = 0
         self.last_events = []
         self.charging_reservations = {}
         super().reset(seed=seed, options=options)
+        seed_sequence = np.random.SeedSequence(int(self._np_random_seed))
+        priority_seed, assignment_seed, replacement_seed = seed_sequence.spawn(3)
+        self._priority_rng = np.random.default_rng(priority_seed)
+        self._assignment_rng = np.random.default_rng(assignment_seed)
+        self._replacement_rng = np.random.default_rng(replacement_seed)
         for agent in self.agents:
             agent.battery = 1.0
             agent.dead = False
@@ -139,7 +225,10 @@ class DynamicWarehouse(Warehouse):
         }
         shelf_ids = [shelf.id for shelf in self.request_queue]
         if self._dynamic_ingress_enabled():
-            self._create_initial_batches(shelf_ids)
+            if self.initial_ingress_batches == 1:
+                self._create_initial_batch(shelf_ids)
+            else:
+                self._create_initial_batches(shelf_ids)
         elif self.priority_schedule:
             for shelf_id in shelf_ids:
                 self._create_batch([shelf_id])
@@ -149,6 +238,220 @@ class DynamicWarehouse(Warehouse):
         self._assign_available_tasks()
         observations = tuple(self._make_obs(agent) for agent in self.agents)
         return observations, self._get_info()
+
+    def _new_task_queue(self) -> TaskQueue:
+        weights = (
+            FIXED_PRIORITY_WEIGHTS
+            if self.delivery_contract == BALANCED_RANDOM_DELIVERY
+            else None
+        )
+        return TaskQueue(priority_weights=weights)
+
+    def shadow_config_payload(self) -> dict:
+        """Immutable settings covered by the branch import config hash."""
+        payload = {
+            "grid_size": self.grid_size,
+            "goals": self.goals,
+            "highways": self.highways.copy(),
+            "n_agents": self.n_agents,
+            "max_steps": self.max_steps,
+            "reward_type": self.reward_type.name,
+            "batch_interval": self.batch_interval,
+            "batch_size_range": self.batch_size_range,
+            "initial_ingress_batches": self.initial_ingress_batches,
+            "charging_stations": self.charging_stations,
+            "charging_rate": self.charging_rate,
+            "battery_cost_scale": self.battery_cost_scale,
+            "picking_lock_steps": self.picking_lock_steps,
+            "auto_assign": self.auto_assign,
+            "task_completion_target": self.task_completion_target,
+            "terminate_on_task_target": self.terminate_on_task_target,
+            "replenishment_mode": self.replenishment_mode,
+            "delivery_contract": self.delivery_contract,
+            "assignment_battery_threshold": self.assignment_battery_threshold,
+        }
+        if self.charging_contract != LEGACY_CHARGING:
+            payload["charging_contract"] = self.charging_contract
+        return payload
+
+    def shadow_layout_hash(self) -> str:
+        payload = {
+            "grid_size": self.grid_size,
+            "goals": self.goals,
+            "highways": self.highways.astype(np.uint8).tolist(),
+            "charging_stations": self.charging_stations,
+            "picking_stations": self.picking_stations,
+        }
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return sha256(raw).hexdigest()
+
+    def export_shadow_state(self) -> dict:
+        """Serialize explicit mutable state without cross-branch entity references."""
+        return {
+            "agents": [
+                {
+                    "id": agent.id,
+                    "x": agent.x,
+                    "y": agent.y,
+                    "prev_x": agent.prev_x,
+                    "prev_y": agent.prev_y,
+                    "direction": agent.dir.name,
+                    "message": agent.message.copy(),
+                    "req_action": agent.req_action.name if agent.req_action else None,
+                    "carrying_shelf_id": (
+                        agent.carrying_shelf.id if agent.carrying_shelf else None
+                    ),
+                    "canceled_action": agent.canceled_action,
+                    "has_delivered": agent.has_delivered,
+                    "battery": float(agent.battery),
+                    "dead": bool(agent.dead),
+                    "picking_lock_steps": int(agent.picking_lock_steps),
+                    "task_id": agent.task_id,
+                    "collision_count": int(agent.collision_count),
+                    "blocked_forward_count": int(agent.blocked_forward_count),
+                }
+                for agent in self.agents
+            ],
+            "shelves": [
+                {"id": shelf.id, "x": shelf.x, "y": shelf.y,
+                 "prev_x": shelf.prev_x, "prev_y": shelf.prev_y}
+                for shelf in self.shelfs
+            ],
+            "request_queue_ids": [shelf.id for shelf in self.request_queue],
+            "grid_hash": sha256(self.grid.tobytes()).hexdigest(),
+            "task_queue": {
+                "tasks": self.task_queue.as_dict(),
+                "next_task_index": self.task_queue._next_task_index,
+                "next_label_number": dict(self.task_queue._next_label_number),
+            },
+            "batch_index": self._batch_index,
+            "shelf_home": dict(self._shelf_home),
+            "charging_reservations": dict(self.charging_reservations),
+            "total_collisions": self.total_collisions,
+            "total_blocked_forwards": self.total_blocked_forwards,
+            "last_events": copy.deepcopy(self.last_events),
+            "cur_steps": self._cur_steps,
+            "cur_inactive_steps": self._cur_inactive_steps,
+            "np_random_seed": self._np_random_seed,
+            "np_random_state": copy.deepcopy(self.np_random.bit_generator.state),
+            "delivery_randomness": {
+                "priority_bag": list(self._priority_bag),
+                "priority_rng_state": copy.deepcopy(
+                    self._priority_rng.bit_generator.state
+                ),
+                "assignment_rng_state": copy.deepcopy(
+                    self._assignment_rng.bit_generator.state
+                ),
+                "replacement_rng_state": copy.deepcopy(
+                    self._replacement_rng.bit_generator.state
+                ),
+            },
+            "agent_counter": Agent.counter,
+            "shelf_counter": Shelf.counter,
+        }
+
+    def import_shadow_state(self, state: dict) -> None:
+        """Restore a snapshot into a preconstructed environment without reset."""
+        if (
+            len(state["agents"]) != len(self.agents)
+            or len(state["shelves"]) != len(self.shelfs)
+        ):
+            raise ValueError("Shadow entity cardinality mismatch.")
+        shelves = {}
+        for shelf, record in zip(self.shelfs, state["shelves"]):
+            for name in ("id", "x", "y", "prev_x", "prev_y"):
+                setattr(shelf, name, record[name])
+            shelves[shelf.id] = shelf
+        for agent, record in zip(self.agents, state["agents"]):
+            agent.id = record["id"]
+            agent.x = record["x"]
+            agent.y = record["y"]
+            agent.prev_x = record["prev_x"]
+            agent.prev_y = record["prev_y"]
+            agent.dir = Direction[record["direction"]]
+            agent.message = np.asarray(record["message"], dtype=np.float64).copy()
+            agent.req_action = (
+                Action[record["req_action"]] if record["req_action"] else None
+            )
+            agent.carrying_shelf = shelves.get(record["carrying_shelf_id"])
+            agent.canceled_action = record["canceled_action"]
+            agent.has_delivered = record["has_delivered"]
+            agent.battery = float(record["battery"])
+            agent.dead = bool(record["dead"])
+            agent.picking_lock_steps = int(record["picking_lock_steps"])
+            agent.task_id = record["task_id"]
+            agent.collision_count = int(record["collision_count"])
+            agent.blocked_forward_count = int(record["blocked_forward_count"])
+        self.request_queue = [shelves[item] for item in state["request_queue_ids"]]
+        self.task_queue._tasks.clear()
+        for record in state["task_queue"]["tasks"]:
+            self.task_queue._tasks[record["task_id"]] = Task(
+                task_id=record["task_id"], shelf_id=record["shelf_id"],
+                batch_id=record["batch_id"], label=record["label"],
+                arrival_step=record["arrival_step"],
+                status=TaskStatus(record["status"]),
+                assigned_agent_id=record["assigned_agent_id"],
+                completed_step=record["completed_step"],
+            )
+        self.task_queue._next_task_index = int(state["task_queue"]["next_task_index"])
+        self.task_queue._next_label_number = dict(
+            state["task_queue"]["next_label_number"]
+        )
+        self._batch_index = int(state["batch_index"])
+        self._shelf_home = {
+            int(key): tuple(value) for key, value in state["shelf_home"].items()
+        }
+        self.charging_reservations = dict(state["charging_reservations"])
+        self.total_collisions = int(state["total_collisions"])
+        self.total_blocked_forwards = int(state["total_blocked_forwards"])
+        self.last_events = copy.deepcopy(state["last_events"])
+        self._cur_steps = int(state["cur_steps"])
+        self._cur_inactive_steps = int(state["cur_inactive_steps"])
+        self._np_random_seed = state["np_random_seed"]
+        self.np_random.bit_generator.state = copy.deepcopy(state["np_random_state"])
+        delivery_randomness = state.get("delivery_randomness")
+        if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+            if not isinstance(delivery_randomness, dict):
+                raise ValueError(
+                    "Balanced-random shadow state lacks delivery randomness."
+                )
+            self._priority_bag = list(delivery_randomness["priority_bag"])
+            self._priority_rng.bit_generator.state = copy.deepcopy(
+                delivery_randomness["priority_rng_state"]
+            )
+            self._assignment_rng.bit_generator.state = copy.deepcopy(
+                delivery_randomness["assignment_rng_state"]
+            )
+            self._replacement_rng.bit_generator.state = copy.deepcopy(
+                delivery_randomness["replacement_rng_state"]
+            )
+        Agent.counter = int(state["agent_counter"])
+        Shelf.counter = int(state["shelf_counter"])
+        self.global_image = None
+        self._recalc_grid()
+        if sha256(self.grid.tobytes()).hexdigest() != state["grid_hash"]:
+            raise ValueError("Shadow grid reconstruction hash mismatch.")
+
+    def set_shadow_randomness(self, randomness, **address: int) -> None:
+        self._shadow_randomness = randomness
+        self._shadow_randomness_address = {
+            name: int(value) for name, value in address.items()
+        }
+
+    def clear_shadow_randomness(self) -> None:
+        self._shadow_randomness = None
+        self._shadow_randomness_address = None
+
+    def charging_service_active(self, agent) -> bool:
+        """Whether the assigned charging goal currently requires service dwell."""
+        position = agent.x, agent.y
+        return (
+            self.charging_contract == GOAL_FULL_CHARGING
+            and not agent.dead
+            and agent.battery < 1.0
+            and position in self.charging_stations
+            and self.charging_reservations.get(position) == agent.id
+        )
 
     def step(self, actions):
         if self.msg_bits:
@@ -174,7 +477,10 @@ class DynamicWarehouse(Warehouse):
             for agent in self.agents
         }
         effective_actions = [
-            Action.NOOP if agent.dead or locked_before[agent.id] else action
+            Action.NOOP
+            if (agent.dead or locked_before[agent.id]
+                or self.charging_service_active(agent))
+            else action
             for agent, action in zip(self.agents, requested_actions)
         ]
         forward_attempts = self._forward_attempts(effective_actions, pre_state)
@@ -193,7 +499,7 @@ class DynamicWarehouse(Warehouse):
         self._apply_blocked_forward_penalties(blocked_forwards, rewards)
         self._update_batteries(pre_state, locked_before, rewards)
         self._advance_picking_locks(locked_before)
-        if self._completion_target_reached():
+        if self.terminate_on_task_target and self._completion_target_reached():
             terminated = True
             self.last_events.append(
                 {
@@ -214,6 +520,10 @@ class DynamicWarehouse(Warehouse):
     def apply_priority_adjustments(
         self, adjustments: Iterable[PriorityAdjustment]
     ) -> Sequence[Task]:
+        if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+            raise ValueError(
+                "Balanced-random task priorities are fixed for their lifecycle."
+            )
         updated = self.task_queue.apply_adjustments(adjustments)
         self._refresh_request_queue()
         self.last_events.append(
@@ -235,6 +545,8 @@ class DynamicWarehouse(Warehouse):
                 "task_target_reached": self._completion_target_reached(),
                 "charging_stations": list(self.charging_stations),
                 "charging_station_status": self._charging_station_status(),
+                "battery_cost_scale": self.battery_cost_scale,
+                "charging_rate": self.charging_rate,
                 "picking_stations": list(self.picking_stations),
                 "collisions": self.total_collisions,
                 "blocked_forwards": self.total_blocked_forwards,
@@ -283,7 +595,10 @@ class DynamicWarehouse(Warehouse):
     def _create_batch(self, shelf_ids: Sequence[int]) -> Sequence[Task]:
         if not shelf_ids:
             return ()
-        if self.priority_schedule:
+        if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+            letters = [self._next_priority() for _ in shelf_ids]
+            letter = None
+        elif self.priority_schedule:
             letter = self.priority_schedule[
                 self._batch_index % len(self.priority_schedule)
             ]
@@ -294,9 +609,14 @@ class DynamicWarehouse(Warehouse):
             letter = chr(letter_code)
         batch_id = self._batch_index + 1
         self._batch_index += 1
-        tasks = self.task_queue.create_batch(
-            shelf_ids, batch_id, letter, self._cur_steps
-        )
+        if letter is None:
+            tasks = self.task_queue.create_prioritized_batch(
+                shelf_ids, batch_id, letters, self._cur_steps
+            )
+        else:
+            tasks = self.task_queue.create_batch(
+                shelf_ids, batch_id, letter, self._cur_steps
+            )
         self.last_events.append(
             {
                 "type": "batch_arrived",
@@ -306,8 +626,29 @@ class DynamicWarehouse(Warehouse):
         )
         return tasks
 
+    def _next_priority(self) -> str:
+        if not self._priority_bag:
+            self._priority_bag = list(
+                self._priority_rng.permutation(self.priority_schedule)
+            )
+        return self._priority_bag.pop(0)
+
+    def _create_initial_batch(self, preferred_shelf_ids: Sequence[int]) -> None:
+        """Create one configured ingress batch before the first action."""
+        candidates = list(dict.fromkeys(preferred_shelf_ids))
+        candidates.extend(
+            shelf.id for shelf in self.shelfs if shelf.id not in candidates
+        )
+        minimum = self.batch_size_range[0]
+        if len(candidates) < minimum:
+            raise RuntimeError(
+                "Dynamic ingress requires enough shelves for its initial batch."
+            )
+        count = min(self._scheduled_batch_count(), len(candidates))
+        self._create_batch(candidates[:count])
+
     def _create_initial_batches(self, preferred_shelf_ids: Sequence[int]) -> None:
-        """Create the required A and B arrivals before the first action."""
+        """Create the historical A and B arrivals before the first action."""
         candidates = list(dict.fromkeys(preferred_shelf_ids))
         candidates.extend(
             shelf.id for shelf in self.shelfs if shelf.id not in candidates
@@ -321,7 +662,7 @@ class DynamicWarehouse(Warehouse):
         first_count = int(self.np_random.integers(minimum, first_upper + 1))
         first = candidates[:first_count]
         second_count = self._draw_initial_batch_size(len(candidates) - first_count)
-        second = candidates[first_count : first_count + second_count]
+        second = candidates[first_count:first_count + second_count]
         self._create_batch(first)
         self._create_batch(second)
 
@@ -331,7 +672,11 @@ class DynamicWarehouse(Warehouse):
         return int(self.np_random.integers(lower, upper + 1))
 
     def _dynamic_ingress_enabled(self) -> bool:
-        return self.max_steps is not None and self.batch_interval <= self.max_steps
+        return (
+            self.replenishment_mode == "dynamic_ingress"
+            and self.max_steps is not None
+            and self.batch_interval <= self.max_steps
+        )
 
     def _completed_task_count(self) -> int:
         return sum(task.status.value == "completed" for task in self.task_queue.tasks)
@@ -340,6 +685,8 @@ class DynamicWarehouse(Warehouse):
         return self._completed_task_count() >= self.task_completion_target
 
     def _spawn_scheduled_batch(self):
+        if self.replenishment_mode != "dynamic_ingress":
+            return
         if (
             self._cur_steps == 0
             or self._cur_steps >= self.max_steps
@@ -357,23 +704,107 @@ class DynamicWarehouse(Warehouse):
             for shelf in self.shelfs
             if shelf.id not in active_shelf_ids and shelf.id not in carried_shelf_ids
         ]
-        count = int(
-            self.np_random.integers(
-                self.batch_size_range[0], self.batch_size_range[1] + 1
-            )
-        )
+        count = self._scheduled_batch_count()
         count = min(count, len(candidates))
         if count:
-            chosen = self.np_random.choice(candidates, size=count, replace=False)
-            self._create_batch([int(shelf_id) for shelf_id in chosen])
+            chosen = self._scheduled_batch_shelves(candidates, count)
+            self._create_batch(chosen)
+
+    def _scheduled_batch_count(self) -> int:
+        lower, upper = self.batch_size_range
+        if self._shadow_randomness is None:
+            return int(self.np_random.integers(lower, upper + 1))
+        return self._shadow_randomness.integer(
+            **self._shadow_randomness_address,
+            event_type="dynamic_ingress_batch_size",
+            event_slot=0,
+            low=lower,
+            high=upper + 1,
+        )
+
+    def _scheduled_batch_shelves(
+        self, candidates: Sequence[int], count: int
+    ) -> list[int]:
+        if self._shadow_randomness is None:
+            return [
+                int(shelf_id)
+                for shelf_id in self.np_random.choice(
+                    candidates, size=count, replace=False
+                )
+            ]
+        return self._shadow_randomness.choose_without_replacement(
+            candidates,
+            count,
+            **self._shadow_randomness_address,
+            event_type="dynamic_ingress_shelf_choice",
+            event_slot=0,
+        )
 
     def _refresh_request_queue(self):
         self.request_queue = [
             self.shelfs[task.shelf_id - 1] for task in self.task_queue.active_tasks
         ]
 
+    def _renew_delivered_request(self, delivered_shelf) -> None:
+        """Apply the selected queue renewal policy after a shelf delivery."""
+        if (
+            self.replenishment_mode == "rware_delivery"
+            and self.delivery_contract == BALANCED_RANDOM_DELIVERY
+        ):
+            index = self.request_queue.index(delivered_shelf)
+            carried = {
+                agent.carrying_shelf.id
+                for agent in self.agents
+                if agent.carrying_shelf is not None
+            }
+            candidates = [
+                shelf
+                for shelf in self.shelfs
+                if shelf not in self.request_queue and shelf.id not in carried
+            ]
+            if not candidates:
+                raise RuntimeError(
+                    "Balanced-random delivery cannot replenish its active pool."
+                )
+            replacement = candidates[
+                int(self._replacement_rng.integers(len(candidates)))
+            ]
+            self.request_queue[index] = replacement
+        elif self.replenishment_mode == "rware_delivery":
+            super()._renew_delivered_request(delivered_shelf)
+        else:
+            self.request_queue.remove(delivered_shelf)
+
     def _assign_available_tasks(self):
         if not self.auto_assign:
+            return
+        if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+            charging_agents = set(self.charging_reservations.values())
+            agents = [
+                agent
+                for agent in self.agents
+                if (
+                    not agent.dead
+                    and not agent.picking_lock_steps
+                    and not agent.carrying_shelf
+                    and agent.battery >= self.assignment_battery_threshold
+                    and agent.id not in charging_agents
+                    and self.task_queue.task_for_agent(agent.id) is None
+                )
+            ]
+            pending = [
+                task
+                for task in self.task_queue.tasks
+                if task.status == TaskStatus.PENDING
+            ]
+            self._assignment_rng.shuffle(agents)
+            self._assignment_rng.shuffle(pending)
+            for agent, task in zip(agents, pending):
+                assigned = self.task_queue.assign(
+                    task.task_id, agent.id, agent.battery
+                )
+                if assigned is not None:
+                    agent.task_id = assigned.task_id
             return
         for agent in self.agents:
             if agent.dead or agent.picking_lock_steps or agent.carrying_shelf:
@@ -384,6 +815,8 @@ class DynamicWarehouse(Warehouse):
 
     def _complete_delivered_tasks(self, active_before, rewards):
         delivered = []
+        if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+            active_before = sorted(active_before, key=lambda task: task.task_id)
         for task in active_before:
             shelf = self.shelfs[task.shelf_id - 1]
             if (shelf.x, shelf.y) not in self.goals or shelf in self.request_queue:
@@ -407,6 +840,14 @@ class DynamicWarehouse(Warehouse):
                     "agent_id": agent.id,
                 }
             )
+        if delivered and self.replenishment_mode == "rware_delivery":
+            active_shelf_ids = {task.shelf_id for task in active_before}
+            replacement_ids = [
+                shelf.id
+                for shelf in self.request_queue
+                if shelf.id not in active_shelf_ids
+            ]
+            self._create_batch(replacement_ids)
         return delivered
 
     def _remove_base_delivery_reward(self, agent_id: int, rewards: np.ndarray):
@@ -527,12 +968,29 @@ class DynamicWarehouse(Warehouse):
 
     def _next_battery(self, agent, state, was_locked):
         if was_locked:
-            return max(0.0, state["battery"] - 0.0002)
+            return max(
+                0.0, state["battery"] - 0.0002 * self.battery_cost_scale
+            )
         action = agent.req_action
         if (agent.x, agent.y) in self.charging_stations and action == Action.NOOP:
-            self.last_events.append({"type": "charged", "agent_id": agent.id})
-            return min(1.0, state["battery"] + self.charging_rate)
-        return max(0.0, state["battery"] - self._battery_cost(agent, state))
+            next_battery = min(1.0, state["battery"] + self.charging_rate)
+            if (
+                self.charging_contract == GOAL_FULL_CHARGING
+                and next_battery >= 1.0 - 1e-12
+            ):
+                next_battery = 1.0
+            if next_battery > state["battery"]:
+                self.last_events.append(
+                    {
+                        "type": "charged",
+                        "agent_id": agent.id,
+                        "battery_before": state["battery"],
+                        "battery_after": next_battery,
+                    }
+                )
+            return next_battery
+        cost = self._battery_cost(agent, state) * self.battery_cost_scale
+        return max(0.0, state["battery"] - cost)
 
     @staticmethod
     def _battery_cost(agent, state):
@@ -555,6 +1013,14 @@ class DynamicWarehouse(Warehouse):
             if locked_before[agent.id]:
                 agent.picking_lock_steps -= 1
                 if agent.picking_lock_steps == 0 and agent.carrying_shelf:
+                    if self.delivery_contract == BALANCED_RANDOM_DELIVERY:
+                        self.last_events.append(
+                            {
+                                "type": "picking_service_complete",
+                                "agent_id": agent.id,
+                            }
+                        )
+                        continue
                     shelf = agent.carrying_shelf
                     shelf.x, shelf.y = self._shelf_home[shelf.id]
                     agent.carrying_shelf = None

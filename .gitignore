@@ -155,6 +155,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+.pytest-*/
 
 # Translations
 *.mo
@@ -258,3 +259,9 @@ $RECYCLE.BIN/
 .env
 .env.*
 !.env.example
+# Generated paper figures are local artifacts; plotting code and data contracts
+# remain tracked for clean-checkout reproducibility.
+/figures/**/*.png
+/figures/**/*.svg
+order.md
+repomix-core.xml
