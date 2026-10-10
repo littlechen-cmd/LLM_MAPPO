@@ -184,6 +184,17 @@ _APPROVED_TRAINING_PROBES = {
         "reward-v3-c1-energy-death-local-mean",
         {"num_env_workers": 6},
     ),
+    (
+        "artifacts/reward_diagnostics/group2/"
+        "reward-v3-c1-energy-death-local-mean-horizon600k"
+    ): (
+        "reward-v3-c1-energy-death-local-mean",
+        {
+            "environment_steps": 600000,
+            "optimization_schedule_steps": 600000,
+            "milestone_checkpoint_steps": [300000, 600000],
+        },
+    ),
 }
 
 

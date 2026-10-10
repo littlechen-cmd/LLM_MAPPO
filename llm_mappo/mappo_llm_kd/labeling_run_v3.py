@@ -19,6 +19,8 @@ from .label_budget_v3 import LabelBudgetV3
 from .labeling import AtomicLabelStore
 from .goal_full_dataset_run import _receipts as _read_complete_episode_receipts
 from .source_actor_v3 import canonical_sha256
+from .medium_extension_dataset import LINEAGE_SCHEMA
+from .native_derived_adapter_v3 import verify_native_derived_dataset
 from .pretraining import (
     DATASET_BUILD_V3, LABEL_RUN_V3, MAIN_BASELINE_DISTRIBUTION_V3,
     SEMANTIC_CONTRACT_V3, SEMANTIC_DIMENSIONS_V3, SEMANTIC_SOURCES_V3,
@@ -160,6 +162,7 @@ def _verify_frozen_dataset(dataset, manifest, environment):
 def prepare_labeling_v3(  # noqa: C901
     dataset_directory, output_directory, *, environment, providers,
     pricing_evidence, phase_ledger_path, job_cap_usd=30.0,
+    source_artifact_root=None,
 ):
     """Freeze a public, immutable plan using the builder's unique ID lists."""
     dataset, directory = Path(dataset_directory).resolve(), Path(output_directory)
@@ -180,20 +183,33 @@ def prepare_labeling_v3(  # noqa: C901
     rollout = manifest.get("rollout_environment_contract", {}).get("environment", {})
     if rollout.get("n_agents") != (5 if environment == "medium-5ag" else 3):
         raise ValueError("Dataset rollout agent count differs from its environment.")
-    if (rollout.get("charging_contract") != "goal-full-v1"
-            or rollout.get("charging_rate") != 0.1
-            or rollout.get("charge_release_threshold") != 1.0
-            or rollout.get("charge_threshold") != .3):
+    derived = manifest.get("lineage_schema") == LINEAGE_SCHEMA
+    if manifest.get("lineage_schema") is not None and not derived:
+        raise ValueError("Unknown dataset lineage schema is not approved.")
+    if derived:
+        if environment != "medium-5ag":
+            raise ValueError("Native derived labeling is approved only for medium-5ag.")
+        if (source_artifact_root is not None
+                and (not isinstance(source_artifact_root, str)
+                     or not source_artifact_root)):
+            raise ValueError("Native source relocation root is invalid.")
+    elif (rollout.get("charging_contract") != "goal-full-v1"
+          or rollout.get("charging_rate") != 0.1
+          or rollout.get("charge_release_threshold") != 1.0
+          or rollout.get("charge_threshold") != .3
+          or (environment == "medium-5ag" and rollout.get("profile_id")
+              != "medium-5ag-goal-full-v1")):
         raise ValueError("The dataset requires the frozen goal-full-v1 contract.")
-    if (environment == "medium-5ag"
-            and rollout.get("profile_id") != "medium-5ag-goal-full-v1"):
-        raise ValueError("The medium rollout profile is not frozen.")
+    if not derived and source_artifact_root is not None:
+        raise ValueError("Source relocation applies only to native derived lineage.")
     list_path = dataset / "label_selection_lists.json"
     if not list_path.is_file():
         raise ValueError("The builder's frozen selection lists are required.")
     if manifest.get("windows_sha256") != _file_hash(dataset / "windows.jsonl"):
         raise ValueError("Dataset windows SHA256 differs.")
-    frozen = _verify_frozen_dataset(dataset, manifest, environment)
+    frozen = (verify_native_derived_dataset(
+        dataset, manifest, artifact_root=source_artifact_root,
+    ) if derived else _verify_frozen_dataset(dataset, manifest, environment))
     public_providers = _provider_plans(providers)
     _validate_pricing(pricing_evidence)
     budget_snapshot = LabelBudgetV3(
@@ -244,6 +260,15 @@ def prepare_labeling_v3(  # noqa: C901
             + sum(index[key]["reservations"]["pro"] for key in groups["pro"])
         ),
     }
+    if derived:
+        plan["lineage_schema"] = LINEAGE_SCHEMA
+        plan["lineage_sha256"] = frozen["lineage_sha256"]
+        plan["source_artifact_root"] = (
+            str(Path(source_artifact_root).resolve())
+            if source_artifact_root is not None else None
+        )
+        for name in ("medium_extension_dataset.py", "native_derived_adapter_v3.py"):
+            plan["code_sha256"][name] = _file_hash(Path(__file__).with_name(name))
     retry_reserve = sum(sorted(
         (row["reservations"]["main"] for row in index.values()), reverse=True,
     )[:math.floor(.1 * total)])
@@ -418,8 +443,26 @@ def _load_plan(directory):
     }
     if any(plan[name] != _file_hash(path) for name, path in bindings.items()):
         raise ValueError("A frozen dataset or request artifact changed.")
-    _verify_frozen_dataset(dataset, _read_json(dataset / "manifest.json"),
-                           plan["environment"])
+    manifest = _read_json(dataset / "manifest.json")
+    if manifest.get("lineage_schema") == LINEAGE_SCHEMA:
+        if (plan.get("lineage_schema") != LINEAGE_SCHEMA
+                or not isinstance(plan.get("lineage_sha256"), str)
+                or plan.get("source_artifact_root") is not None
+                and (not isinstance(plan.get("source_artifact_root"), str)
+                     or not plan["source_artifact_root"])):
+            raise ValueError("Native derived plan lineage is missing or invalid.")
+        frozen = verify_native_derived_dataset(
+            dataset, manifest, artifact_root=plan["source_artifact_root"],
+        )
+        if (plan["lineage_sha256"] != frozen["lineage_sha256"]
+                or not {"medium_extension_dataset.py", "native_derived_adapter_v3.py"}
+                <= set(plan["code_sha256"])):
+            raise ValueError("Native derived plan lineage or verifier code differs.")
+    elif (manifest.get("lineage_schema") is not None
+          or plan.get("lineage_schema") is not None):
+        raise ValueError("Dataset lineage and labeling plan differ.")
+    else:
+        _verify_frozen_dataset(dataset, manifest, plan["environment"])
     if plan.get("maximum_reserve_usd", float("inf")) > plan["job_cap_usd"]:
         raise ValueError("This plan is blocked by its frozen worst-case budget.")
     if any(value != _file_hash(Path(__file__).with_name(name))
@@ -727,6 +770,9 @@ def _finalize(directory, plan, quality_path):
         "quality_report_path": "quality-main.json", "plan_path": "plan.json",
         "plan_sha256": _file_hash(directory / "plan.json"),
     }
+    if plan.get("lineage_schema") == LINEAGE_SCHEMA:
+        manifest["lineage_schema"] = LINEAGE_SCHEMA
+        manifest["lineage_sha256"] = plan["lineage_sha256"]
     _write_json(directory / "manifest.json", manifest)
     _write_json(directory / "state.json", {
         "status": "completed", "pretraining_eligible": True,

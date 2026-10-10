@@ -238,6 +238,51 @@ def test_v3_pretraining_refuses_missing_or_unbound_quality_evidence(tmp_path, mu
         runner._validate_label_artifact(dataset, labels)
 
 
+def test_native_derived_label_artifact_binds_lineage_and_verifier_code(tmp_path):
+    dataset, labels = _write_v3_artifacts(tmp_path)
+    dataset_path = dataset / "manifest.json"
+    dataset_manifest = json.loads(dataset_path.read_text("utf-8"))
+    dataset_manifest.update(
+        lineage_schema="medium-train-extension-selection-v1",
+        collection_identity_sha256="a" * 64,
+    )
+    dataset_path.write_text(json.dumps(dataset_manifest), "utf-8")
+    dataset_sha = sha256(dataset_path.read_bytes()).hexdigest()
+    plan_path = labels / "plan.json"
+    plan = json.loads(plan_path.read_text("utf-8"))
+    plan.update(
+        dataset_manifest_sha256=dataset_sha,
+        dataset_windows_sha256=dataset_manifest["windows_sha256"],
+        lineage_schema=dataset_manifest["lineage_schema"],
+        lineage_sha256=dataset_manifest["collection_identity_sha256"],
+        code_sha256={name: sha256((runner.Path(runner.__file__).with_name(name))
+                                 .read_bytes()).hexdigest() for name in (
+                                     "medium_extension_dataset.py",
+                                     "native_derived_adapter_v3.py")},
+    )
+    plan_path.write_text(json.dumps(plan), "utf-8")
+    plan_sha = sha256(plan_path.read_bytes()).hexdigest()
+    quality_path = labels / "quality-main.json"
+    quality = json.loads(quality_path.read_text("utf-8"))
+    quality["bindings"]["plan_sha256"] = plan_sha
+    quality["bindings"]["dataset_manifest_sha256"] = dataset_sha
+    quality_path.write_text(json.dumps(quality), "utf-8")
+    label_path = labels / "manifest.json"
+    label_manifest = json.loads(label_path.read_text("utf-8"))
+    label_manifest.update(
+        dataset_manifest_sha256=dataset_sha, plan_sha256=plan_sha,
+        quality_report_sha256=sha256(quality_path.read_bytes()).hexdigest(),
+        lineage_schema=dataset_manifest["lineage_schema"],
+        lineage_sha256=dataset_manifest["collection_identity_sha256"],
+    )
+    label_path.write_text(json.dumps(label_manifest), "utf-8")
+    runner._validate_label_artifact(dataset, labels)
+    label_manifest["lineage_sha256"] = "b" * 64
+    label_path.write_text(json.dumps(label_manifest), "utf-8")
+    with pytest.raises(ValueError, match="lineage"):
+        runner._validate_label_artifact(dataset, labels)
+
+
 def _v3_config(tmp_path, dataset, labels):
     return runner.PretrainingRunConfig(
         schema=runner.PRETRAINING_RUNNER_V1,

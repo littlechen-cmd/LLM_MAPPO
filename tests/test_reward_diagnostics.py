@@ -192,6 +192,22 @@ def _worker_count_candidate_config(reward):
     return values
 
 
+def _c1_horizon600k_candidate_config():
+    values = _candidate_config("c1")
+    values["artifact_root"] = (
+        "artifacts/reward_diagnostics/group2/"
+        "reward-v3-c1-energy-death-local-mean-horizon600k"
+    )
+    values["training"].update(
+        {
+            "environment_steps": 600000,
+            "optimization_schedule_steps": 600000,
+            "milestone_checkpoint_steps": [300000, 600000],
+        }
+    )
+    return values
+
+
 def _write_config(tmp_path, values):
     path = tmp_path / "reward-diagnostic.yaml"
     path.write_text(yaml.safe_dump(values, sort_keys=False), encoding="utf-8")
@@ -278,6 +294,82 @@ def test_workers6_probe_rejects_an_unapproved_reward_artifact_pair(tmp_path):
 
     with pytest.raises(ValueError, match="training probe"):
         load_reward_diagnostic_experiment(_write_config(tmp_path, values))
+
+
+def test_loader_accepts_only_the_approved_c1_horizon600k_probe(tmp_path):
+    """Catch the extended-budget probe drifting beyond its frozen horizon."""
+    from llm_mappo.reward_diagnostics import load_reward_diagnostic_experiment
+
+    reference = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _candidate_config("c1"))
+    )
+    probe = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _c1_horizon600k_candidate_config())
+    )
+
+    differing_training_fields = {
+        key
+        for key in reference.training
+        if reference.training[key] != probe.training[key]
+    }
+    assert differing_training_fields == {
+        "environment_steps",
+        "optimization_schedule_steps",
+        "milestone_checkpoint_steps",
+    }
+    assert probe.training["environment_steps"] == 600000
+    assert probe.training["optimization_schedule_steps"] == 600000
+    assert probe.training["milestone_checkpoint_steps"] == [300000, 600000]
+    assert probe.training["num_env_workers"] == 16
+    assert probe.reward_definition == reference.reward_definition
+    assert probe.reward_definition_sha256 == reference.reward_definition_sha256
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("config_sha256", "0" * 64),
+        ("seed", 17),
+    ],
+)
+def test_diagnostic_checkpoint_evaluation_rejects_mismatched_run_identity(
+    tmp_path, field, value
+):
+    """Catch a milestone evaluation using a checkpoint from another run."""
+    from llm_mappo.mappo_baseline.runner import (
+        BaselineRun,
+        checkpoint_schema_for_experiment,
+    )
+    from llm_mappo.reward_diagnostics import (
+        load_reward_diagnostic_experiment,
+        resolve_diagnostic_baseline_experiment,
+    )
+
+    diagnostic = load_reward_diagnostic_experiment(
+        _write_config(tmp_path, _c1_horizon600k_candidate_config())
+    )
+    baseline = resolve_diagnostic_baseline_experiment(diagnostic, seed=7)
+    run = BaselineRun(
+        baseline,
+        device="cpu",
+        output_root=tmp_path,
+        evaluation_only=True,
+        diagnostic_authorized=True,
+        diagnostic_reward_definition=diagnostic.reward_definition,
+        diagnostic_reward_definition_sha256=diagnostic.reward_definition_sha256,
+    )
+    try:
+        identity = {**run.identity, field: value}
+        payload = {
+            "schema": checkpoint_schema_for_experiment(baseline),
+            "identity": identity,
+            "trainer": {},
+        }
+
+        with pytest.raises(ValueError, match="diagnostic checkpoint identity"):
+            run._validate_evaluation_checkpoint(payload)
+    finally:
+        run.close()
 
 
 def test_diagnostic_loader_rejects_mixed_candidate_factors(tmp_path):
@@ -438,6 +530,71 @@ def test_diagnostic_script_refuses_training_without_acknowledgement(tmp_path):
     assert result.returncode != 0
     assert "acknowledgement" in result.stderr.lower()
     assert not (tmp_path / "formal-artifacts").exists()
+
+
+def test_diagnostic_checkpoint_script_refuses_evaluation_without_acknowledgement(
+    tmp_path,
+):
+    """Catch a checkpoint-only diagnostic creating output without owner opt-in."""
+    config = _write_config(tmp_path, _c1_horizon600k_candidate_config())
+    checkpoint = tmp_path / "checkpoint_300000.pt"
+    checkpoint.write_bytes(b"not-read-without-acknowledgement")
+    output = tmp_path / "artifacts" / "reward_diagnostics" / "group2" / "output"
+    script = (
+        Path(__file__).parents[1]
+        / "scripts"
+        / "evaluate_reward_diagnostic_checkpoint.py"
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--config",
+            str(config),
+            "--seed",
+            "7",
+            "--checkpoint",
+            str(checkpoint),
+            "--output-directory",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "acknowledgement" in result.stderr.lower()
+    assert not output.exists()
+
+
+def test_checkpoint_evaluation_rejects_output_inside_the_source_run(tmp_path):
+    """Catch checkpoint-only evaluation overwriting a source run subdirectory."""
+    from scripts.evaluate_reward_diagnostic_checkpoint import (
+        validate_output_directory,
+    )
+
+    source_run = tmp_path / "artifacts" / "reward_diagnostics" / "group2" / "run"
+    source_run.mkdir(parents=True)
+    checkpoint = source_run / "checkpoint_300000.pt"
+    checkpoint.write_bytes(b"checkpoint")
+
+    with pytest.raises(ValueError, match="source run"):
+        validate_output_directory(checkpoint, source_run / "evaluation_300000")
+
+
+def test_checkpoint_evaluation_rejects_source_outside_group2_artifacts(tmp_path):
+    """Catch a diagnostic evaluator reading an unrelated local checkpoint."""
+    from scripts.evaluate_reward_diagnostic_checkpoint import (
+        _validate_source_checkpoint,
+    )
+
+    checkpoint = tmp_path / "checkpoint_300000.pt"
+    checkpoint.write_bytes(b"checkpoint")
+
+    with pytest.raises(ValueError, match="outside group2 artifacts"):
+        _validate_source_checkpoint(str(checkpoint))
 
 
 def test_update_evidence_contract_persists_raw_return_and_advantage_scales():

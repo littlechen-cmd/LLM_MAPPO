@@ -45,6 +45,8 @@ from .pretraining_checkpoint import (
     save_pretraining_checkpoint,
 )
 from .representation_export import export_actor_representation
+from .medium_extension_dataset import LINEAGE_SCHEMA
+from .native_derived_adapter_v3 import verify_native_derived_dataset
 
 
 PRETRAINING_RUNNER_V1 = "semantic-pretraining-runner-v1"
@@ -72,6 +74,7 @@ class PretrainingRunConfig:
     dimension_weights: tuple[float, float, float, float]
     early_stopping_patience: int
     early_stopping_min_delta: float
+    source_artifact_root: str | None = None
 
 
 def load_pretraining_run_config(path: str | Path) -> PretrainingRunConfig:
@@ -86,7 +89,8 @@ def load_pretraining_run_config(path: str | Path) -> PretrainingRunConfig:
         "dimension_weights", "early_stopping_patience",
         "early_stopping_min_delta",
     }
-    if not isinstance(values, dict) or set(values) != expected:
+    if (not isinstance(values, dict) or not expected <= set(values)
+            or set(values) - expected - {"source_artifact_root"}):
         raise ValueError("Pretraining config has unexpected top-level keys.")
     config = PretrainingRunConfig(
         schema=values["schema"],
@@ -102,6 +106,7 @@ def load_pretraining_run_config(path: str | Path) -> PretrainingRunConfig:
         dimension_weights=tuple(values["dimension_weights"]),
         early_stopping_patience=values["early_stopping_patience"],
         early_stopping_min_delta=values["early_stopping_min_delta"],
+        source_artifact_root=values.get("source_artifact_root"),
     )
     _validate_config(config)
     return config
@@ -126,7 +131,9 @@ def run_semantic_pretraining(  # noqa: C901
     target_device = torch.device(device)
     dataset = Path(config.dataset_directory)
     labels = Path(config.label_directory)
-    windows = _load_eligible_windows(dataset)
+    windows = _load_eligible_windows(
+        dataset, source_artifact_root=config.source_artifact_root,
+    )
     _validate_label_artifact(dataset, labels)
     label_manifest = json.loads((labels / "manifest.json").read_text("utf-8"))
     contract = label_manifest.get("semantic_contract_version")
@@ -414,6 +421,10 @@ def _validate_config(config: object) -> None:  # noqa: C901
     for name in ("dataset_directory", "label_directory", "artifact_root"):
         if not isinstance(getattr(config, name), str) or not getattr(config, name):
             raise ValueError(f"Pretraining {name} is invalid.")
+    if (config.source_artifact_root is not None
+            and (not isinstance(config.source_artifact_root, str)
+                 or not config.source_artifact_root)):
+        raise ValueError("Pretraining source_artifact_root is invalid.")
     _validate_digest(config.config_sha256, "Pretraining config SHA-256")
     if config.approval_status not in {"provisional", "approved"}:
         raise ValueError("Pretraining approval_status is invalid.")
@@ -443,6 +454,7 @@ def _validate_config(config: object) -> None:  # noqa: C901
 
 def _load_eligible_windows(  # noqa: C901
     directory: Path,
+    *, source_artifact_root: str | None = None,
 ) -> list[dict[str, object]]:
     try:
         manifest = json.loads((directory / "manifest.json").read_text("utf-8"))
@@ -465,6 +477,15 @@ def _load_eligible_windows(  # noqa: C901
         raise ValueError("Pretraining requires a completed eligible main dataset.")
     if v3:
         _validate_v3_manifest_semantics(manifest)
+    lineage = manifest.get("lineage_schema")
+    if lineage == LINEAGE_SCHEMA:
+        if not v3:
+            raise ValueError("Native derived lineage requires the v3 semantic contract.")
+        verify_native_derived_dataset(
+            directory, manifest, artifact_root=source_artifact_root,
+        )
+    elif lineage is not None or source_artifact_root is not None:
+        raise ValueError("Unknown dataset lineage or source relocation is not approved.")
     windows_path = directory / "windows.jsonl"
     try:
         lines = windows_path.read_text(encoding="utf-8").splitlines()
@@ -568,6 +589,27 @@ def _validate_label_artifact(dataset: Path, labels: Path) -> None:  # noqa: C901
             raise ValueError("Pretraining v3 semantic contract is incompatible.")
         _validate_v3_manifest_semantics(manifest)
         _validate_v3_quality_evidence(labels, manifest)
+        if dataset_manifest.get("lineage_schema") == LINEAGE_SCHEMA:
+            plan = json.loads((labels / "plan.json").read_text("utf-8"))
+            required_code = {
+                "medium_extension_dataset.py", "native_derived_adapter_v3.py"
+            }
+            if (manifest.get("lineage_schema") != LINEAGE_SCHEMA
+                    or manifest.get("lineage_sha256")
+                    != dataset_manifest.get("collection_identity_sha256")
+                    or plan.get("lineage_schema") != LINEAGE_SCHEMA
+                    or plan.get("lineage_sha256") != manifest["lineage_sha256"]
+                    or plan.get("dataset_windows_sha256")
+                    != dataset_manifest.get("windows_sha256")
+                    or not isinstance(plan.get("code_sha256"), dict)
+                    or not required_code <= set(plan["code_sha256"])
+                    or any(plan["code_sha256"][name] != sha256(
+                        (Path(__file__).with_name(name)).read_bytes()
+                    ).hexdigest() for name in required_code)):
+                raise ValueError("Pretraining native derived label lineage differs.")
+        elif (dataset_manifest.get("lineage_schema") is not None
+              or manifest.get("lineage_schema") is not None):
+            raise ValueError("Pretraining label lineage is incompatible.")
         records = [
             json.loads(line) for line in labels_bytes.decode("utf-8").splitlines()
         ]

@@ -1122,6 +1122,18 @@ class BaselineRun:
                 "MAPPO checkpoint is incompatible with the evaluation profile: "
                 + ", ".join(mismatched)
             )
+        if self.experiment.schema == REWARD_DIAGNOSTIC_SCHEMA:
+            diagnostic_identity_fields = ("config_sha256", "seed")
+            diagnostic_mismatched = [
+                field
+                for field in diagnostic_identity_fields
+                if source_identity.get(field) != self.identity.get(field)
+            ]
+            if diagnostic_mismatched:
+                raise ValueError(
+                    "MAPPO diagnostic checkpoint identity differs: "
+                    + ", ".join(diagnostic_mismatched)
+                )
         if "trainer" not in payload:
             raise ValueError("MAPPO baseline checkpoint has no trainer state.")
         return source_identity
@@ -1242,21 +1254,47 @@ class BaselineRun:
         temporary = path.with_suffix(path.suffix + ".tmp")
         torch.save(payload, temporary)
         temporary.replace(path)
-        if self.experiment.schema == "mappo-collection-209d-v1":
+        if self.experiment.schema == "mappo-collection-209d-v1" or (
+            self.experiment.schema == CORE_MEDIUM5_C1_SCHEMA
+            and path.name == "checkpoint_final.pt"
+        ):
             self._export_collection_actor(
                 path.with_name(
                     path.stem.replace("checkpoint_", "collection_actor_")
                     + path.suffix
-                )
+                ),
+                source_checkpoint=path,
             )
 
-    def _export_collection_actor(self, path: Path) -> None:
+    def _export_collection_actor(
+        self, path: Path, *, source_checkpoint: Path | None = None
+    ) -> None:
         """Export a weights-only-safe Actor artifact for offline collection."""
 
         config = self.trainer.config
+        medium_c1 = self.experiment.schema == CORE_MEDIUM5_C1_SCHEMA
+        identity = dict(self.identity)
+        if medium_c1:
+            encoded_environment = json.dumps(
+                dict(self.experiment.environment), sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            identity.update({
+                "environment_id": self.experiment.environment["environment_id"],
+                "n_agents": int(self.experiment.environment["n_agents"]),
+                "goal_interface": self.experiment.environment["goal_interface"],
+                "environment_sha256": sha256(encoded_environment).hexdigest(),
+                "global_environment_steps": int(self.global_steps),
+                "source_checkpoint_sha256": sha256(
+                    source_checkpoint.read_bytes()
+                ).hexdigest(),
+            })
         payload = {
-            "schema": "mappo-collection-actor-209d-v1",
-            "identity": dict(self.identity),
+            "schema": (
+                "mappo-medium5-c1-collection-actor-209d-v1"
+                if medium_c1 else "mappo-collection-actor-209d-v1"
+            ),
+            "identity": identity,
             "actor_config": {
                 "observation_dim": int(config.observation_dim),
                 "action_dim": int(config.action_dim),
