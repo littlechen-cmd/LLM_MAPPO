@@ -34,6 +34,9 @@
 - [ ] tiny 恰好 1,000；medium 新建恰好 3,000；formal 恰好 8,000。
 - [ ] 原始轨迹、观测、reset mask、标签及清单逐项可追溯，形状及有限值检查通过。
 - [ ] train/validation/test 无 episode 泄漏，窗口去重及间隔满足冻结合同。
+- [ ] medium 追加仅使用获批 seed 10120..10359，最多 240、每批 40，均为 train-only；
+  旧验证/测试 episode 与 450/450 窗口内容保留，完整池及批次身份可追溯，
+  候选索引中断恢复不重复或遗漏 episode，原始覆盖通过后才冻结。
 - [ ] 语义审查覆盖两维重合原因与第四维边界；新合同不静默继承旧标签身份。
 - [ ] 标签及导出维度顺序为 `goal-priority`、`yielding-preference`、`local-constraint`、
   `motion-stagnation`，前三者为主语义，第四者为辅助；来源、mask 及 loss 权重明确。
