@@ -60,3 +60,19 @@ dynamic_ingress_interval=801、task_target=15，而旧采集配置是 150/18。
 旧的 [所有者长采集命令](medium-raw-collection-owner.md) 已被本次来源替换，不能再执行。
 本次只采用新来源的实际采集环境；不由此冻结 downstream RL 预算或 formal AGV 数。
 新 API 请求为 0；本次授权采集不等于跳过付费标注的原始覆盖、预算及语义质量门。
+
+## 完整采集证据
+
+实际完成 seeds 10000..10119 共 120 个 episode，各 800 步，共 96,000 环境步、
+600 条 AGV 轨迹。充电锁定 4,763 步、满电释放 560 次、规则违规 0；
+任务完成 660、能量死亡 41、充电站到达 560。原始失败行为保留，不能据此主张
+策略安全失败已消除或性能 Gate 通过。
+
+原始目录 `artifacts/llm_kd/phase_20261007/dataset/hard-charge-v3-3fb225003be8bc9d`。
+汇总凭据 `artifacts/llm_kd/phase_20261007/audit/new-source-20261009/collection-summary.json`。
+2026-10-10 完整选样退出码 0，数量为 2,100/450/450，但覆盖未通过。
+train 高让行原始代理为 39/105，竞争低让行为 54/105；完整 train 候选池对应仅
+40 和 56，不能靠重新排序补齐。充电服务覆盖为 327/30，其余原始数值覆盖通过。
+state=insufficient_coverage，不冻结、不付费标注、不放行 pretrain。
+因此该 checkpoint 通过候选来源核验，当前生成的 3,000 条仍不属于合格正式 dataset。
+LLM 尚未标注，本次失败是可观察让行竞争场景覆盖不足，不能归因为模型输出质量。

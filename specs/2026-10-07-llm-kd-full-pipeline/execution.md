@@ -1,5 +1,56 @@
 # 执行记录
 
+## 2026-10-10：完整选样验收未通过
+
+恢复后的 selector 实际退出码 0，产出 2,100/450/450 条未标注窗口。
+episode 分区为 84/18/18，固定试标 120、复标及同名单 Pro 各 40、审阅 60；
+固定名单的可观察预检通过，但 train 原始覆盖失败，state=insufficient_coverage，
+未生成 selection_frozen，新 API 请求和费用为 0。
+
+| 训练覆盖项 | 选中条数 | 下限 | 完整 train 候选池总数 |
+| --- | ---: | ---: | ---: |
+| yielding-preference 高值原始代理 | 39 | 105 | 40 |
+| 有竞争且低让行的反例 | 54 | 105 | 56 |
+| 充电服务 | 327 | 30 | 3,356 |
+
+全候选池为 475,800 个滑窗，train 为 333,060。即使忽略去重和间距限制，
+train 两类不足项仍达不到下限；全部分区合计也只有 53 个高让行和 78 个竞争低让行
+候选。不能靠重新排序或搬动 holdout 修复。其余 train 数值覆盖和固定名单预检通过。
+这些是原始可观察代理统计，不是实际 LLM 分数，更不是标签质量失败。
+
+来源和硬充电执行可用，但这批自然轨迹的可明确判断的让行竞争场景不足，不能
+作为合格正式 dataset 进入标注/pretrain。详细结果见
+`artifacts/llm_kd/phase_20261007/audit/new-source-20261009/selection-coverage-audit.json`。
+建议保留当前轨迹和 holdout，另建采集版本补充 train 自然轨迹；采集上限和 episode
+分区合同调整须先获批，不自动扩大已冻结的 120 episode，也不修改语义或降低门槛。
+具体待批范围见 [补充方案](medium-coverage-extension-proposed.md)：最多追加 240 个
+train-only 自然 episode，保留旧 holdout 和 3,000 条总量，不改变环境或 checkpoint。
+最终完整性复核实际退出码 0，12 项全部为 true；凭据为
+`artifacts/llm_kd/phase_20261007/audit/new-source-20261009/final-integrity-review.json`。
+
+## 2026-10-10：选样中断恢复
+
+恢复会话后，上一轮 selector 进程 ID 已失效，目录中未产生 manifest、固定名单或
+selection_frozen。完整 120 个 episode 和 collection_state=completed 均保留。
+重新执行同一 selector：SQLite 对未提交索引事务恢复后重新建表，不重新采集，
+不修改来源、环境、预算、名单规则或实现哈希。本节尚未代表选样覆盖通过。
+
+## 2026-10-09：新来源完整原始采集
+
+所有者授权的原生硬充电采集实际退出码 0，固定 seeds 10000..10119 全部完成。
+目录为 `artifacts/llm_kd/phase_20261007/dataset/hard-charge-v3-3fb225003be8bc9d`。
+120 个完整 episode，每个 800 步，共 96,000 joint environment steps、600 条 AGV
+轨迹；首条验证轨迹计入这 120 条，没有追加环境 smoke。
+
+自然充电核验累计 lock_steps=4,763、full_releases=560、violations=0。
+累计任务完成 660、能量死亡 41、充电站到达 560；失败行为如实保留，不据此宣称
+策略性能 Gate 通过。完整汇总见
+`artifacts/llm_kd/phase_20261007/audit/new-source-20261009/collection-summary.json`。
+当前正执行原始窗口选样和覆盖验收，尚未生成新 LLM 标签，新 API 请求与费用为 0。
+
+选样缓存变更另经既有固定分区、间距/去重与名单定向回归验证：3 passed，39.72 秒。
+新增等价回归及前节真实 100 窗复核保持有效，没有扩大为全仓库测试。
+
 ## 2026-10-09：新硬充电来源接入与采集授权
 
 所有者提供 `artifacts/llm_kd/dataset/new-medium-5ag/seed_0007_20261009T055025617937Z`
